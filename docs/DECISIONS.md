@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -77,6 +77,25 @@ no basta para aprobar.
 uno `one_time` y uno `recurring` mensual. El modelo Program cambia `stripePriceId` por
 `stripePriceIdOneTime` y `stripePriceIdRecurring`. Al iniciar, el backend verifica que el importe
 de cada Price en Stripe coincida con `monthlyPrice` y registra un error si no coincide.
+
+### A9. Validación de variables de entorno por entorno (Fase 0, 2026-11-23)
+SDD §9.1 pide validar "las variables obligatorias" sin decir cuáles lo son en cada entorno, y CLAUDE.md exige
+que sin claves reales los servicios funcionen en modo desarrollo. Se implementa así (`src/lib/config.ts`):
+- **Producción** (`NODE_ENV=production`, incluye los previews de Vercel): todas las variables de SDD §9.1 son
+  obligatorias, salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto, rango 1–30). Si falta alguna, el servidor
+  no arranca (`src/instrumentation.ts`).
+- **Desarrollo y pruebas**: todas son opcionales; `APP_URL` vale `http://localhost:3000` por defecto.
+  Cada servicio decide su modo de desarrollo cuando falta su clave.
+- En cualquier entorno, una variable definida se valida siempre (prefijos `sk_`/`whsec_`/`pk_`/`re_`,
+  URL de PostgreSQL, correo, WhatsApp solo dígitos en formato `wa.me`, hash bcrypt/argon2,
+  `OTP_SESSION_SECRET` de 32+ caracteres). Las cadenas vacías cuentan como no definidas.
+- La validación es perezosa para que `next build` (y la CI) no necesiten secretos.
+- Los errores solo nombran la variable y el motivo; nunca incluyen su valor.
+
+### A10. Tipografía de marca (Fase 0, 2026-11-23)
+SRS §4 pide "sans-serif con encabezados fuertes y condensados" sin nombrar fuentes. Se usan
+**Barlow Condensed** (600–800) para encabezados y **Inter** para el cuerpo, vía `next/font/google`.
+Es reversible: si la marca tiene fuentes propias, se reemplazan en `src/app/layout.tsx` y `public/fonts/`.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

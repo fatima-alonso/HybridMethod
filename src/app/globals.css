@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/*
+ * Identidad visual de THE HYBRID METHOD (SRS §4, CLAUDE.md).
+ * Proporción de uso: negro 70 % · off-white 20 % · volt orange 10 %.
+ *
+ *   bg-ink / text-ink     → #111111 (fondo principal)
+ *   bg-bone / text-bone   → #F5F3EE (texto y superficies claras)
+ *   bg-volt / text-volt   → #FF6A00 (acentos y CTA; usar con moderación)
+ *   font-sans             → cuerpo (Inter)
+ *   font-display          → encabezados condensados (Barlow Condensed)
+ *
+ * Contraste (WCAG): bone sobre ink 16.7:1 · volt sobre ink 6.6:1 · ink sobre volt 6.6:1.
+ * Evitar texto volt sobre bone (2.6:1): solo para elementos decorativos.
+ */
+@theme {
+  --color-ink: #111111;
+  --color-ink-soft: #1c1c1c;
+  --color-bone: #f5f3ee;
+  --color-volt: #ff6a00;
+  --color-volt-dark: #e05d00;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow-condensed), "Arial Narrow", ui-sans-serif, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ink font-sans text-bone antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display leading-none font-bold tracking-tight uppercase;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-volt;
+  }
+
+  ::selection {
+    @apply bg-volt text-ink;
+  }
+}
