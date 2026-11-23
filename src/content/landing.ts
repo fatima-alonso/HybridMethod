@@ -31,7 +31,7 @@ export const NAV_LINKS = [
 export const HERO = {
   eyebrow: "by Ferro Fits",
   // PLACEHOLDER: titular y bajada pendientes de aprobación de la marca.
-  title: ["Run. Lift. Hybrid."],
+  title: ["Run.", "Lift.", "Hybrid."],
   lead: "Individualized training built for your goals. Strength, running and hybrid performance under one method.",
   primaryCta: "Elige tu programa",
   secondaryCta: "Cómo funciona",
@@ -44,13 +44,12 @@ export const ABOUT = {
   placeholder: true,
   kicker: "Hola, soy Ferro",
   paragraphs: [
-    "[Texto de relleno] Entrenador especializado en fuerza, running y rendimiento híbrido. ",
-    "[Texto de relleno]",
+    "[Texto de relleno] Entrenador especializado en fuerza, running y rendimiento híbrido.",
   ],
   // PLACEHOLDER: cifras de ejemplo, reemplazar por datos reales o eliminar.
   stats: [
     { value: "+X", label: "años entrenando" },
-    { value: "2", label: "studios" },
+    { value: "2", label: "estudios" },
     { value: "X", label: "carreras / competencias" },
   ],
   imageLabel: "Retrato de Ferro",
