@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ConfigError, parseConfig } from "./config";
+import { ConfigError, getWhatsAppNumber, parseConfig } from "./config";
 
 const validProductionEnv = {
   NODE_ENV: "production",
@@ -142,5 +142,22 @@ describe("parseConfig en producción", () => {
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as Error).message).not.toContain(secret);
     }
+  });
+});
+
+describe("getWhatsAppNumber", () => {
+  it("devuelve el número si es válido", () => {
+    expect(getWhatsAppNumber({ FERRO_WHATSAPP_NUMBER: "5215512345678" })).toBe("5215512345678");
+  });
+
+  it("devuelve undefined si no está definido o está vacío", () => {
+    expect(getWhatsAppNumber({})).toBeUndefined();
+    expect(getWhatsAppNumber({ FERRO_WHATSAPP_NUMBER: "" })).toBeUndefined();
+  });
+
+  it("lanza ConfigError con un formato inválido, sin exigir otras variables", () => {
+    expect(() =>
+      getWhatsAppNumber({ NODE_ENV: "production", FERRO_WHATSAPP_NUMBER: "+52 55" }),
+    ).toThrow(ConfigError);
   });
 });

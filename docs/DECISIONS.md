@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -96,6 +96,30 @@ que sin claves reales los servicios funcionen en modo desarrollo. Se implementa 
 SRS §4 pide "sans-serif con encabezados fuertes y condensados" sin nombrar fuentes. Se usan
 **Barlow Condensed** (600–800) para encabezados y **Inter** para el cuerpo, vía `next/font/google`.
 Es reversible: si la marca tiene fuentes propias, se reemplazan en `src/app/layout.tsx` y `public/fonts/`.
+
+### A11. Formato permitido del WhatsApp del cliente (Fase 1, 2026-11-23)
+RF-05 pide validar que el número tenga "un formato permitido" sin definirlo. Se acepta un "+" opcional y
+de 10 a 15 dígitos (10 = número nacional de México; con lada internacional hasta 15, como E.164). Se
+permiten espacios, guiones, puntos y paréntesis como separadores; el valor se normaliza a `+` y dígitos
+(`src/lib/validations.ts`, esquema compartido entre cliente y servidor). Si Ferro quiere restringirlo
+(p. ej. solo México), se cambia en ese esquema.
+
+### A12. Contenido de la landing y WhatsApp en la página prerenderizada (Fase 1, 2026-11-23)
+- El catálogo de programas (`src/content/programs.ts`) es la única fuente de nombres, descripciones y
+  precios en el código, con precios como decimales en texto. En la Fase 2 alimenta el seed y la landing
+  pasa a leer de la BD. Los textos de la landing viven en `src/content/landing.ts`; lo que es relleno
+  está marcado como PLACEHOLDER y las imágenes como "Imagen pendiente".
+- La landing es estática (se prerenderiza en `next build`). Para no exigir los secretos de producción en
+  el build (A9), lee solo `FERRO_WHATSAPP_NUMBER` con `getWhatsAppNumber()`. Si falta, se ocultan el botón
+  flotante y el enlace de contacto. Cambiar el número requiere volver a desplegar.
+- El CTA de cada programa enlaza a `/?programa=<slug>#athlete-application` (RF-03).
+- `/privacidad` y `/condiciones` existen como páginas provisionales para que funcionen los enlaces del
+  formulario y del footer; su texto definitivo llega en la Fase 8 (B12).
+
+### A13. Titular y subtítulo del hero en inglés (Fase 1, 2026-11-23)
+Por decisión de la marca, el titular ("Run. Lift. Hybrid.") y el subtítulo del hero van en inglés.
+Es una excepción acotada a la regla de textos en español (CLAUDE.md); el resto de la interfaz sigue en
+español salvo los nombres de sección del SRS §4.2. Están en `HERO` de `src/content/landing.ts`.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

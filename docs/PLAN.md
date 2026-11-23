@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.4 y SDD v1.4 (ya incluyen las decisiones A1–A9). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.5 y SDD v1.5 (ya incluyen las decisiones A1–A12). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
@@ -22,7 +22,7 @@ Las decisiones que bloquean cada fase están en `docs/DECISIONS.md`.
 Tema de marca en `src/app/globals.css` (`ink`, `bone`, `volt`, `font-display`; tipografía en DECISIONS A10).
 CI en `.github/workflows/ci.yml` (formato, lint, typecheck, pruebas y build). La página `/` es un placeholder hasta la Fase 1.
 
-## Fase 1 — Landing page ⬜ (RF-01, RF-02, RF-03, RNF-02, RNF-04, RNF-05)
+## Fase 1 — Landing page ✅ (RF-01, RF-02, RF-03, RNF-02, RNF-04, RNF-05)
 - Secciones del SRS §4.2: Hero, About Me, Our Programs, How It Works, Pricing,
   Athlete Application (solo la UI por ahora), FAQ & Contact, footer.
 - Los tres programas (HM RUN, HM STRENGTH, HM COMPLETE) desde un solo archivo de datos,
@@ -31,6 +31,13 @@ CI en `.github/workflows/ci.yml` (formato, lint, typecheck, pruebas y build). La
 - Botón flotante/enlace de WhatsApp con el número de `FERRO_WHATSAPP_NUMBER`.
 - Textos e imágenes de relleno marcados claramente para que la marca los reemplace.
 - Responsive, accesible (contraste, alt, foco) y buen Lighthouse en móvil.
+
+**Resultado (2026-11-23):** secciones del SRS §4.2 + footer en `src/components/{landing,programs,forms,layout}`.
+Programas desde `src/content/programs.ts` y textos en `src/content/landing.ts` (DECISIONS A12). Formulario con
+validación Zod compartida (`src/lib/validations.ts`, formato de WhatsApp en A11) y preselección por `?programa=`.
+El envío del formulario aún no llama al servidor (Fase 3). Páginas provisionales `/privacidad` y `/condiciones`.
+Logo oficial en el header (horizontal) y el footer (apilado), y favicon con el símbolo HM (originales en `docs/brand/`).
+Lighthouse móvil (build local): rendimiento 96, accesibilidad 100, buenas prácticas 100, SEO 100.
 
 ## Fase 2 — Base de datos y servicios ⬜ (RF-16, RNF-07, SDD §5)
 - `schema.prisma` con Customer, Program, Contract, Payment, Subscription, TransferApproval,
