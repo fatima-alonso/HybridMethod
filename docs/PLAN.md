@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.4 y SDD v1.3 (ya incluyen las decisiones A1–A8). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.4 y SDD v1.4 (ya incluyen las decisiones A1–A9). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
@@ -8,7 +8,7 @@ Las decisiones que bloquean cada fase están en `docs/DECISIONS.md`.
 
 ---
 
-## Fase 0 — Base del proyecto ⬜
+## Fase 0 — Base del proyecto ✅
 - Next.js + TypeScript estricto + Tailwind + ESLint + Prettier + Vitest.
 - Estructura de carpetas del SDD §4. `src/lib/config.ts` que lee y valida variables de entorno con Zod.
 - `.env.example` del SDD §9.1, más `FERRO_APPROVAL_PIN_HASH` y `OTP_SESSION_SECRET` (DECISIONS A4, A7). Scripts: `dev`, `build`, `lint`, `typecheck`, `test`.
@@ -16,6 +16,11 @@ Las decisiones que bloquean cada fase están en `docs/DECISIONS.md`.
 - GitHub Action que corre lint, typecheck y pruebas en cada PR.
 
 **Listo cuando:** `npm run build` pasa y la CI está en verde.
+
+**Resultado (2026-11-23):** Next.js 16 (App Router) + React 19 + TypeScript estricto + Tailwind v4 + ESLint + Prettier + Vitest.
+`src/lib/config.ts` con pruebas (política por entorno en DECISIONS A9) y validación al arrancar en `src/instrumentation.ts`.
+Tema de marca en `src/app/globals.css` (`ink`, `bone`, `volt`, `font-display`; tipografía en DECISIONS A10).
+CI en `.github/workflows/ci.yml` (formato, lint, typecheck, pruebas y build). La página `/` es un placeholder hasta la Fase 1.
 
 ## Fase 1 — Landing page ⬜ (RF-01, RF-02, RF-03, RNF-02, RNF-04, RNF-05)
 - Secciones del SRS §4.2: Hero, About Me, Our Programs, How It Works, Pricing,

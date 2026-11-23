@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.3 |
+| **Versión** | 1.4 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.4 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -13,6 +13,7 @@
 |---|---|---|
 | 1.2 | — | Diseño técnico actualizado. |
 | 1.3 | 2026-11-23 | Se incorporan las decisiones A1–A8 de `docs/DECISIONS.md`: sin `country`; relación Contract N:1 Program; estados de Contract sin `paid`; OTP obligatorio con sesión de verificación; confirmación de transferencia con enlace + PIN y sin `reject`; eventos de webhook con una sola fuente de verdad; dos Price IDs por programa; se agrega la entidad AuditLog. |
+| 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
 
 ---
 
@@ -769,6 +770,7 @@ OTP_SESSION_SECRET=
 TRANSFER_LINK_TTL_DAYS=7
 ```
 Los valores reales nunca se suben al repositorio. `src/lib/config.ts` valida al iniciar que existan las variables obligatorias.
+En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto); en desarrollo y pruebas son opcionales para poder trabajar sin claves reales (modo desarrollo de cada servicio). Una variable definida siempre se valida en formato. La validación se ejecuta al arrancar el servidor (`src/instrumentation.ts`), no durante `next build` (DECISIONS A9).
 
 ### 9.2 Stripe
 - Verificar la firma de todos los webhooks.
