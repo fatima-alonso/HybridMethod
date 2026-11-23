@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useId, useRef, useState, type FormEvent } from "react";
 
 import { APPLICATION } from "@/content/landing";
-import { PROGRAMS, type ProgramSlug } from "@/content/programs";
+import type { ProgramSlug } from "@/content/programs";
 import { applicationSchema } from "@/lib/validations";
 import { buttonPrimary } from "@/components/shared/styles";
+import type { ProgramOption } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
 type FieldName = "fullName" | "email" | "whatsapp" | "program" | "privacyAccepted";
@@ -33,6 +34,8 @@ function validate(values: Values): Errors {
 }
 
 type Props = {
+  /** Programas activos (de la BD, DECISIONS A14). */
+  programs: readonly ProgramOption[];
   /** Programa preseleccionado desde el CTA de un programa (RF-03). */
   preselectedProgram?: ProgramSlug;
 };
@@ -42,7 +45,7 @@ type Props = {
  * En la Fase 3 el envío pedirá el código OTP (`POST /api/verification/request`) con el mismo
  * esquema Zod validado también en el servidor.
  */
-export function ApplicationForm({ preselectedProgram }: Props) {
+export function ApplicationForm({ programs, preselectedProgram }: Props) {
   const [values, setValues] = useState<Values>({
     fullName: "",
     email: "",
@@ -191,7 +194,7 @@ export function ApplicationForm({ preselectedProgram }: Props) {
       <fieldset aria-describedby={describedBy("program")}>
         <legend className="font-semibold">Programa</legend>
         <div className="mt-2 grid gap-3 sm:grid-cols-3">
-          {PROGRAMS.map((program) => {
+          {programs.map((program) => {
             const checked = values.program === program.slug;
             return (
               <label

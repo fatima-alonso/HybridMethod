@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.5 y SDD v1.5 (ya incluyen las decisiones A1–A12). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.5 y SDD v1.6 (ya incluyen las decisiones A1–A12 y A14). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
@@ -39,7 +39,7 @@ El envío del formulario aún no llama al servidor (Fase 3). Páginas provisiona
 Logo oficial en el header (horizontal) y el footer (apilado), y favicon con el símbolo HM (originales en `docs/brand/`).
 Lighthouse móvil (build local): rendimiento 96, accesibilidad 100, buenas prácticas 100, SEO 100.
 
-## Fase 2 — Base de datos y servicios ⬜ (RF-16, RNF-07, SDD §5)
+## Fase 2 — Base de datos y servicios ✅ (RF-16, RNF-07, SDD §5)
 - `schema.prisma` con Customer, Program, Contract, Payment, Subscription, TransferApproval,
   OTPVerification, WebhookEvent, y un AuditLog para operaciones sensibles (SRS §10).
   **Aplicar DECISIONS A1–A3 y A8:** sin `country`; Contract N:1 Program; estados de Contract sin `paid`;
@@ -49,6 +49,14 @@ Lighthouse móvil (build local): rendimiento 96, accesibilidad 100, buenas prác
 - Seed con los tres programas. La landing lee los programas de la BD.
 - Servicios base (`customer`, `contract`) con transiciones de estado controladas y pruebas.
 - Generador de referencias `HM-AAAA-NNNNNN` seguro ante concurrencia.
+
+**Resultado (2026-11-23):** Prisma 7 (`prisma-client` + `@prisma/adapter-pg`) con las nueve entidades del SDD §5
+en `prisma/schema.prisma` y una migración inicial con la secuencia de referencias y restricciones CHECK.
+Servicios en `src/services/`: `contract` (máquina de estados compare-and-set, referencias, vencimiento),
+`customer` (alta o actualización atómica por correo normalizado), `program` (lectura para la landing y seed)
+y `audit`. La landing lee los programas de la BD con caché de 5 minutos y usa el catálogo si no hay BD.
+Pruebas unitarias y de integración con PostgreSQL real (`TEST_DATABASE_URL`, también en la CI), incluidas
+creaciones y activaciones simultáneas. Decisiones de implementación en DECISIONS A14; queda pendiente B13.
 
 ## Fase 3 — Formulario, verificación de correo y transferencia ⬜ (RF-04, RF-05, RF-06, RF-09, RF-10, RF-15, RF-13 parcial)
 - `email.service` con Resend (o registro en consola en desarrollo).

@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -121,6 +121,55 @@ Por decisión de la marca, el titular ("Run. Lift. Hybrid.") y el subtítulo del
 Es una excepción acotada a la regla de textos en español (CLAUDE.md); el resto de la interfaz sigue en
 español salvo los nombres de sección del SRS §4.2. Están en `HERO` de `src/content/landing.ts`.
 
+### A14. Base de datos y servicios (Fase 2, 2026-11-23)
+Puntos que el SDD no definía y que se resolvieron así al implementar la Fase 2. Todos son reversibles.
+
+**Programas: BD y catálogo.**
+- La BD es la fuente de los datos comerciales de cada programa: nombre, descripción, `monthlyPrice`,
+  moneda, `active`, orden y Price IDs de Stripe. La landing, el formulario y (desde la Fase 3) el servidor
+  los leen de ahí.
+- `src/content/programs.ts` sigue siendo la única fuente en el **código**: alimenta el seed
+  (`npm run db:seed`, idempotente) y aporta los textos editoriales de la landing (`summary`,
+  `highlights`, `featured`), que no están en el modelo del SDD. Sin panel admin (fuera de alcance), para
+  cambiar un precio se edita el catálogo y se vuelve a ejecutar el seed. El seed nunca toca los Price IDs.
+- Se agregan a Program `displayOrder` (orden en la landing) y `updatedAt`.
+- Si no hay `DATABASE_URL` (desarrollo sin BD, pruebas, `next build` en la CI), la landing usa el catálogo
+  directamente. Si hay BD y falla, la página falla: es preferible a mostrar precios distintos a los que
+  se cobran. En producción el servidor no arranca sin `DATABASE_URL` (A9).
+- La landing sigue siendo estática con caché de Next.js (`"use cache"` + `cacheLife`): se regenera con la
+  BD como máximo cada 5 minutos. El importe que se cobra siempre lo lee el servidor de la BD.
+- El build lee la BD, así que el cliente de Prisma valida solo `DATABASE_URL` (`getDatabaseUrl()`), sin
+  exigir los demás secretos de producción (igual que `getWhatsAppNumber()` en A12).
+
+**Referencias `HM-AAAA-NNNNNN`.**
+- `NNNNNN` sale de la secuencia de PostgreSQL `contract_reference_seq` (`nextval` es atómico; puede
+  haber huecos si una creación falla). No se reinicia cada año. Si pasa de 999999 usa más dígitos.
+- `AAAA` es el año de creación en la zona horaria del negocio, `America/Mexico_City`.
+
+**Contratos.**
+- Cada transición es un compare-and-set (`UPDATE … WHERE status IN (orígenes permitidos)`): con dos
+  intentos simultáneos (p. ej. un webhook duplicado) solo uno gana.
+- Las fechas del periodo las recibe `activateContract` de quien confirma el pago; la regla para
+  transferencia y pago único sigue pendiente (B6, Fase 4).
+- `active → completed` solo aplica a pago único y transferencia: se calcula al leer
+  (`effectiveContractStatus`) y `completeExpiredContracts()` queda lista para el cron diario
+  (que se configura en el despliegue, Fase 8).
+
+**Integridad en la BD (además de UNIQUE y FK).** CHECK de correo normalizado, importes positivos, moneda
+de 3 letras, formato de la referencia, periodo de servicio coherente (un contrato fuera de
+`pending_payment` siempre tiene fechas) y `pinAttempts`/`attempts` entre 0 y 5. Las FK son `RESTRICT`
+(no se borra un cliente o programa con contratos), salvo `OTPVerification.customerId` (`SET NULL`).
+
+**Clientes.** `upsertVerifiedCustomer` crea el cliente o actualiza nombre y WhatsApp si el correo ya
+existe (A4), de forma atómica. El WhatsApp se guarda normalizado según A11 (no se le agrega lada; ver B13).
+
+**Auditoría.** `recordAudit` rechaza metadatos con claves como `token`, `pin`, `otp`, `code`, `secret` o
+`hash` (SDD §9.6).
+
+**Pruebas.** Las pruebas de integración (`*.db.test.ts`) usan una BD real en `TEST_DATABASE_URL`
+(cuyo nombre debe contener "test", porque se borra) y se omiten si no está definida. La CI levanta
+PostgreSQL 16 y además comprueba que las migraciones coinciden con `schema.prisma`.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -137,3 +186,4 @@ español salvo los nombres de sección del SRS §4.2. Están en `HERO` de `src/c
 | 10 | WhatsApp oficial de Ferro | Fase 1 (placeholder en la variable de entorno) | Pendiente |
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador existente |
+| 13 | Formato del WhatsApp guardado: el SDD §5.3 dice E.164, pero A11 acepta 10 dígitos sin lada. ¿Se agrega `+52` a los números de 10 dígitos? | Fase 3 (correos y enlaces `wa.me` a Ferro) | Pendiente. Por ahora se guarda tal cual lo normaliza A11 |

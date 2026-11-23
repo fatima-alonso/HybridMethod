@@ -5,7 +5,7 @@ servicio de entrenamiento personalizado de fuerza, running y rendimiento híbrid
 
 ## Documentos de referencia (fuente de verdad)
 - `docs/SRS.md` — requisitos (RF-xx), reglas de negocio (RN-xx), no funcionales (RNF-xx). SRS v1.5.
-- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.5.
+- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.6.
 - `docs/PLAN.md` — fases de desarrollo y su estado.
 - `docs/DECISIONS.md` — registro de decisiones (A1–A12 ya están integradas en el SRS/SDD; A13 es de contenido) y pendientes.
 

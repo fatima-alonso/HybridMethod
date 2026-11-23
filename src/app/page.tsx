@@ -7,17 +7,20 @@ import { ApplicationSection } from "@/components/forms/ApplicationSection";
 import { ProgramsSection } from "@/components/programs/ProgramsSection";
 import { getWhatsAppNumber } from "@/lib/config";
 
+import { getCachedLandingPrograms } from "./landing-programs";
+
 /** Landing (SRS §4.2): secciones en el orden definido por el SRS. */
-export default function Home() {
+export default async function Home() {
   const whatsappNumber = getWhatsAppNumber();
+  const programs = await getCachedLandingPrograms();
   return (
     <>
       <Hero />
       <About />
-      <ProgramsSection />
+      <ProgramsSection programs={programs} />
       <HowItWorks />
-      <Pricing />
-      <ApplicationSection />
+      <Pricing programs={programs} />
+      <ApplicationSection programs={programs} />
       <FaqContact whatsappNumber={whatsappNumber} />
     </>
   );

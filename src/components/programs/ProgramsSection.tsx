@@ -1,11 +1,11 @@
-import { PROGRAMS } from "@/content/programs";
 import { PROGRAMS_SECTION, SECTION_IDS } from "@/content/landing";
 import { Container } from "@/components/shared/Container";
 import { SectionHeading } from "@/components/shared/SectionHeading";
+import type { LandingProgram } from "@/types/program";
 
 import { ProgramCard } from "./ProgramCard";
 
-export function ProgramsSection() {
+export function ProgramsSection({ programs }: { programs: readonly LandingProgram[] }) {
   return (
     <section
       id={SECTION_IDS.programs}
@@ -19,7 +19,7 @@ export function ProgramsSection() {
           lead={PROGRAMS_SECTION.lead}
         />
         <div className="mt-12 grid gap-6 lg:grid-cols-3">
-          {PROGRAMS.map((program) => (
+          {programs.map((program) => (
             <ProgramCard key={program.slug} program={program} />
           ))}
         </div>

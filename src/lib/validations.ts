@@ -30,22 +30,38 @@ export const phoneSchema = z
     message: "El número debe tener entre 10 y 15 dígitos.",
   });
 
-/** Formulario Athlete Application (RF-04, RF-05). */
-export const applicationSchema = z.object({
-  fullName: z
-    .string({ error: "Escribe tu nombre completo." })
-    .trim()
-    .min(1, "Escribe tu nombre completo.")
-    .min(3, "Escribe tu nombre completo.")
-    .max(120, "El nombre es demasiado largo."),
-  email: z
-    .string({ error: "Escribe tu correo electrónico." })
-    .trim()
-    .min(1, "Escribe tu correo electrónico.")
-    .max(254, "El correo es demasiado largo.")
-    .pipe(z.email("Escribe un correo electrónico válido."))
-    .transform((value) => value.toLowerCase()),
+/** Correo normalizado: sin espacios alrededor y en minúsculas (SDD §5.3). */
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export const fullNameSchema = z
+  .string({ error: "Escribe tu nombre completo." })
+  .trim()
+  .min(1, "Escribe tu nombre completo.")
+  .min(3, "Escribe tu nombre completo.")
+  .max(120, "El nombre es demasiado largo.");
+
+export const emailSchema = z
+  .string({ error: "Escribe tu correo electrónico." })
+  .trim()
+  .min(1, "Escribe tu correo electrónico.")
+  .max(254, "El correo es demasiado largo.")
+  .pipe(z.email("Escribe un correo electrónico válido."))
+  .transform(normalizeEmail);
+
+/** Datos del cliente que se guardan en Customer (RF-16). Sin `country` (DECISIONS A1). */
+export const customerDataSchema = z.object({
+  fullName: fullNameSchema,
+  email: emailSchema,
   whatsapp: phoneSchema,
+});
+
+export type CustomerDataInput = z.input<typeof customerDataSchema>;
+export type CustomerData = z.output<typeof customerDataSchema>;
+
+/** Formulario Athlete Application (RF-04, RF-05). */
+export const applicationSchema = customerDataSchema.extend({
   program: z.enum(PROGRAM_SLUGS, { error: "Elige un programa." }),
   privacyAccepted: z.literal(true, { error: "Debes aceptar la política de privacidad." }),
 });

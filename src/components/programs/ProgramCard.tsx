@@ -1,11 +1,11 @@
 import Link from "next/link";
 
-import type { Program } from "@/content/programs";
 import { PROGRAMS_SECTION, PRICING, applicationHref } from "@/content/landing";
 import { buttonPrimary, buttonSecondary } from "@/components/shared/styles";
+import type { LandingProgram } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
-export function ProgramCard({ program }: { program: Program }) {
+export function ProgramCard({ program }: { program: LandingProgram }) {
   const titleId = `program-${program.slug}`;
   return (
     <article

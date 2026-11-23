@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { PROGRAMS } from "@/content/programs";
+
 import { ApplicationForm } from "./ApplicationForm";
 
 afterEach(cleanup);
@@ -19,7 +21,7 @@ function fillValid() {
 
 describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
   it("muestra los campos del RF-04 y ningún otro dato (sin país)", () => {
-    render(<ApplicationForm />);
+    render(<ApplicationForm programs={PROGRAMS} />);
     expect(screen.getByLabelText("Nombre completo")).toBeTruthy();
     expect(screen.getByLabelText("Correo electrónico")).toBeTruthy();
     expect(screen.getByLabelText("WhatsApp")).toBeTruthy();
@@ -29,28 +31,30 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
   });
 
   it("sin preselección, ningún programa está marcado", () => {
-    render(<ApplicationForm />);
+    render(<ApplicationForm programs={PROGRAMS} />);
     for (const input of screen.getAllByRole("radio") as HTMLInputElement[]) {
       expect(input.checked).toBe(false);
     }
   });
 
   it("preselecciona el programa recibido (RF-03)", () => {
-    render(<ApplicationForm preselectedProgram="hm-strength" />);
+    render(<ApplicationForm programs={PROGRAMS} preselectedProgram="hm-strength" />);
     expect(radio(/HM STRENGTH/).checked).toBe(true);
     expect(radio(/HM RUN/).checked).toBe(false);
   });
 
   it("al cambiar la preselección actualiza el programa sin borrar lo escrito", () => {
-    const { rerender } = render(<ApplicationForm preselectedProgram="hm-run" />);
+    const { rerender } = render(
+      <ApplicationForm programs={PROGRAMS} preselectedProgram="hm-run" />,
+    );
     fireEvent.change(screen.getByLabelText("Nombre completo"), { target: { value: "Ana López" } });
-    rerender(<ApplicationForm preselectedProgram="hm-complete" />);
+    rerender(<ApplicationForm programs={PROGRAMS} preselectedProgram="hm-complete" />);
     expect(radio(/HM COMPLETE/).checked).toBe(true);
     expect((screen.getByLabelText("Nombre completo") as HTMLInputElement).value).toBe("Ana López");
   });
 
   it("al enviar vacío muestra los errores y enfoca el primer campo inválido", () => {
-    render(<ApplicationForm />);
+    render(<ApplicationForm programs={PROGRAMS} />);
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
 
     expect(screen.getByText("Escribe tu nombre completo.")).toBeTruthy();
@@ -67,7 +71,7 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
   });
 
   it("valida el formato del correo y del WhatsApp", () => {
-    render(<ApplicationForm preselectedProgram="hm-run" />);
+    render(<ApplicationForm programs={PROGRAMS} preselectedProgram="hm-run" />);
     fillValid();
     fireEvent.change(screen.getByLabelText("Correo electrónico"), { target: { value: "ana@" } });
     fireEvent.change(screen.getByLabelText("WhatsApp"), { target: { value: "123" } });
@@ -79,14 +83,14 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
   });
 
   it("los errores se actualizan al corregir un campo después del primer envío", () => {
-    render(<ApplicationForm />);
+    render(<ApplicationForm programs={PROGRAMS} />);
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(radio(/HM RUN/));
     expect(screen.queryByText("Elige un programa.")).toBeNull();
   });
 
   it("con datos válidos no muestra errores y avisa que el siguiente paso llega pronto", () => {
-    render(<ApplicationForm preselectedProgram="hm-complete" />);
+    render(<ApplicationForm programs={PROGRAMS} preselectedProgram="hm-complete" />);
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
 
@@ -95,7 +99,7 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
   });
 
   it("enlaza a la política de privacidad", () => {
-    render(<ApplicationForm />);
+    render(<ApplicationForm programs={PROGRAMS} />);
     expect(screen.getByRole("link", { name: /política de privacidad/ }).getAttribute("href")).toBe(
       "/privacidad",
     );

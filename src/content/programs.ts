@@ -1,8 +1,11 @@
 /**
  * Catálogo de programas: ÚNICA fuente de nombres, descripciones y precios en el código (SRS §5).
  *
- * - Los precios son cadenas decimales (nunca `number`/float). En la Fase 2 este catálogo alimenta
- *   el seed de Prisma (`Program.monthlyPrice` es Decimal) y la landing pasa a leer de la BD.
+ * - Los precios son cadenas decimales (nunca `number`/float).
+ * - Desde la Fase 2 (DECISIONS A14) este catálogo alimenta el seed (`npm run db:seed`), que copia
+ *   slug, nombre, descripción, precio, moneda, `active` y orden a la tabla `programs`. La landing y
+ *   el servidor leen esos datos de la BD; de aquí solo salen los textos editoriales (`summary`,
+ *   `highlights`, `featured`). Para cambiar un precio: editarlo aquí y volver a ejecutar el seed.
  * - El precio es el mismo con transferencia, pago único o suscripción (RN-13, DECISIONS A8).
  * - Precios iniciales proporcionados por Ferro. Su tratamiento fiscal (IVA) está pendiente
  *   (DECISIONS B2): confirmar antes de publicar.
@@ -26,6 +29,8 @@ export type Program = {
   currency: "MXN";
   /** Programa destacado visualmente en la landing. */
   featured: boolean;
+  /** Si se puede contratar. El seed lo copia a `Program.active`. */
+  active: boolean;
 };
 
 export const PROGRAMS: readonly Program[] = [
@@ -43,6 +48,7 @@ export const PROGRAMS: readonly Program[] = [
     monthlyPrice: "1200.00",
     currency: "MXN",
     featured: false,
+    active: true,
   },
   {
     slug: "hm-strength",
@@ -58,6 +64,7 @@ export const PROGRAMS: readonly Program[] = [
     monthlyPrice: "1500.00",
     currency: "MXN",
     featured: false,
+    active: true,
   },
   {
     slug: "hm-complete",
@@ -73,6 +80,7 @@ export const PROGRAMS: readonly Program[] = [
     monthlyPrice: "1800.00",
     currency: "MXN",
     featured: true,
+    active: true,
   },
 ];
 
