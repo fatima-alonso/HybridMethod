@@ -3,9 +3,9 @@
 
 | | |
 |---|---|
-| **Versión** | 1.4 |
+| **Versión** | 1.5 |
 | **Estado** | Diseño técnico actualizado |
-| **Relacionado con** | SRS v1.4 |
+| **Relacionado con** | SRS v1.5 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 
 ### Historial de cambios
@@ -14,6 +14,7 @@
 | 1.2 | — | Diseño técnico actualizado. |
 | 1.3 | 2026-11-23 | Se incorporan las decisiones A1–A8 de `docs/DECISIONS.md`: sin `country`; relación Contract N:1 Program; estados de Contract sin `paid`; OTP obligatorio con sesión de verificación; confirmación de transferencia con enlace + PIN y sin `reject`; eventos de webhook con una sola fuente de verdad; dos Price IDs por programa; se agrega la entidad AuditLog. |
 | 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
+| 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
 
 ---
 
@@ -158,6 +159,7 @@ the-hybrid-method/
 │   │   ├── verification.service.ts
 │   │   ├── audit.service.ts
 │   │   └── email.service.ts
+│   ├── content/          # catálogo de programas y textos de la landing (DECISIONS A12)
 │   ├── types/
 │   └── utils/
 ├── .env.example
@@ -434,6 +436,8 @@ Prisma usa esta conexión. La cuenta y el entorno de producción deben configura
 
 ### 6.4 WhatsApp
 No se implementará la integración con la WhatsApp Business API. Se usará un enlace `wa.me` con el número oficial de Ferro (`FERRO_WHATSAPP_NUMBER`) y un mensaje prellenado que incluya el nombre del programa, la referencia del contrato y un texto de contacto.
+
+La landing se prerenderiza en el build, así que lee solo `FERRO_WHATSAPP_NUMBER` (`getWhatsAppNumber()` en `src/lib/config.ts`) sin exigir los demás secretos; si falta, oculta los enlaces de WhatsApp (DECISIONS A12).
 
 El número oficial está pendiente de configurar.
 

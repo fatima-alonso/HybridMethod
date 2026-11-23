@@ -64,12 +64,26 @@ prisma/              Esquema, seed y migraciones (Fase 2)
 public/              images/, logos/, fonts/
 scripts/             Scripts de soporte (p. ej. hash-pin, Fase 4)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
-src/components/      UI: layout, landing, programs, forms, checkout, shared
+src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
+src/content/         Catálogo de programas (precios) y textos de la landing
 src/lib/             Configuración e integraciones (config.ts, prisma, stripe, resend…)
 src/services/        Lógica de negocio; único lugar donde cambian contratos, pagos y suscripciones
 src/types/           Tipos compartidos
 src/utils/           Utilidades puras
 ```
+
+## Contenido de la landing (para la marca)
+
+- **Programas y precios:** [`src/content/programs.ts`](src/content/programs.ts). Es la única fuente
+  de precios en el código (decimales en texto, nunca números con coma flotante).
+- **Textos:** [`src/content/landing.ts`](src/content/landing.ts). Lo marcado como `PLACEHOLDER`,
+  `[Texto de relleno]` o `[Pendiente]` debe reemplazarse o aprobarse antes del lanzamiento.
+- **Imágenes:** aparecen como bloques "Imagen pendiente". Para reemplazarlas, sube las fotos a
+  `public/images/` y cambia cada `ImagePlaceholder` por `next/image` con su `alt`.
+- **Logotipo:** el wordmark es texto provisional (`src/components/shared/Wordmark.tsx`); el oficial
+  va en `public/logos/`.
+- **WhatsApp:** el botón flotante y el contacto usan `FERRO_WHATSAPP_NUMBER`. Si no está definido,
+  no se muestran. Como la landing es estática, cambiar el número requiere volver a desplegar.
 
 ## Identidad visual
 

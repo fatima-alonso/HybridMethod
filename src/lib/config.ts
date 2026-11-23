@@ -156,3 +156,21 @@ export function getConfig(): AppConfig {
 export function resetConfigCache(): void {
   cached = undefined;
 }
+
+/**
+ * Número de WhatsApp de Ferro para los enlaces `wa.me` de la landing.
+ *
+ * La landing se prerenderiza en `next build`, donde no se exigen los secretos de producción
+ * (DECISIONS A9). Por eso esta función valida solo `FERRO_WHATSAPP_NUMBER` en lugar de llamar a
+ * `getConfig()`. Devuelve `undefined` si no está definida (desarrollo); en producción el arranque
+ * del servidor ya garantiza que existe. Un valor con formato inválido lanza `ConfigError`.
+ */
+export function getWhatsAppNumber(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const result = optional(whatsappNumber).safeParse(env.FERRO_WHATSAPP_NUMBER);
+  if (!result.success) {
+    throw new ConfigError([`FERRO_WHATSAPP_NUMBER: ${result.error.issues[0]?.message}`]);
+  }
+  return result.data;
+}
