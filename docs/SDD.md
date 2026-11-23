@@ -15,7 +15,7 @@
 | 1.3 | 2026-11-23 | Se incorporan las decisiones A1–A8 de `docs/DECISIONS.md`: sin `country`; relación Contract N:1 Program; estados de Contract sin `paid`; OTP obligatorio con sesión de verificación; confirmación de transferencia con enlace + PIN y sin `reject`; eventos de webhook con una sola fuente de verdad; dos Price IDs por programa; se agrega la entidad AuditLog. |
 | 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
-| 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14). |
+| 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
 
@@ -216,7 +216,7 @@ Guarda la información básica del cliente.
 | id | String / UUID | Identificador |
 | fullName | String | Nombre completo |
 | email | String (UNIQUE) | Correo electrónico normalizado (minúsculas, sin espacios) |
-| whatsapp | String | Número de contacto (formato E.164; ver DECISIONS A11 y B13) |
+| whatsapp | String | Número de contacto en formato E.164, de cualquier país (DECISIONS A15) |
 | stripeCustomerId | String? (UNIQUE) | ID del cliente en Stripe |
 | createdAt | DateTime | Fecha de registro |
 | updatedAt | DateTime | Última actualización |
@@ -391,7 +391,7 @@ Registra las operaciones sensibles (confirmación de transferencias, intentos fa
 ### 5.4 Consideraciones de integridad
 - Los identificadores principales deben ser únicos.
 - Las referencias de contratos tienen una restricción UNIQUE y se generan de forma segura ante concurrencia con la secuencia `contract_reference_seq`: `HM-<año en America/Mexico_City>-<consecutivo de 6 dígitos o más>`, sin reinicio anual (DECISIONS A14).
-- Restricciones CHECK en la BD: correo normalizado, importes positivos, moneda ISO de 3 letras, formato de la referencia, periodo de servicio coherente y límites de intentos (DECISIONS A14).
+- Restricciones CHECK en la BD: correo normalizado, WhatsApp en E.164, importes positivos, moneda ISO de 3 letras, formato de la referencia, periodo de servicio coherente y límites de intentos (DECISIONS A14).
 - Las transiciones de estado del contrato son compare-and-set (`UPDATE … WHERE status IN (…)`), así que dos procesos simultáneos no pueden aplicar la misma transición dos veces.
 - Los importes se guardan como `Decimal`, nunca como `float`.
 - Las relaciones usan claves foráneas.

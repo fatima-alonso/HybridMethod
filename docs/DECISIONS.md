@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -97,7 +97,7 @@ SRS §4 pide "sans-serif con encabezados fuertes y condensados" sin nombrar fuen
 **Barlow Condensed** (600–800) para encabezados y **Inter** para el cuerpo, vía `next/font/google`.
 Es reversible: si la marca tiene fuentes propias, se reemplazan en `src/app/layout.tsx` y `public/fonts/`.
 
-### A11. Formato permitido del WhatsApp del cliente (Fase 1, 2026-11-23)
+### A11. Formato permitido del WhatsApp del cliente (Fase 1, 2026-11-23) — reemplazada por A15
 RF-05 pide validar que el número tenga "un formato permitido" sin definirlo. Se acepta un "+" opcional y
 de 10 a 15 dígitos (10 = número nacional de México; con lada internacional hasta 15, como E.164). Se
 permiten espacios, guiones, puntos y paréntesis como separadores; el valor se normaliza a `+` y dígitos
@@ -161,7 +161,7 @@ de 3 letras, formato de la referencia, periodo de servicio coherente (un contrat
 (no se borra un cliente o programa con contratos), salvo `OTPVerification.customerId` (`SET NULL`).
 
 **Clientes.** `upsertVerifiedCustomer` crea el cliente o actualiza nombre y WhatsApp si el correo ya
-existe (A4), de forma atómica. El WhatsApp se guarda normalizado según A11 (no se le agrega lada; ver B13).
+existe (A4), de forma atómica. El WhatsApp llega ya en E.164 (A15).
 
 **Auditoría.** `recordAudit` rechaza metadatos con claves como `token`, `pin`, `otp`, `code`, `secret` o
 `hash` (SDD §9.6).
@@ -169,6 +169,28 @@ existe (A4), de forma atómica. El WhatsApp se guarda normalizado según A11 (no
 **Pruebas.** Las pruebas de integración (`*.db.test.ts`) usan una BD real en `TEST_DATABASE_URL`
 (cuyo nombre debe contener "test", porque se borra) y se omiten si no está definida. La CI levanta
 PostgreSQL 16 y además comprueba que las migraciones coinciden con `schema.prisma`.
+
+### A15. WhatsApp de cualquier país, guardado en E.164 (Fase 2, 2026-11-23)
+Resuelve B13 y reemplaza a A11. Ferro quiere aceptar números de cualquier país, y el SDD §5.3 pide
+guardarlos en E.164 (lo que también necesitan los enlaces `wa.me`).
+- El formulario tiene un **selector de país** para la lada, con **México (+52)** preseleccionado, y el
+  campo del número local. Las opciones muestran la lada primero ("+52 México") y el resto de países en
+  orden alfabético en español.
+- Se valida con `libphonenumber-js` según las reglas del país elegido y se guarda en E.164
+  (`+525512345678`). Si el número escrito empieza con "+", su lada manda sobre el país elegido.
+- No se asume `+52` para números de 10 dígitos sin selector: Estados Unidos y Canadá también usan
+  10 dígitos (p. ej. `415 555 2671` es válido en ambos países), y Ferro le escribiría a un número
+  equivocado.
+- El país del selector solo sirve para leer el número: no se guarda ni es el campo `country` que
+  eliminó A1.
+- El servicio de clientes solo acepta E.164 (`customerDataSchema`) y la BD lo refuerza con un CHECK
+  (`customers_whatsapp_e164_check`).
+- La validación usa los metadatos "min" de la librería (longitudes y prefijos válidos por país, sin
+  distinguir móvil de fijo), para no cargar de más la página. El formato antiguo de móviles de México
+  con "1" (`+52 1 55…`) se rechaza: hoy se marca sin ese "1".
+- Código en `src/lib/phone.ts` y `src/lib/validations.ts` (`whatsappInputSchema`, compartido entre
+  cliente y servidor). Para restringir países, se filtra la lista de `getPhoneCountryOptions()` y se
+  valida el país en ese esquema.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
@@ -186,4 +208,4 @@ PostgreSQL 16 y además comprueba que las migraciones coinciden con `schema.pris
 | 10 | WhatsApp oficial de Ferro | Fase 1 (placeholder en la variable de entorno) | Pendiente |
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador existente |
-| 13 | Formato del WhatsApp guardado: el SDD §5.3 dice E.164, pero A11 acepta 10 dígitos sin lada. ¿Se agrega `+52` a los números de 10 dígitos? | Fase 3 (correos y enlaces `wa.me` a Ferro) | Pendiente. Por ahora se guarda tal cual lo normaliza A11 |
+| 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |

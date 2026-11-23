@@ -1,34 +1,48 @@
 import { z } from "zod";
 
 import { PROGRAM_SLUGS } from "@/content/programs";
+import { isE164, isPhoneCountry, toE164, type CountryCode } from "@/lib/phone";
 
 /**
  * Esquemas Zod compartidos entre cliente y servidor (SDD §9.5).
  */
 
-/** Quita espacios, guiones, puntos y paréntesis de un teléfono, conservando un "+" inicial. */
-export function normalizePhone(value: string): string {
-  const trimmed = value.trim();
-  const plus = trimmed.startsWith("+") ? "+" : "";
-  return plus + trimmed.replace(/[^\d]/g, "");
-}
-
 /**
- * Formato permitido del WhatsApp (RF-05, DECISIONS A11): opcionalmente "+", y 10 a 15 dígitos
- * (10 = número nacional de México; con lada internacional hasta 15, E.164). Se aceptan espacios,
- * guiones, puntos y paréntesis como separadores, que se eliminan al normalizar.
+ * WhatsApp tal como lo envía el formulario (RF-05, DECISIONS A11): país elegido (México por
+ * defecto) y número local. Se aceptan espacios, guiones, puntos y paréntesis, y un "+" inicial
+ * (si el número trae su lada, esa manda sobre el país). Sale ya en formato E.164.
  */
-export const phoneSchema = z
-  .string({ error: "Escribe tu número de WhatsApp." })
-  .trim()
-  .min(1, "Escribe tu número de WhatsApp.")
-  .refine((value) => /^\+?[\d\s().-]+$/.test(value), {
-    message: "Usa solo números y, si quieres, la lada con +.",
+export const whatsappInputSchema = z
+  .object({
+    country: z.string({ error: "Elige el país de tu número." }).refine(isPhoneCountry, {
+      message: "Elige el país de tu número.",
+    }),
+    number: z
+      .string({ error: "Escribe tu número de WhatsApp." })
+      .trim()
+      .min(1, "Escribe tu número de WhatsApp.")
+      .max(30, "El número es demasiado largo.")
+      .refine((value) => /^\+?[\d\s().-]+$/.test(value), {
+        message: "Usa solo números y, si quieres, la lada con +.",
+      }),
   })
-  .transform(normalizePhone)
-  .refine((value) => /^\+?\d{10,15}$/.test(value), {
-    message: "El número debe tener entre 10 y 15 dígitos.",
+  .transform((value, ctx) => {
+    const e164 = toE164(value.number, value.country as CountryCode);
+    if (!e164) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["number"],
+        message: "Ese número no es válido para el país elegido.",
+      });
+      return z.NEVER;
+    }
+    return e164;
   });
+
+/** WhatsApp ya normalizado en E.164 (`+525512345678`), como se guarda en Customer (SDD §5.3). */
+export const e164Schema = z
+  .string({ error: "El WhatsApp debe estar en formato internacional." })
+  .refine(isE164, { message: "El WhatsApp debe estar en formato internacional (+52…)." });
 
 /** Correo normalizado: sin espacios alrededor y en minúsculas (SDD §5.3). */
 export function normalizeEmail(value: string): string {
@@ -50,18 +64,24 @@ export const emailSchema = z
   .pipe(z.email("Escribe un correo electrónico válido."))
   .transform(normalizeEmail);
 
-/** Datos del cliente que se guardan en Customer (RF-16). Sin `country` (DECISIONS A1). */
+/**
+ * Datos del cliente que se guardan en Customer (RF-16), con el WhatsApp ya en E.164.
+ * Sin `country` del cliente (DECISIONS A1): el país del selector solo sirve para leer el número.
+ */
 export const customerDataSchema = z.object({
   fullName: fullNameSchema,
   email: emailSchema,
-  whatsapp: phoneSchema,
+  whatsapp: e164Schema,
 });
 
 export type CustomerDataInput = z.input<typeof customerDataSchema>;
 export type CustomerData = z.output<typeof customerDataSchema>;
 
 /** Formulario Athlete Application (RF-04, RF-05). */
-export const applicationSchema = customerDataSchema.extend({
+export const applicationSchema = z.object({
+  fullName: fullNameSchema,
+  email: emailSchema,
+  whatsapp: whatsappInputSchema,
   program: z.enum(PROGRAM_SLUGS, { error: "Elige un programa." }),
   privacyAccepted: z.literal(true, { error: "Debes aceptar la política de privacidad." }),
 });

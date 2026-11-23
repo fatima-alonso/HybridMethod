@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.5 y SDD v1.6 (ya incluyen las decisiones A1–A12 y A14). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.6 y SDD v1.6 (ya incluyen las decisiones A1–A12, A14 y A15). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
@@ -56,7 +56,9 @@ Servicios en `src/services/`: `contract` (máquina de estados compare-and-set, r
 `customer` (alta o actualización atómica por correo normalizado), `program` (lectura para la landing y seed)
 y `audit`. La landing lee los programas de la BD con caché de 5 minutos y usa el catálogo si no hay BD.
 Pruebas unitarias y de integración con PostgreSQL real (`TEST_DATABASE_URL`, también en la CI), incluidas
-creaciones y activaciones simultáneas. Decisiones de implementación en DECISIONS A14; queda pendiente B13.
+creaciones y activaciones simultáneas. Decisiones de implementación en DECISIONS A14.
+WhatsApp de cualquier país con selector de lada (México por defecto), validado con `libphonenumber-js` y guardado
+en E.164 (DECISIONS A15, resuelve B13).
 
 ## Fase 3 — Formulario, verificación de correo y transferencia ⬜ (RF-04, RF-05, RF-06, RF-09, RF-10, RF-15, RF-13 parcial)
 - `email.service` con Resend (o registro en consola en desarrollo).

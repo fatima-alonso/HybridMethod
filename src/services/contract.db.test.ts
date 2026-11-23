@@ -35,7 +35,7 @@ describe.skipIf(!testDatabaseUrl)("contract.service con PostgreSQL", () => {
     await truncateAll(prisma);
     await syncProgramCatalog(prisma);
     const customer = await upsertVerifiedCustomer(
-      { fullName: "Ana López", email: "ana@example.com", whatsapp: "5512345678" },
+      { fullName: "Ana López", email: "ana@example.com", whatsapp: "+525512345678" },
       prisma,
     );
     customerId = customer.id;

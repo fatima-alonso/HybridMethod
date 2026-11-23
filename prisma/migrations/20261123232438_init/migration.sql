@@ -265,6 +265,9 @@ CREATE SEQUENCE "contract_reference_seq" AS BIGINT START WITH 1 INCREMENT BY 1 N
 -- Correo siempre normalizado (minúsculas, sin espacios): evita duplicados por mayúsculas.
 ALTER TABLE "customers" ADD CONSTRAINT "customers_email_normalized_check"
   CHECK ("email" = lower("email") AND "email" !~ '\s' AND "email" LIKE '%_@_%');
+-- WhatsApp en E.164: "+", lada sin cero inicial y hasta 15 dígitos (DECISIONS B13).
+ALTER TABLE "customers" ADD CONSTRAINT "customers_whatsapp_e164_check"
+  CHECK ("whatsapp" ~ '^\+[1-9][0-9]{6,14}$');
 
 ALTER TABLE "programs" ADD CONSTRAINT "programs_monthlyPrice_positive_check"
   CHECK ("monthlyPrice" > 0);

@@ -75,7 +75,7 @@ describe.skipIf(!testDatabaseUrl)("esquema y seed con PostgreSQL (SDD §5, RNF-0
     it("no permite borrar un programa o cliente con contratos (FK)", async () => {
       const [program] = await syncProgramCatalog(prisma);
       const customer = await prisma.customer.create({
-        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "5512345678" },
+        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "+525512345678" },
       });
       await prisma.contract.create({
         data: {
@@ -94,7 +94,7 @@ describe.skipIf(!testDatabaseUrl)("esquema y seed con PostgreSQL (SDD §5, RNF-0
     it("un contrato activo necesita su periodo de servicio", async () => {
       const [program] = await syncProgramCatalog(prisma);
       const customer = await prisma.customer.create({
-        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "5512345678" },
+        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "+525512345678" },
       });
       await expect(
         prisma.contract.create({
@@ -114,7 +114,7 @@ describe.skipIf(!testDatabaseUrl)("esquema y seed con PostgreSQL (SDD §5, RNF-0
     it("TransferApproval no admite más de 5 intentos de PIN", async () => {
       const [program] = await syncProgramCatalog(prisma);
       const customer = await prisma.customer.create({
-        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "5512345678" },
+        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "+525512345678" },
       });
       const contract = await prisma.contract.create({
         data: {
