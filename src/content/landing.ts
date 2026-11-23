@@ -31,8 +31,8 @@ export const NAV_LINKS = [
 export const HERO = {
   eyebrow: "by Ferro Fits",
   // PLACEHOLDER: titular y bajada pendientes de aprobación de la marca.
-  title: ["Fuerza.", "Running.", "Híbrido."],
-  lead: "Entrenamiento personalizado de fuerza, running y rendimiento híbrido para atletas principiantes, intermedios y avanzados.",
+  title: ["Run. Lift. Hybrid."],
+  lead: "Individualized training built for your goals. Strength, running and hybrid performance under one method.",
   primaryCta: "Elige tu programa",
   secondaryCta: "Cómo funciona",
   imageLabel: "Foto principal: atleta entrenando fuerza y running",
@@ -44,13 +44,13 @@ export const ABOUT = {
   placeholder: true,
   kicker: "Hola, soy Ferro",
   paragraphs: [
-    "[Texto de relleno] Entrenador especializado en fuerza, running y rendimiento híbrido. Aquí va la historia de Ferro: cómo empezó, su experiencia como atleta y entrenador, y por qué creó THE HYBRID METHOD.",
-    "[Texto de relleno] Cada plan es personalizado: después de contratar, Ferro conoce tus objetivos, tu experiencia y tu disponibilidad por WhatsApp para diseñar tu entrenamiento.",
+    "[Texto de relleno] Entrenador especializado en fuerza, running y rendimiento híbrido. ",
+    "[Texto de relleno]",
   ],
   // PLACEHOLDER: cifras de ejemplo, reemplazar por datos reales o eliminar.
   stats: [
     { value: "+X", label: "años entrenando" },
-    { value: "+X", label: "atletas" },
+    { value: "2", label: "studios" },
     { value: "X", label: "carreras / competencias" },
   ],
   imageLabel: "Retrato de Ferro",
