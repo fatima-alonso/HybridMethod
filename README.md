@@ -80,8 +80,10 @@ src/utils/           Utilidades puras
   `[Texto de relleno]` o `[Pendiente]` debe reemplazarse o aprobarse antes del lanzamiento.
 - **Imágenes:** aparecen como bloques "Imagen pendiente". Para reemplazarlas, sube las fotos a
   `public/images/` y cambia cada `ImagePlaceholder` por `next/image` con su `alt`.
-- **Logotipo:** el wordmark es texto provisional (`src/components/shared/Wordmark.tsx`); el oficial
-  va en `public/logos/`.
+- **Logotipo:** versiones transparentes en `public/logos/` (horizontal en el header, apilado en el
+  footer) y favicon en `src/app/` (`icon.png`, `apple-icon.png`, `favicon.ico`). Los originales están
+  en `docs/brand/`. Si la marca entrega el logo en SVG o en mayor resolución, se reemplazan esos
+  archivos (el componente es `src/components/shared/Logo.tsx`).
 - **WhatsApp:** el botón flotante y el contacto usan `FERRO_WHATSAPP_NUMBER`. Si no está definido,
   no se muestran. Como la landing es estática, cambiar el número requiere volver a desplegar.
 

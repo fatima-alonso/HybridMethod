@@ -36,6 +36,7 @@ CI en `.github/workflows/ci.yml` (formato, lint, typecheck, pruebas y build). La
 Programas desde `src/content/programs.ts` y textos en `src/content/landing.ts` (DECISIONS A12). Formulario con
 validación Zod compartida (`src/lib/validations.ts`, formato de WhatsApp en A11) y preselección por `?programa=`.
 El envío del formulario aún no llama al servidor (Fase 3). Páginas provisionales `/privacidad` y `/condiciones`.
+Logo oficial en el header (horizontal) y el footer (apilado), y favicon con el símbolo HM (originales en `docs/brand/`).
 Lighthouse móvil (build local): rendimiento 96, accesibilidad 100, buenas prácticas 100, SEO 100.
 
 ## Fase 2 — Base de datos y servicios ⬜ (RF-16, RNF-07, SDD §5)

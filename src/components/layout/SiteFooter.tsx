@@ -2,17 +2,14 @@ import Link from "next/link";
 
 import { FOOTER, NAV_LINKS } from "@/content/landing";
 import { Container } from "@/components/shared/Container";
-import { Wordmark } from "@/components/shared/Wordmark";
+import { Logo } from "@/components/shared/Logo";
 
 export function SiteFooter() {
   return (
     <footer className="border-t border-bone/10 bg-ink py-12">
       <Container className="grid gap-10 md:grid-cols-[2fr_1fr_1fr]">
         <div>
-          <Wordmark className="text-3xl" />
-          <p className="mt-1 text-sm font-semibold tracking-[0.3em] text-volt uppercase">
-            by Ferro Fits
-          </p>
+          <Logo variant="stacked" className="w-56" />
           <p className="mt-4 max-w-sm text-bone/70">{FOOTER.tagline}</p>
         </div>
         <nav aria-label="Secciones">

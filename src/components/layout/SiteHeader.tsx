@@ -5,7 +5,7 @@ import { useEffect, useId, useState } from "react";
 
 import { NAV_LINKS, applicationHref } from "@/content/landing";
 import { Container } from "@/components/shared/Container";
-import { Wordmark } from "@/components/shared/Wordmark";
+import { Logo } from "@/components/shared/Logo";
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
@@ -25,13 +25,8 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-bone/10 bg-ink/95 backdrop-blur supports-[backdrop-filter]:bg-ink/80">
       <Container className="flex h-16 items-center justify-between gap-6">
-        <Link
-          href="/#home"
-          onClick={close}
-          className="text-2xl"
-          aria-label="THE HYBRID METHOD, inicio"
-        >
-          <Wordmark />
+        <Link href="/#home" onClick={close} className="shrink-0">
+          <Logo variant="horizontal" priority className="w-56 sm:w-64 lg:w-72" />
         </Link>
 
         <nav aria-label="Principal" className="hidden lg:block">
