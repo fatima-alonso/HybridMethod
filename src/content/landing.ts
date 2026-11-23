@@ -30,7 +30,7 @@ export const NAV_LINKS = [
 
 export const HERO = {
   eyebrow: "by Ferro Fits",
-  // PLACEHOLDER: titular y bajada pendientes de aprobación de la marca.
+  // Titular y subtítulo en inglés por decisión de la marca (DECISIONS A13).
   title: ["Run.", "Lift.", "Hybrid."],
   lead: "Individualized training built for your goals. Strength, running and hybrid performance under one method.",
   primaryCta: "Elige tu programa",

@@ -116,6 +116,11 @@ permiten espacios, guiones, puntos y paréntesis como separadores; el valor se n
 - `/privacidad` y `/condiciones` existen como páginas provisionales para que funcionen los enlaces del
   formulario y del footer; su texto definitivo llega en la Fase 8 (B12).
 
+### A13. Titular y subtítulo del hero en inglés (Fase 1, 2026-11-23)
+Por decisión de la marca, el titular ("Run. Lift. Hybrid.") y el subtítulo del hero van en inglés.
+Es una excepción acotada a la regla de textos en español (CLAUDE.md); el resto de la interfaz sigue en
+español salvo los nombres de sección del SRS §4.2. Están en `HERO` de `src/content/landing.ts`.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
