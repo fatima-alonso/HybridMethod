@@ -119,9 +119,7 @@ export const APPLICATION = {
   title: "Athlete Application",
   lead: "Completa tus datos para empezar. Solo te pediremos lo necesario: tus objetivos y experiencia los platicas con Ferro por WhatsApp después de contratar.",
   submit: "Continuar",
-  // La verificación de correo (OTP) y la selección del método de pago llegan en la Fase 3.
-  pendingNotice:
-    "¡Tus datos son válidos! La verificación de correo y el pago estarán disponibles muy pronto. Mientras tanto, puedes escribirle a Ferro por WhatsApp.",
+  submitting: "Enviando código…",
 };
 
 /** FAQ: respuestas basadas en el SRS. PLACEHOLDER: la marca puede ajustar redacción y añadir más. */

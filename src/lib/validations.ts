@@ -88,3 +88,25 @@ export const applicationSchema = z.object({
 
 export type ApplicationInput = z.input<typeof applicationSchema>;
 export type Application = z.output<typeof applicationSchema>;
+
+// ─── API de la Fase 3 (SDD §7.1, §7.6) ──────────────────────────────────────
+
+/** `POST /api/verification/request`. */
+export const verificationRequestSchema = z.object({ email: emailSchema });
+
+/** Código OTP de 6 dígitos. Se toleran espacios y guiones al pegarlo. */
+export const otpCodeSchema = z
+  .string({ error: "Escribe el código de 6 dígitos." })
+  .transform((value) => value.replace(/[\s-]/g, ""))
+  .pipe(z.string().regex(/^\d{6}$/, "El código tiene 6 dígitos."));
+
+/** `POST /api/verification/confirm`. */
+export const verificationConfirmSchema = z.object({ email: emailSchema, code: otpCodeSchema });
+
+/**
+ * `POST /api/transfers`: el formulario completo salvo el correo, que se toma de la sesión de
+ * verificación (SDD §7.2). Se vuelve a validar todo en el servidor (RF-05).
+ */
+export const transferRequestSchema = applicationSchema.omit({ email: true });
+
+export type TransferRequestBody = z.input<typeof transferRequestSchema>;

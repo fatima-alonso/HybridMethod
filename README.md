@@ -66,6 +66,10 @@ externo funciona en modo desarrollo (p. ej. los correos se registran en consola 
 `TRANSFER_LINK_TTL_DAYS`, y el servidor no arranca si falta alguna. Detalle en
 [`src/lib/config.ts`](src/lib/config.ts) y en DECISIONS A9.
 
+Para probar el flujo de contratación (Fase 3) en local hace falta `DATABASE_URL` con las migraciones y el
+seed aplicados. Sin `RESEND_API_KEY`, el código de verificación aparece en la terminal de `npm run dev`
+(`[email:dev] … Tu código: 123456`), igual que el correo Transfer Pending con el enlace para Ferro.
+
 ## Scripts
 
 | Script                 | Qué hace                                                   |

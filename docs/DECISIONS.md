@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -198,6 +198,60 @@ guardarlos en E.164 (lo que también necesitan los enlaces `wa.me`).
   cliente y servidor). Para restringir países, se filtra la lista de `getPhoneCountryOptions()` y se
   valida el país en ese esquema.
 
+### A16. Verificación de correo, rate limit y transferencias (Fase 3, 2026-11-24)
+Puntos que el SDD no definía y que se resolvieron así al implementar la Fase 3. Todos son reversibles.
+
+**Endpoints.** Siguiendo el plan, `POST /api/transfers` crea o asocia el cliente y crea el contrato en una
+sola llamada (recibe nombre, WhatsApp, programa y la aceptación de privacidad; el correo sale de la sesión).
+`POST /api/customers` y `POST /api/contracts` (SDD §7.2, §7.3) no se exponen todavía: la lógica vive en
+`customer.service` y `contract.service`, y el pago con Stripe (Fase 5) la reutilizará igual.
+
+**Enlace de aprobación en la Fase 3.** El token de `TransferApproval` se genera al crear la transferencia
+(SDD §7.6), porque el correo Transfer Pending de esta fase debe llevar el enlace (RF-09). La pantalla del
+enlace, la confirmación con PIN y la regeneración siguen en la Fase 4; hasta entonces el enlace da 404.
+
+**OTP.**
+- Hash del código: HMAC-SHA256 de `correo + código` con una clave derivada de `OTP_SESSION_SECRET`
+  (un SHA-256 simple de 6 dígitos se invierte en segundos si se filtra la BD).
+- Solo vale el código más reciente de cada correo. Cada intento cuenta, también el correcto, y se registra
+  con un compare-and-set antes de comparar. Responder igual exista o no el correo incluye el error de un
+  correo sin código pedido (`code_expired`).
+- Si el correo con el código no se puede enviar, la ruta responde 502 (el cliente puede reintentar a los 60 s).
+
+**Rate limit (PostgreSQL, tabla `rate_limit_buckets`).** En Vercel la memoria no se comparte entre
+instancias, así que los contadores viven en la BD (ventana fija, un `INSERT … ON CONFLICT` atómico). La IP o
+el correo se guardan como HMAC, nunca en claro. Límites iniciales (`RATE_LIMITS` en `src/lib/rate-limit.ts`):
+
+| Operación | Límite |
+|---|---|
+| Pedir código, por IP | 20 por hora |
+| Pedir código, por correo | 1 cada 60 s y 5 por hora |
+| Confirmar código | 30 por IP y 15 por correo cada 15 min (además de 5 intentos por código) |
+| Crear transferencia, por IP | 10 por hora |
+
+La IP sale del primer valor de `x-forwarded-for` (lo pone el proxy de Vercel). Al exceder un límite se
+responde 429 con `Retry-After`. `purgeRateLimitBuckets()` queda lista para el cron diario (Fase 8).
+
+**Sesión de verificación.** Cookie `hm_verification` (en producción `__Host-hm_verification`), firmada con
+HMAC-SHA256, `httpOnly`, `SameSite=Lax`, `Secure` en producción, 30 minutos. No es de un solo uso: dentro de
+la sesión, un doble envío del mismo cliente, programa y modalidad devuelve el contrato ya creado (se
+serializa con un `pg_advisory_xact_lock` por cliente). Otra contratación distinta en la misma sesión sí se
+crea; las reglas de contrataciones sobre un periodo vigente siguen pendientes (B9). Si falta
+`OTP_SESSION_SECRET` en desarrollo, se usa un secreto aleatorio por proceso.
+
+**Protección de las rutas.** Las rutas POST exigen `Content-Type: application/json` (un formulario HTML de
+otro sitio no puede enviarlo sin CORS) y la cookie es `SameSite=Lax`. Las respuestas llevan
+`Cache-Control: no-store`.
+
+**Interfaz.** El flujo vive en la sección Athlete Application (formulario → código → método de pago →
+transferencia pendiente), sin páginas nuevas: la pantalla de transferencia pendiente muestra los datos que
+devuelve `POST /api/transfers` y no existe una URL pública que muestre un contrato por su referencia (las
+referencias son consecutivas). Los pagos con Stripe se muestran deshabilitados hasta las Fases 5 y 6.
+
+**Correo.** Con `RESEND_API_KEY` se envía con Resend (SDK `resend`); sin ella (solo desarrollo y pruebas) se
+registra en la consola, incluido el código OTP para poder probar el flujo. En desarrollo, si falta
+`RESEND_FROM_EMAIL`, se usa el remitente de prueba de Resend.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -210,8 +264,25 @@ guardarlos en E.164 (lo que también necesitan los enlaces `wa.me`).
 | 6 | Fechas exactas del periodo de un mes | Fase 4 | Propuesta: el periodo de Stripe para suscripciones; el mismo día del mes siguiente para pago único y transferencia |
 | 7 | Reintentos y suspensión por pagos fallidos | Fase 6 | Propuesta: Smart Retries de Stripe con la configuración por defecto; el servicio sigue mientras esté `past_due` |
 | 8 | Mecanismo de cancelación | Fase 7 | Propuesta: Stripe Customer Portal con acceso por OTP; cancelar al final del periodo |
-| 9 | Nuevas contrataciones con un periodo vigente | Fase 7 | Pendiente |
+| 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | Fase 7 (se puede adelantar) | Pendiente. Ver la nota B9 abajo |
 | 10 | WhatsApp oficial de Ferro | Fase 1 (placeholder en la variable de entorno) | Pendiente |
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador existente |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
+
+### Nota B9. Cliente que vuelve a contratar con un contrato pendiente (2026-11-24)
+Hoy (Fase 3), si un cliente que ya tiene un contrato `pending_payment` vuelve a contratar en otra sesión,
+se reutiliza su Customer (mismo correo) pero se crea **otro contrato** con otra referencia, y Ferro recibe otro
+correo Transfer Pending. Solo se evita el duplicado por doble envío dentro de la misma sesión (A16).
+Ejemplo: alguien elige transferencia, no paga y vuelve días después → dos referencias para la misma persona.
+
+Opciones a decidir con Ferro:
+1. **Reutilizar el contrato pendiente** (recomendada): tras verificar el correo, si ya hay un contrato
+   `pending_payment` del mismo programa y modalidad, mostrar esa referencia en lugar de crear otro. No expone
+   datos de terceros porque el cliente ya verificó su correo (RF-15).
+2. **Permitirlo y avisar a Ferro**: crear el contrato nuevo, pero indicar en el correo Transfer Pending que el
+   cliente tiene otro pendiente.
+3. **Dejarlo como está** hasta la Fase 7.
+
+Falta definir también: qué pasa si el pendiente es de otro programa, si los pendientes viejos vencen o se
+cancelan, y cómo encaja con un contrato `active` vigente (el resto de B9).

@@ -12,7 +12,7 @@ import type { ProgramOption } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
 type FieldName = "fullName" | "email" | "whatsapp" | "program" | "privacyAccepted";
-type Values = {
+export type ApplicationFormValues = {
   fullName: string;
   email: string;
   whatsappCountry: string;
@@ -20,6 +20,7 @@ type Values = {
   program: ProgramSlug | "";
   privacyAccepted: boolean;
 };
+type Values = ApplicationFormValues;
 type Errors = Partial<Record<FieldName, string>>;
 
 const FIELD_ORDER: FieldName[] = ["fullName", "email", "whatsapp", "program", "privacyAccepted"];
@@ -46,25 +47,43 @@ type Props = {
   countries: readonly PhoneCountryOption[];
   /** Programa preseleccionado desde el CTA de un programa (RF-03). */
   preselectedProgram?: ProgramSlug;
+  /** Valores con los que empieza (al regresar desde otro paso del flujo). */
+  initialValues?: ApplicationFormValues;
+  /** Se llama con datos válidos según el esquema compartido. */
+  onSubmit?: (values: ApplicationFormValues) => void;
+  /** Mientras se envía: deshabilita el botón. */
+  busy?: boolean;
+  /** Error del servidor que se muestra bajo el botón. */
+  serverError?: string | null;
 };
 
 /**
- * Formulario Athlete Application (RF-04, RF-05). Fase 1: solo UI y validación en cliente.
- * En la Fase 3 el envío pedirá el código OTP (`POST /api/verification/request`) con el mismo
- * esquema Zod validado también en el servidor.
+ * Formulario Athlete Application (RF-04, RF-05). Valida con el esquema Zod compartido, que el
+ * servidor vuelve a aplicar (`POST /api/transfers`). Al enviarlo, `ApplicationFlow` pide el código
+ * de verificación del correo (DECISIONS A4).
  */
-export function ApplicationForm({ programs, countries, preselectedProgram }: Props) {
-  const [values, setValues] = useState<Values>({
-    fullName: "",
-    email: "",
-    whatsappCountry: DEFAULT_PHONE_COUNTRY,
-    whatsapp: "",
-    program: preselectedProgram ?? "",
-    privacyAccepted: false,
-  });
+export function ApplicationForm({
+  programs,
+  countries,
+  preselectedProgram,
+  initialValues,
+  onSubmit: onValidSubmit,
+  busy = false,
+  serverError = null,
+}: Props) {
+  const [values, setValues] = useState<Values>(
+    () =>
+      initialValues ?? {
+        fullName: "",
+        email: "",
+        whatsappCountry: DEFAULT_PHONE_COUNTRY,
+        whatsapp: "",
+        program: preselectedProgram ?? "",
+        privacyAccepted: false,
+      },
+  );
   const [errors, setErrors] = useState<Errors>({});
   const [submitted, setSubmitted] = useState(false);
-  const [done, setDone] = useState(false);
 
   // Si el usuario pulsa el CTA de otro programa con el formulario ya montado, se actualiza
   // la selección sin borrar lo que ya escribió (ajuste de estado durante el render).
@@ -89,7 +108,6 @@ export function ApplicationForm({ programs, countries, preselectedProgram }: Pro
   function update<K extends keyof Values>(field: K, value: Values[K]) {
     const next = { ...values, [field]: value };
     setValues(next);
-    setDone(false);
     if (submitted) setErrors(validate(next));
   }
 
@@ -100,7 +118,6 @@ export function ApplicationForm({ programs, countries, preselectedProgram }: Pro
     setErrors(nextErrors);
     const firstInvalid = FIELD_ORDER.find((field) => nextErrors[field]);
     if (firstInvalid) {
-      setDone(false);
       const target =
         firstInvalid === "program"
           ? formRef.current?.querySelector<HTMLInputElement>(`input[name="program"]`)
@@ -108,8 +125,7 @@ export function ApplicationForm({ programs, countries, preselectedProgram }: Pro
       target?.focus();
       return;
     }
-    // Fase 1: no se envía nada al servidor (ver comentario del componente).
-    setDone(true);
+    if (!busy) onValidSubmit?.(values);
   }
 
   const inputClass = (field: FieldName, size = "block w-full px-4 text-lg") =>
@@ -206,7 +222,7 @@ export function ApplicationForm({ programs, countries, preselectedProgram }: Pro
               aria-describedby={[`${ids.whatsapp}-hint`, describedBy("whatsapp")]
                 .filter(Boolean)
                 .join(" ")}
-              className={inputClass("whatsapp", "min-w-0 flex-1 px-4 text-lg")}
+              className={inputClass("whatsapp", "w-0 min-w-0 flex-1 px-4 text-lg")}
             />
           </div>
           <p id={`${ids.whatsapp}-hint`} className="mt-2 text-sm text-bone/65">
@@ -280,12 +296,17 @@ export function ApplicationForm({ programs, countries, preselectedProgram }: Pro
         {fieldError("privacyAccepted")}
       </div>
 
-      <button type="submit" className={`w-full sm:w-auto ${buttonPrimary}`}>
-        {APPLICATION.submit}
+      <button
+        type="submit"
+        disabled={busy}
+        aria-busy={busy}
+        className={`w-full sm:w-auto ${buttonPrimary}`}
+      >
+        {busy ? APPLICATION.submitting : APPLICATION.submit}
       </button>
 
-      <p role="status" className="min-h-6 font-semibold text-bone">
-        {done ? APPLICATION.pendingNotice : ""}
+      <p role="alert" className="min-h-6 font-semibold text-volt">
+        {serverError ?? ""}
       </p>
     </form>
   );
