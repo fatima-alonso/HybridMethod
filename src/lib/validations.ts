@@ -110,3 +110,32 @@ export const verificationConfirmSchema = z.object({ email: emailSchema, code: ot
 export const transferRequestSchema = applicationSchema.omit({ email: true });
 
 export type TransferRequestBody = z.input<typeof transferRequestSchema>;
+
+// ─── Confirmación de transferencias (Fase 4, DECISIONS A7) ──────────────────
+
+/** PIN de aprobación de Ferro: de 6 a 12 dígitos. */
+export const PIN_MIN_LENGTH = 6;
+export const PIN_MAX_LENGTH = 12;
+export const PIN_PATTERN = new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`);
+
+export const approvalPinSchema = z
+  .string({ error: "Escribe tu PIN." })
+  .trim()
+  .min(1, "Escribe tu PIN.")
+  .regex(PIN_PATTERN, `El PIN tiene de ${PIN_MIN_LENGTH} a ${PIN_MAX_LENGTH} dígitos.`);
+
+/** `POST /api/transfers/confirm`: solo `{ token, pin }` (no existe `reject`, DECISIONS A5). */
+export const transferConfirmSchema = z.object({
+  token: z.string({ error: "Falta el enlace." }).min(1, "Falta el enlace.").max(128),
+  pin: approvalPinSchema,
+});
+
+/** `POST /api/transfers/regenerate`. */
+export const transferRegenerateSchema = z.object({
+  reference: z
+    .string({ error: "Escribe la referencia." })
+    .trim()
+    .toUpperCase()
+    .regex(/^HM-\d{4}-\d{6,}$/, "La referencia tiene el formato HM-AAAA-NNNNNN."),
+  pin: approvalPinSchema,
+});

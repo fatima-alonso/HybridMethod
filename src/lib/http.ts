@@ -23,6 +23,10 @@ export type ApiErrorCode =
   | "too_many_attempts"
   | "program_unavailable"
   | "email_failed"
+  | "invalid_pin"
+  | "link_unavailable"
+  | "contract_not_pending"
+  | "not_found"
   | "service_unavailable"
   | "internal_error";
 

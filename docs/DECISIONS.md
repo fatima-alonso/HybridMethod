@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17 en **SRS v1.7** y **SDD v1.8**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -252,6 +252,61 @@ referencias son consecutivas). Los pagos con Stripe se muestran deshabilitados h
 registra en la consola, incluido el código OTP para poder probar el flujo. En desarrollo, si falta
 `RESEND_FROM_EMAIL`, se usa el remitente de prueba de Resend.
 
+### A17. Confirmación manual de transferencias (Fase 4, 2026-11-24)
+Puntos que el SDD no definía y que se resolvieron así al implementar la Fase 4. Todos son reversibles.
+
+**Periodo de servicio (aplica la propuesta de B6, pendiente de confirmar con Ferro).** Para transferencia
+(y, en la Fase 5, pago único) el periodo empieza en el momento de la confirmación y termina el mismo día
+del mes siguiente a la misma hora de America/Mexico_City; si ese día no existe (31 de enero), el último
+día del mes siguiente. La regla vive solo en `src/utils/service-period.ts` (`oneMonthServicePeriod`): si
+Ferro decide otra, se cambia ahí. Las suscripciones usarán el periodo de Stripe (Fase 6).
+
+**PIN.**
+- De 6 a 12 dígitos. `npm run hash-pin` pide el PIN dos veces sin mostrarlo (no como argumento, para
+  que no quede en el historial) y rechaza un dígito repetido o una secuencia (123456, 654321).
+- Solo **bcrypt** (`bcryptjs`, costo 12): la configuración ya no acepta hashes argon2, porque la app
+  no podría verificarlos. Sin `FERRO_APPROVAL_PIN_HASH` (solo posible en desarrollo) la confirmación
+  responde 503: no hay PIN por defecto.
+- Next.js expande `$` en los archivos `.env`, así que el script imprime el hash escapado (`\$2b\$…`)
+  para `.env.local` y sin escapar para Vercel.
+
+**Intentos de PIN sobre un enlace.** Cada intento se cuenta con un compare-and-set **antes** de comparar
+el PIN (igual que los OTP en A16), así que con solicitudes simultáneas nunca se prueban más de 5 PIN por
+enlace. Si el PIN es correcto, ese intento se descuenta al aprobar: `pinAttempts` sigue siendo el número
+de PIN incorrectos. Al quinto error se marca `invalidatedAt`.
+
+**Concurrencia.** La confirmación y la regeneración bloquean primero la fila del contrato
+(`SELECT … FOR UPDATE`) y después tocan los enlaces, en el mismo orden, para no provocar deadlocks. Dos
+confirmaciones simultáneas con el PIN correcto crean un solo Payment.
+
+**Regeneración (`POST /api/transfers/regenerate` con `{ reference, pin }`).**
+- Se ofrece en la propia página del enlace cuando está vencido o invalidado (con la referencia ya
+  puesta) y cuando el token no existe (Ferro escribe la referencia). No hay otra página.
+- Con un PIN incorrecto la respuesta es igual exista o no la referencia. Aquí no hay un enlace que
+  cuente los intentos, así que el rate limit es por IP (10 por hora) y además **global** (30 por hora):
+  limita la adivinación del PIN aunque venga de muchas IP, a costa de que un ataque pueda bloquear la
+  regeneración durante una hora (no afecta a la confirmación con un enlace vigente).
+- El enlace nuevo solo viaja en el correo de Ferro; si ese correo falla, la ruta responde 502.
+
+**Confirmación.** Rate limit de 20 por IP cada 15 minutos, además de los 5 PIN por enlace. Respuestas:
+403 `invalid_pin` con `remainingAttempts`; 404/410 `link_unavailable` con `reason`
+(`not_found`, `expired`, `used`, `invalidated`); 409 `contract_not_pending`.
+
+**Página del enlace.** Muestra los datos del cliente solo con un enlace válido; con uno vencido,
+invalidado o usado muestra solo la referencia. Además de los encabezados de `next.config.ts`
+(`Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`, `Cache-Control: no-store`), lleva
+las metaetiquetas `robots` y `referrer`. Los formularios usan `method="post"` y el botón se habilita al
+hidratar, para que un envío temprano nunca ponga el PIN en la URL. "No, regresar" solo navega
+(atrás o al inicio).
+
+**Correos tras confirmar.** Transfer Confirmed y Welcome al cliente, y Payment Received a Ferro (RF-13
+pide avisarle de la confirmación manual; le sirve como comprobante). Un fallo se registra en la
+auditoría (`transfer.notification_failed`) y nunca revierte el pago.
+
+**Código.** `transfer-approval.service.ts` (vista, confirmación y regeneración) y `payment.service.ts`
+(`recordSucceededPayment`, que reutilizará la Fase 5). `activateContract` acepta `from` para exigir el
+estado de origen (`pending_payment` en las transferencias).
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -261,7 +316,7 @@ registra en la consola, incluido el código OTP para poder probar el flujo. En d
 | 3 | Correo de notificaciones de Ferro | — | Disponible, falta ponerlo en la variable de entorno |
 | 4 | Dominio | Fase 8 | Pendiente |
 | 5 | Remitente de Resend | Fase 8 | Pendiente (depende del dominio) |
-| 6 | Fechas exactas del periodo de un mes | Fase 4 | Propuesta: el periodo de Stripe para suscripciones; el mismo día del mes siguiente para pago único y transferencia |
+| 6 | Fechas exactas del periodo de un mes | — | Se aplicó la propuesta en A17 (mismo día del mes siguiente; periodo de Stripe en suscripciones). Falta que Ferro la confirme |
 | 7 | Reintentos y suspensión por pagos fallidos | Fase 6 | Propuesta: Smart Retries de Stripe con la configuración por defecto; el servicio sigue mientras esté `past_due` |
 | 8 | Mecanismo de cancelación | Fase 7 | Propuesta: Stripe Customer Portal con acceso por OTP; cancelar al final del periodo |
 | 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | Fase 7 (se puede adelantar) | Pendiente. Ver la nota B9 abajo |

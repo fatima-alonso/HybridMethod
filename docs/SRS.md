@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.6 |
+| **Versión** | 1.7 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -14,6 +14,7 @@
 | 1.3 | — | Borrador actualizado para desarrollo. |
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
+| 1.7 | 2026-11-24 | §13: periodo de un mes para pago único y transferencia (mismo día del mes siguiente), aplicado según la propuesta y pendiente de confirmar con Ferro (DECISIONS A17). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
 
 ---
@@ -576,7 +577,7 @@ La primera versión se considerará funcional cuando:
 | 3 | Correo que recibirá las notificaciones de Ferro | La dirección ya está disponible. Falta agregarla a la configuración. |
 | 4 | Dominio definitivo | Probablemente GoDaddy o Vercel. Pendiente de compra y configuración. |
 | 5 | Remitente de Resend | Pendiente de definir y verificar el dominio/remitente. |
-| 6 | Duración de los periodos de servicio | Definido: un mes. Falta establecer la configuración exacta de las fechas de facturación. |
+| 6 | Duración de los periodos de servicio | Definido: un mes. Aplicada la propuesta (DECISIONS A17): en pago único y transferencia, del momento de la confirmación al mismo día del mes siguiente; en suscripciones, el periodo de Stripe. Falta que Ferro la confirme. |
 | 7 | Política de reintentos y suspensión por pagos fallidos | Pendiente de definir. |
 | 8 | Mecanismo definitivo de cancelación | Pendiente de definir. |
 | 9 | Reglas para nuevas contrataciones con un periodo vigente | Pendiente de definir. |

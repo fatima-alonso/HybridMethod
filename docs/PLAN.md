@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.6 y SDD v1.6 (ya incluyen las decisiones A1–A12, A14 y A15). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.7 y SDD v1.8 (ya incluyen las decisiones A1–A12, A14 y A15). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
@@ -86,7 +86,7 @@ WhatsApp en celulares. Pruebas: unitarias, de BD (servicios, rate limit y rutas,
 SDD §12.3 que aplican: sin sesión, cookie falsificada, enumeración de correos, precio manipulado) y de interfaz
 del flujo.
 
-## Fase 4 — Confirmación manual de transferencias ⬜ (RF-11, RF-12, RF-20, RN-04, RN-05)
+## Fase 4 — Confirmación manual de transferencias ✅ (RF-11, RF-12, RF-20, RN-04, RN-05)
 - (El token ya se genera en la Fase 3: `createTransferApproval` en `transfer.service`, solo hash, 7 días.)
 - **Aplicar DECISIONS A5 y A7.** Script `npm run hash-pin` para generar `FERRO_APPROVAL_PIN_HASH`.
 - `GET /transfer/confirm/[token]`: pantalla de solo lectura (`noindex`, `no-referrer`) con los datos del
@@ -97,6 +97,18 @@ del flujo.
   Transfer Confirmed + Welcome. Con 5 PIN incorrectos, el token se invalida.
 - Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace.
 - Pruebas de seguridad del SDD §12.3 relacionadas con tokens.
+
+**Resultado (2026-11-24):** `GET /transfer/confirm/[token]` (solo lectura, `noindex`/`no-referrer` en
+encabezados y metaetiquetas), `POST /api/transfers/confirm` y `POST /api/transfers/regenerate`, con la lógica
+en `transfer-approval.service` y `payment.service`. `npm run hash-pin` (bcrypt, PIN de 6 a 12 dígitos, hash
+escapado para `.env`). Cada intento de PIN se cuenta antes de compararlo (nunca más de 5 por enlace, también con
+solicitudes simultáneas); al quinto error se invalida el enlace. La confirmación marca el enlace, crea el
+Payment, activa el contrato y audita (IP, user-agent) en una transacción, y después envía Transfer Confirmed,
+Welcome y Payment Received. La regeneración se ofrece en la propia página. El periodo aplica la propuesta de B6
+(mismo día del mes siguiente), pendiente de confirmar con Ferro. Decisiones en DECISIONS A17. Pruebas:
+unitarias (periodo, PIN, script, plantillas, formulario), de servicio con PostgreSQL y de rutas (SDD §12.3:
+tokens vencidos, usados, invalidados e inexistentes; 5 PIN incorrectos; sin token o sin PIN; concurrencia;
+encabezados de la página).
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD

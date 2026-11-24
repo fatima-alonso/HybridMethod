@@ -1,8 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
+  async headers() {
+    return [
+      {
+        // Enlace privado de confirmación de transferencias (SDD §7.6, DECISIONS A7): el token va en
+        // la URL, así que no se envía como Referer, no se indexa y no se guarda en caché.
+        source: "/transfer/confirm/:token*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+    ];
+  },
   partialPrefetching: true,
   turbopack: {
     rules: {

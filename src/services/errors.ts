@@ -38,3 +38,39 @@ export class InvalidServicePeriodError extends ServiceError {
     super(message, "invalid_service_period");
   }
 }
+
+// ─── Confirmación de transferencias (Fase 4) ────────────────────────────────
+
+/** Por qué un enlace de aprobación no se puede usar (SDD §10). */
+export type TransferLinkProblem = "not_found" | "expired" | "used" | "invalidated";
+
+export class TransferLinkUnavailableError extends ServiceError {
+  constructor(
+    public readonly reason: TransferLinkProblem,
+    /** Referencia del contrato, si el token existe (para ofrecer regenerar el enlace). */
+    public readonly reference: string | null = null,
+  ) {
+    super(`El enlace de aprobación no se puede usar (${reason}).`, "transfer_link_unavailable");
+  }
+}
+
+export class InvalidApprovalPinError extends ServiceError {
+  constructor(
+    /** Intentos que le quedan al enlace; `null` si la operación no va ligada a un enlace. */
+    public readonly remainingAttempts: number | null,
+  ) {
+    super("PIN de aprobación incorrecto.", "invalid_pin");
+  }
+}
+
+export class ContractNotPendingError extends ServiceError {
+  constructor(
+    public readonly reference: string,
+    public readonly status: string,
+  ) {
+    super(
+      `El contrato ${reference} ya no está pendiente de pago (${status}).`,
+      "contract_not_pending",
+    );
+  }
+}

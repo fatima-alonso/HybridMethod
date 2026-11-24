@@ -2,10 +2,16 @@ import { getConfig } from "@/lib/config";
 import { getResendClient, RESEND_DEV_FROM } from "@/lib/resend";
 
 import {
+  paymentReceivedEmail,
+  transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
+  welcomeEmail,
   type EmailContent,
+  type PaymentReceivedEmailInput,
+  type TransferConfirmedEmailInput,
   type TransferPendingEmailInput,
+  type WelcomeEmailInput,
 } from "./email/templates";
 
 /**
@@ -76,4 +82,21 @@ export function sendVerificationCodeEmail(input: {
 /** Transfer Pending (Ferro), con el enlace privado de confirmación (RF-09, RF-13). */
 export function sendTransferPendingEmail(input: TransferPendingEmailInput): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...transferPendingEmail(input) });
+}
+
+/** Transfer Confirmed (cliente): Ferro confirmó la transferencia (RF-12). */
+export function sendTransferConfirmedEmail(
+  input: TransferConfirmedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...transferConfirmedEmail(input) });
+}
+
+/** Welcome (cliente): el servicio se activó (RF-12, RF-14). */
+export function sendWelcomeEmail(input: WelcomeEmailInput & { to: string }): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...welcomeEmail(input) });
+}
+
+/** Payment Received (Ferro): pago registrado, incluida una transferencia confirmada (RF-13). */
+export function sendPaymentReceivedEmail(input: PaymentReceivedEmailInput): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...paymentReceivedEmail(input) });
 }
