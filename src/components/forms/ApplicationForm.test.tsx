@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PROGRAMS } from "@/content/programs";
 import { getPhoneCountryOptions } from "@/lib/phone";
@@ -86,7 +86,7 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
     expect(name.getAttribute("aria-invalid")).toBe("true");
     expect(name.getAttribute("aria-describedby")).toBeTruthy();
     expect(document.activeElement).toBe(name);
-    expect(screen.getByRole("status").textContent).toBe("");
+    expect(screen.getByRole("alert").textContent).toBe("");
   });
 
   it("valida el formato del correo y del WhatsApp", () => {
@@ -132,19 +132,44 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
     expect(screen.queryByText("Elige un programa.")).toBeNull();
   });
 
-  it("con datos válidos no muestra errores y avisa que el siguiente paso llega pronto", () => {
+  it("con datos válidos entrega los valores al flujo sin mostrar errores", () => {
+    const onSubmit = vi.fn();
     render(
       <ApplicationForm
         programs={PROGRAMS}
         countries={COUNTRIES}
         preselectedProgram="hm-complete"
+        onSubmit={onSubmit}
       />,
     );
     fillValid();
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
 
     expect(screen.queryAllByText(/^(Escribe|Elige|Debes)/)).toHaveLength(0);
-    expect(screen.getByRole("status").textContent).toMatch(/verificación de correo/);
+    expect(onSubmit).toHaveBeenCalledWith({
+      fullName: "Ana López",
+      email: "ana@example.com",
+      whatsappCountry: "MX",
+      whatsapp: "55 1234 5678",
+      program: "hm-complete",
+      privacyAccepted: true,
+    });
+  });
+
+  it("con datos inválidos no llama al flujo", () => {
+    const onSubmit = vi.fn();
+    render(<ApplicationForm programs={PROGRAMS} countries={COUNTRIES} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("mientras se envía, deshabilita el botón y muestra el error del servidor", () => {
+    render(
+      <ApplicationForm programs={PROGRAMS} countries={COUNTRIES} busy serverError="Sin conexión" />,
+    );
+    const button = screen.getByRole("button", { name: "Enviando código…" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toBe("Sin conexión");
   });
 
   it("enlaza a la política de privacidad", () => {

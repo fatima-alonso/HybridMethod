@@ -67,7 +67,7 @@ model Customer {
   fullName         String
   /// Normalizado: minúsculas y sin espacios (CHECK en la migración).
   email            String   @unique
-  /// Normalizado a "+" opcional y dígitos (DECISIONS A11).
+  /// En E.164, p. ej. +525512345678 (DECISIONS A15; CHECK en la migración).
   whatsapp         String
   stripeCustomerId String?  @unique
   createdAt        DateTime @default(now())
@@ -245,4 +245,16 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+/// Contadores de rate limit por ventana fija (DECISIONS A16). Se guardan en la BD porque en
+/// Vercel cada instancia tiene su propia memoria. `key` = "<alcance>:<SHA-256 del identificador>":
+/// nunca se guarda la IP ni el correo en claro.
+model RateLimitBucket {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
 }

@@ -60,7 +60,7 @@ creaciones y activaciones simultáneas. Decisiones de implementación en DECISIO
 WhatsApp de cualquier país con selector de lada (México por defecto), validado con `libphonenumber-js` y guardado
 en E.164 (DECISIONS A15, resuelve B13).
 
-## Fase 3 — Formulario, verificación de correo y transferencia ⬜ (RF-04, RF-05, RF-06, RF-09, RF-10, RF-15, RF-13 parcial)
+## Fase 3 — Formulario, verificación de correo y transferencia ✅ (RF-04, RF-05, RF-06, RF-09, RF-10, RF-15, RF-13 parcial)
 - `email.service` con Resend (o registro en consola en desarrollo).
 - Formulario con validación en cliente y servidor (Zod compartido): nombre, correo,
   WhatsApp, programa y aceptación de la política de privacidad.
@@ -74,8 +74,20 @@ en E.164 (DECISIONS A15, resuelve B13).
 - Pantalla de transferencia pendiente con la referencia y un botón `wa.me` con mensaje prellenado.
 - Plantillas de correo: código OTP para el cliente y Transfer Pending para Ferro.
 
+**Resultado (2026-11-24):** `POST /api/verification/request`, `/confirm` y `POST /api/transfers` en `src/app/api/`,
+con la lógica en `verification.service`, `transfer.service` y `email.service` (Resend o consola, plantillas en
+`src/services/email/`). Sesión de verificación firmada en `src/lib/verification-session.ts`, criptografía en
+`src/lib/crypto.ts` y rate limit en PostgreSQL (`src/lib/rate-limit.ts`, tabla `rate_limit_buckets`).
+Flujo en la landing (`src/components/checkout/`): formulario → código (reenvío a los 60 s) → método de pago
+(Stripe deshabilitado) → transferencia pendiente con referencia y botón `wa.me`. El enlace privado de Ferro se
+genera en esta fase porque va en el correo Transfer Pending; su pantalla y la confirmación con PIN son de la
+Fase 4. Decisiones de implementación en DECISIONS A16. Se corrigió el desbordamiento horizontal del campo de
+WhatsApp en celulares. Pruebas: unitarias, de BD (servicios, rate limit y rutas, incluidas las de seguridad del
+SDD §12.3 que aplican: sin sesión, cookie falsificada, enumeración de correos, precio manipulado) y de interfaz
+del flujo.
+
 ## Fase 4 — Confirmación manual de transferencias ⬜ (RF-11, RF-12, RF-20, RN-04, RN-05)
-- Generar el token (solo se guarda el hash), con expiración configurable (propuesta: 7 días) y un solo uso.
+- (El token ya se genera en la Fase 3: `createTransferApproval` en `transfer.service`, solo hash, 7 días.)
 - **Aplicar DECISIONS A5 y A7.** Script `npm run hash-pin` para generar `FERRO_APPROVAL_PIN_HASH`.
 - `GET /transfer/confirm/[token]`: pantalla de solo lectura (`noindex`, `no-referrer`) con los datos del
   contrato, un campo de PIN y los botones "Sí, confirmar pago" / "No, regresar" (este último no hace POST).

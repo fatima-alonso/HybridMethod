@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.6 |
+| **Versión** | 1.7 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.5 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -15,6 +15,7 @@
 | 1.3 | 2026-11-23 | Se incorporan las decisiones A1–A8 de `docs/DECISIONS.md`: sin `country`; relación Contract N:1 Program; estados de Contract sin `paid`; OTP obligatorio con sesión de verificación; confirmación de transferencia con enlace + PIN y sin `reject`; eventos de webhook con una sola fuente de verdad; dos Price IDs por programa; se agrega la entidad AuditLog. |
 | 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
+| 1.7 | 2026-11-24 | Fase 3 (DECISIONS A16): §5.3 entidad RateLimitBucket y hash HMAC de los OTP; §7.1 límites concretos y nombre de la cookie; §7.6 body de `POST /api/transfers` (crea o asocia el cliente) y protección ante doble envío; §9.4 rate limit en PostgreSQL. |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
@@ -352,7 +353,7 @@ Permite verificar el correo electrónico.
 | id | String / UUID | Identificador |
 | customerId | String? (FK) | Cliente asociado, si ya existe |
 | email | String | Correo normalizado |
-| codeHash | String | Hash del código |
+| codeHash | String | HMAC-SHA256 del correo y el código, con una clave derivada de `OTP_SESSION_SECRET` (DECISIONS A16) |
 | expiresAt | DateTime | Expiración (10 minutos) |
 | attempts | Integer | Intentos (máximo 5) |
 | verifiedAt | DateTime? | Fecha de verificación |
@@ -387,6 +388,17 @@ Registra las operaciones sensibles (confirmación de transferencias, intentos fa
 | userAgent | String? | User-agent |
 | metadata | Json? | Datos adicionales, sin información sensible |
 | createdAt | DateTime | Fecha |
+
+#### RateLimitBucket
+Contadores de rate limit de ventana fija (DECISIONS A16). Viven en la BD porque en Vercel cada instancia tiene su propia memoria.
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| key | String (PK) | `<alcance>:<HMAC del identificador>`; la IP o el correo nunca se guardan en claro |
+| count | Integer | Solicitudes en la ventana actual (≥ 1) |
+| windowStart | DateTime | Inicio de la ventana actual |
+
+Se actualiza con un único `INSERT … ON CONFLICT DO UPDATE` (atómico). Los contadores viejos se purgan con `purgeRateLimitBuckets()` (cron diario, Fase 8).
 
 ### 5.4 Consideraciones de integridad
 - Los identificadores principales deben ser únicos.
@@ -468,8 +480,9 @@ Response (siempre la misma, exista o no el correo):
   "message": "Si el correo es válido, recibirás un código."
 }
 ```
-- Genera un código de 6 dígitos, guarda su hash, expira en 10 minutos.
-- Reenvío limitado a uno cada 60 segundos; rate limit por correo y por IP.
+- Genera un código de 6 dígitos, guarda su hash, expira en 10 minutos. Solo vale el código más reciente de cada correo.
+- Reenvío limitado a uno cada 60 segundos; rate limit por correo (5 códigos por hora) y por IP (20 por hora). Al exceder un límite responde 429 con `retryAfterSeconds` (no revela si el correo existe).
+- Si el correo no se puede enviar, responde 502 para que el cliente lo intente de nuevo.
 
 **`POST /api/verification/confirm`** — Valida el código.
 
@@ -487,7 +500,8 @@ Response:
 }
 ```
 - Máximo 5 intentos por código. Al verificarlo se marca `verifiedAt` y el código queda inutilizable.
-- Si es correcto, el servidor emite una **sesión de verificación**: una cookie `httpOnly`, `Secure`, `SameSite=Lax`, firmada con `OTP_SESSION_SECRET`, que contiene el correo verificado y dura 30 minutos.
+- Si es incorrecto responde 400 con `invalid_code` y `remainingAttempts`; si venció, ya se usó o no existe, `code_expired`; con 5 intentos, `too_many_attempts`. Rate limit: 30 intentos por IP y 15 por correo cada 15 minutos.
+- Si es correcto, el servidor emite una **sesión de verificación**: una cookie `httpOnly`, `Secure`, `SameSite=Lax`, firmada con `OTP_SESSION_SECRET` (HMAC-SHA256), que contiene el correo verificado y dura 30 minutos. En producción se llama `__Host-hm_verification`.
 - Ningún endpoint que cree contratos o muestre datos privados funciona sin esta sesión.
 
 ### 7.2 Clientes
@@ -583,6 +597,16 @@ Los eventos se procesan de forma idempotente y toleran entregas repetidas o fuer
 ### 7.6 Transferencias
 **`POST /api/transfers`** — Crea una transferencia pendiente. Requiere la sesión de verificación.
 
+Request (el correo se toma de la sesión, no del body; el importe sale del programa en la BD):
+```json
+{
+  "fullName": "Nombre del cliente",
+  "whatsapp": { "country": "MX", "number": "55 1234 5678" },
+  "program": "hm-run",
+  "privacyAccepted": true
+}
+```
+
 Response:
 ```json
 {
@@ -591,7 +615,9 @@ Response:
   "status": "pending_payment"
 }
 ```
-Crea el contrato `pending_payment`, genera el token de aprobación (solo se guarda su hash) y envía el correo Transfer Pending a Ferro con el enlace `${APP_URL}/transfer/confirm/<token>`.
+En una transacción crea o asocia el Customer (como `POST /api/customers`), crea el contrato `pending_payment`, genera el token de aprobación (solo se guarda su hash) y escribe AuditLog (`transfer.requested`). Después envía el correo Transfer Pending a Ferro con el enlace `${APP_URL}/transfer/confirm/<token>`; si falla, el contrato se conserva y se registra `transfer.notification_failed`. La respuesta también incluye el programa, el importe y el enlace `wa.me` prellenado (RF-10).
+
+Si en la misma sesión de verificación ya existe un contrato `pending_payment` por transferencia del mismo cliente y programa (un doble envío), devuelve ese contrato sin crear otro ni reenviar el correo (DECISIONS A16). Rate limit: 10 por IP por hora.
 
 **`GET /transfer/confirm/[token]`** — Página privada para que Ferro revise la transferencia.
 
@@ -807,7 +833,8 @@ Abrir el enlace es solo lectura; confirmar requiere un POST explícito con el PI
 ### 9.4 Verificación de correo
 - Códigos de 6 dígitos guardados como hash, 10 minutos de vigencia, máximo 5 intentos, un solo uso.
 - La respuesta al pedir un código no revela si el correo existe.
-- Rate limit por correo y por IP en la solicitud y en la confirmación.
+- Rate limit por correo y por IP en la solicitud y en la confirmación, guardado en PostgreSQL (`rate_limit_buckets`, DECISIONS A16).
+- El hash del código es un HMAC con una clave del servidor: con solo un millón de códigos posibles, un SHA-256 simple se podría invertir si se filtrara la BD.
 - La sesión de verificación es una cookie firmada, `httpOnly`, `Secure`, `SameSite=Lax`, de 30 minutos.
 
 ### 9.5 Protección de endpoints

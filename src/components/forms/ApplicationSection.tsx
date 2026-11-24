@@ -6,7 +6,8 @@ import { SectionHeading } from "@/components/shared/SectionHeading";
 import { getPhoneCountryOptions } from "@/lib/phone";
 import type { ProgramOption } from "@/types/program";
 
-import { ApplicationForm } from "./ApplicationForm";
+import { ApplicationFlow } from "@/components/checkout/ApplicationFlow";
+
 import { ApplicationFormFromUrl } from "./ApplicationFormFromUrl";
 
 export function ApplicationSection({ programs }: { programs: readonly ProgramOption[] }) {
@@ -27,7 +28,7 @@ export function ApplicationSection({ programs }: { programs: readonly ProgramOpt
       <Container className="grid gap-12 lg:grid-cols-[1fr_1.6fr]">
         <SectionHeading id="application-title" title={APPLICATION.title} lead={APPLICATION.lead} />
         {/* useSearchParams necesita un límite de Suspense para poder prerenderizar la página. */}
-        <Suspense fallback={<ApplicationForm programs={options} countries={countries} />}>
+        <Suspense fallback={<ApplicationFlow programs={options} countries={countries} />}>
           <ApplicationFormFromUrl programs={options} countries={countries} />
         </Suspense>
       </Container>
