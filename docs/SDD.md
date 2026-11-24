@@ -212,7 +212,7 @@ Contract ──1:N──> TransferApproval  (un enlace vigente a la vez; los ant
 
 Payment  ──1:0..1──> ServicePeriod  (cada pago exitoso abre un mes)
 Program  ──1:N──> ServicePeriod     (programa de ese mes; en suscripciones puede cambiar)
-ServicePeriod ──1:1──> PlanDeliveryLink (el botón del correo de compra)
+ServicePeriod ──1:N──> PlanDeliveryLink (el botón del correo de compra y uno por recordatorio)
 
 Subscription ──1:N──> Payment       (un Payment por cada factura pagada)
 
@@ -389,17 +389,18 @@ Controla los enlaces privados para confirmar transferencias.
 Un token es válido solo si `usedAt`, `invalidatedAt` son nulos, `expiresAt > now` y `pinAttempts < 5`. Al generar un enlace nuevo para un contrato, los anteriores se invalidan.
 
 #### PlanDeliveryLink
-El botón "Registrar entrega del plan" del correo de compra (DECISIONS A19). Uno por ServicePeriod.
+Los botones "Registrar entrega del plan" (DECISIONS A19): uno en el correo de compra y uno en cada recordatorio.
 
 | Campo | Tipo | Descripción |
 |---|---|---|
 | id | String / UUID | Identificador |
-| servicePeriodId | String (FK, UNIQUE) | Mes al que pertenece |
+| servicePeriodId | String (FK) | Mes al que pertenece |
 | tokenHash | String (UNIQUE) | Hash SHA-256 del token |
-| usedAt | DateTime? | Cuándo se registró la entrega |
+| expiresAt | DateTime | Expiración (7 días, `TRANSFER_LINK_TTL_DAYS`) |
+| usedAt | DateTime? | Si con este botón se registró la entrega |
 | createdAt | DateTime | Creación |
 
-Sin expiración y sin PIN: solo registra un dato de referencia y tiene que seguir sirviendo mientras lleguen recordatorios. Es de un solo uso.
+Un botón es válido si `expiresAt > now` y su ServicePeriod no tiene `planDeliveredOn`. Varios botones del mismo mes pueden estar vigentes a la vez; registrar la entrega con uno deja sin efecto a todos. No pide PIN: solo registra un dato de referencia.
 
 #### OTPVerification
 Permite verificar el correo electrónico.
@@ -497,7 +498,7 @@ Resend envía los correos electrónicos.
 | Verification Code | Cliente | Solicitud de verificación de correo |
 | Purchase Confirmation | Cliente | Pago inicial exitoso |
 | Welcome Email | Cliente | Activación del servicio (incluye "Ferro te entregará tu plan en 3 a 5 días hábiles") |
-| Plan Delivery Reminder | Entrenador | Cada día hábil, uno por cada mes sin fecha de entrega: "Está pendiente el plan de [cliente]". Sin botón |
+| Plan Delivery Reminder | Entrenador | Cada día hábil, uno por cada mes sin fecha de entrega: "Está pendiente el plan de [cliente]", con su propio botón "Registrar entrega del plan" |
 | Transfer Pending | Entrenador | Nueva transferencia pendiente (incluye el enlace privado) |
 | Payment Received | Entrenador | Cada pago confirmado (pago único, transferencia, primer pago de suscripción): datos completos del cliente y de la compra, y botón "Registrar entrega del plan" |
 | Renewal Successful | Entrenador | Renovación exitosa: los mismos datos y su propio botón de entrega |
@@ -716,7 +717,7 @@ Request:
 Comportamiento:
 1. Calcula el hash del token y busca un TransferApproval válido.
 2. Verifica el PIN contra `FERRO_APPROVAL_PIN_HASH`. Si es incorrecto, incrementa `pinAttempts`, escribe la auditoría y responde con error; con 5 errores, invalida el token.
-3. Verifica que el contrato siga en `pending_payment`.
+3. Verifica que el contrato siga en `pending_payment` o en `expired` (pago tardío: se respeta y se audita `contract.paid_after_expiry`, DECISIONS A20).
 4. En una sola transacción: marca `usedAt` y `approvedBy = "ferro"`, crea el Payment (`method = transfer`, `succeeded`), el ServicePeriod (un mes desde la confirmación) y su PlanDeliveryLink, pasa el contrato a `active` (o `scheduled`) y escribe AuditLog (IP, user-agent).
 5. Después de la transacción, envía Transfer Confirmed y Welcome al cliente y Payment Received (con el botón de entrega) a Ferro.
 
@@ -735,27 +736,28 @@ En el portal (DECISIONS A21), el cliente puede:
 El sistema se entera por `customer.subscription.updated/deleted`: sincroniza Subscription y, al cancelarse, pasa el contrato a `cancelled` y envía Subscription Cancelled al cliente y a Ferro. No hay endpoints propios de cancelación ni de consulta de suscripciones.
 
 ### 7.8 Entrega del plan
-Solo registra un dato de referencia (DECISIONS A19). Cada ServicePeriod crea su PlanDeliveryLink en la misma transacción del pago, y el botón va en el correo Payment Received o Renewal Successful.
+Solo registra un dato de referencia (DECISIONS A19). Cada ServicePeriod crea su primer PlanDeliveryLink en la misma transacción del pago, y el botón va en el correo Payment Received o Renewal Successful. Cada recordatorio crea otro.
 
 **`GET /plan/entrega/[token]`**: página de **solo lectura**, con los mismos encabezados que `/transfer/confirm/[token]`.
-- Muestra el cliente, el programa, la referencia, la fecha de pago y el periodo, y un botón "Confirmar entrega".
+- Muestra el cliente, el programa, la referencia, la fecha de pago y el periodo, un campo de fecha (hoy por defecto) y un botón "Confirmar entrega".
 - Si la entrega ya se registró, muestra la fecha registrada.
-- Si el token no existe, muestra "Enlace no válido" sin dar más detalles.
+- Si el token no existe o venció, muestra "Enlace no válido o vencido" y que el siguiente recordatorio traerá un botón nuevo.
 
 **`POST /api/plan-delivery/confirm`**
 ```json
-{ "token": "secure_random_token" }
+{ "token": "secure_random_token", "deliveredOn": "2026-11-27" }
 ```
-1. Calcula el hash del token y busca el PlanDeliveryLink.
-2. En una transacción con compare-and-set (`WHERE usedAt IS NULL`): marca `usedAt`, guarda en el ServicePeriod `planDeliveredOn` = hoy en `America/Mexico_City` y `deliveryRecordedAt`, y escribe `plan.delivered` en AuditLog (IP, user-agent).
-3. Responde con la fecha. La página muestra "Fecha de entrega del plan confirmada".
+1. Calcula el hash del token y busca un PlanDeliveryLink vigente.
+2. Valida `deliveredOn`: no puede ser futuro (en `America/Mexico_City`) ni anterior al día de `paidAt`.
+3. En una transacción con compare-and-set sobre el ServicePeriod (`WHERE planDeliveredOn IS NULL`): guarda `planDeliveredOn` y `deliveryRecordedAt`, marca `usedAt` en el botón usado y escribe `plan.delivered` en AuditLog (IP, user-agent).
+4. Responde con la fecha. La página muestra "Fecha de entrega del plan confirmada".
 
 No cambia estados, periodos ni cobros, y no envía correos. Si la entrega ya estaba registrada, responde con la fecha existente sin cambiar nada. Rate limit por IP.
 
 **`GET /api/cron/daily`**: lo llama Vercel Cron una vez al día. Exige `Authorization: Bearer ${CRON_SECRET}`. Ejecuta tareas idempotentes:
 - Vencer los pendientes (`pending_payment → expired`).
 - Persistir `scheduled → active` y `active → completed`.
-- De lunes a viernes: por cada ServicePeriod sin `planDeliveredOn` que tenga `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` días hábiles o más desde `paidAt` (1 por defecto) y no tenga recordatorio hoy, enviar Plan Delivery Reminder y actualizar `lastReminderAt`. El recordatorio no lleva un enlace nuevo.
+- De lunes a viernes: por cada ServicePeriod sin `planDeliveredOn` que tenga `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` días hábiles o más desde `paidAt` (1 por defecto) y no tenga recordatorio hoy, crear un PlanDeliveryLink nuevo, enviar Plan Delivery Reminder con su botón y actualizar `lastReminderAt`.
 - Purgar `rate_limit_buckets`.
 
 ---
@@ -891,12 +893,12 @@ Pago confirmado (cualquier método) -> ServicePeriod + PlanDeliveryLink
 Ferro entrega el plan por WhatsApp (3 a 5 días hábiles)
   |
   v
-Botón del correo -> GET /plan/entrega/[token] (solo lectura) -> "Confirmar entrega"
+Botón del correo -> GET /plan/entrega/[token] (solo lectura) -> fecha (hoy por defecto) + "Confirmar entrega"
   |
   v
-POST /api/plan-delivery/confirm { token } -> planDeliveredOn = hoy -> "Fecha de entrega del plan confirmada"
+POST /api/plan-delivery/confirm { token, deliveredOn } -> "Fecha de entrega del plan confirmada"
 
-Mientras no se registre: cron de días hábiles -> Plan Delivery Reminder (uno por cliente, sin botón).
+Mientras no se registre: cron de días hábiles -> Plan Delivery Reminder (uno por cliente, con botón nuevo).
 Se detiene al registrar la fecha. Nada de esto cambia periodos ni cobros.
 ```
 
@@ -951,7 +953,7 @@ El PIN de aprobación:
 
 Abrir el enlace es solo lectura; confirmar requiere un POST explícito con el PIN. Los escáneres automáticos de enlaces no pueden aprobar transferencias. Si el enlace expira, el contrato sigue pendiente y se puede regenerar.
 
-El botón de entrega del plan (PlanDeliveryLink) usa el mismo tipo de token (32 bytes, solo el hash, un solo uso), pero sin expiración ni PIN: solo guarda un dato de referencia. También es solo lectura en el GET y escribe únicamente con un POST explícito, para que los escáneres de correo no registren una fecha falsa.
+El botón de entrega del plan (PlanDeliveryLink) usa el mismo tipo de token (32 bytes, solo el hash, 7 días de vigencia) y deja de servir al registrarse la entrega, pero no pide PIN: solo guarda un dato de referencia. También es solo lectura en el GET y escribe únicamente con un POST explícito, para que los escáneres de correo no registren una fecha falsa.
 
 ### 9.4 Verificación de correo
 - Códigos de 6 dígitos guardados como hash, 10 minutos de vigencia, máximo 5 intentos, un solo uso.
@@ -1048,8 +1050,9 @@ El dominio se compra en GoDaddy (DECISIONS A17). Sus DNS se apuntan a Vercel y s
 - Cancelación y cambio de plan desde el portal (webhooks).
 - Transiciones válidas e inválidas de estados del contrato.
 - Periodos: un mes desde la fecha de pago, fin de mes en meses cortos, mes por adelantado (`scheduled`).
-- Registro de la entrega: GET sin efectos, POST guarda la fecha de hoy, doble registro sin cambios.
-- Recordatorios: solo días hábiles, uno por cliente y por día, se detienen al registrar la entrega.
+- Registro de la entrega: GET sin efectos, fecha por defecto hoy, fecha futura o anterior al pago rechazada, botón vencido, varios botones del mismo mes, doble registro sin cambios.
+- Recordatorios: solo días hábiles, uno por cliente y por día, cada uno con botón nuevo, se detienen al registrar la entrega.
+- Transferencia confirmada sobre un contrato vencido (pago tardío).
 - Pendiente reutilizado, cambiado y vencido; pago tardío; límite de un mes por adelantado; suscripción activa.
 - Precio de suscripción con 10 % de descuento.
 
@@ -1101,7 +1104,7 @@ Interacciones con:
 | 6 | Periodos de servicio | **Definido:** un mes desde la fecha de pago (ServicePeriod); la entrega del plan es solo referencia (§7.8). |
 | 7 | Reintentos y suspensión | **Definido:** Smart Retries; `payment_failed` suspende el servicio; al agotarse, se cancela. |
 | 8 | Mecanismo de cancelación | **Definido:** Stripe Customer Portal con OTP (§7.7). |
-| 9 | Nuevas contrataciones con un periodo vigente | **Definido** en §7.3. Falta confirmar con Ferro el pago tardío de un contrato vencido. |
+| 9 | Nuevas contrataciones con un periodo vigente | **Definido** en §7.3. |
 | 10 | WhatsApp oficial de Ferro | **Definido.** Variable de entorno en Vercel. |
 | 11 | Expiración y regeneración de enlaces privados | **Definido:** 7 días, un solo uso, invalidación tras 5 PIN incorrectos, regenerable. |
 | 12 | Política de privacidad y condiciones | Borrador publicado (DECISIONS A22). Faltan los datos del responsable y la revisión legal. |

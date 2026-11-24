@@ -4,8 +4,7 @@ Basado en SRS v1.7 y SDD v1.8 (ya incluyen las decisiones A1–A12 y A14–A22).
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
-Para el lanzamiento (Fase 8) faltan la compra del dominio, los datos del responsable en el aviso de privacidad y
-confirmar con Ferro la regla del pago tardío de un contrato vencido (A20).
+Para el lanzamiento (Fase 8) faltan la compra del dominio y los datos del responsable en el aviso de privacidad.
 
 ---
 
@@ -103,11 +102,12 @@ del flujo.
   Después envía Transfer Confirmed + Welcome (cliente) y Payment Received con todos los datos del cliente y el
   botón "Registrar entrega del plan" (Ferro). Con 5 PIN incorrectos, el token se invalida.
 - **Entrega del plan, solo referencia (SDD §7.8, DECISIONS A19):** `delivery.service`,
-  `GET /plan/entrega/[token]` (solo lectura) y `POST /api/plan-delivery/confirm` (guarda la fecha de hoy y
-  muestra "Fecha de entrega del plan confirmada"). Sin PIN ni expiración.
+  `GET /plan/entrega/[token]` (solo lectura) y `POST /api/plan-delivery/confirm` (guarda la fecha elegida, hoy por defecto, y
+  muestra "Fecha de entrega del plan confirmada"). Sin PIN; cada botón vence a los 7 días.
 - `GET /api/cron/daily` con `CRON_SECRET`: vencimientos, `scheduled → active`, `active → completed`,
-  recordatorios de entrega de lunes a viernes (uno por cliente, sin botón) y purga del rate limit.
-- Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace.
+  recordatorios de entrega de lunes a viernes (uno por cliente, cada uno con botón nuevo) y purga del rate limit.
+- Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace, también para un
+  contrato vencido (pago tardío, DECISIONS A20).
 - Pruebas de seguridad del SDD §12.3 relacionadas con tokens.
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)

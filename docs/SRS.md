@@ -296,7 +296,7 @@ El contrato sigue en `pending_payment` mientras el entrenador no lo apruebe. No 
 Cuando el entrenador confirme una transferencia, el sistema deberá:
 - Validar que el enlace sea válido, esté vigente y no se haya usado.
 - Validar el PIN del entrenador.
-- Verificar que el contrato siga en `pending_payment`.
+- Verificar que el contrato siga pendiente de pago (`pending_payment`, o `expired` si venció sin pagarse: el pago se respeta, RF-21).
 - Registrar el pago como exitoso.
 - Registrar quién confirmó el pago y cuándo.
 - Invalidar el enlace usado.
@@ -363,12 +363,12 @@ Los enlaces para confirmar transferencias deberán:
 
 Si un enlace expira o se invalida, el contrato no se elimina ni se cancela: sigue en `pending_payment` y se puede generar un enlace nuevo.
 
-El botón de entrega del plan (RF-23) tiene sus propias reglas: token seguro guardado solo como hash, un solo uso y sin expiración.
+El botón de entrega del plan (RF-23) tiene sus propias reglas: token seguro guardado solo como hash, vence a los 7 días, no pide PIN y deja de servir en cuanto se registra la entrega.
 
 ### RF-21. Contrataciones posteriores
 Reglas para un cliente que vuelve a contratar (DECISIONS A20):
 - **Un solo contrato pendiente por cliente.** Si ya tiene uno del mismo programa y modalidad, se reutiliza su referencia. Si es de otro programa o modalidad, la página le avisa que se encontró un registro pendiente y le pregunta si quiere continuar con él o cambiarlo. Si lo cambia, se actualiza el mismo contrato y conserva su referencia.
-- **Vencimiento.** Un contrato pendiente vence tras 7 días sin actividad (configurable). Un contrato vencido ya no se reutiliza. Si aun así llega un pago confirmado, se respeta.
+- **Vencimiento.** Un contrato pendiente vence tras 7 días sin actividad (configurable). Un contrato vencido ya no se reutiliza. Si aun así llega un pago real (una transferencia que Ferro confirma o un pago de Stripe que se confirma tarde), se respeta y el contrato se activa.
 - **Pago por adelantado.** Con un contrato de pago único o transferencia vigente o por empezar, el cliente puede pagar su siguiente mes, del mismo programa o de otro. Ese mes empieza cuando termina el vigente. Se permite un solo mes por adelantado.
 - **Con suscripción activa** no se puede crear otra contratación: el cambio de programa se hace en el portal (RF-19).
 
@@ -383,10 +383,10 @@ La fecha de entrega del plan no cambia el periodo ni los cobros.
 El entrenador entrega el plan de 3 a 5 días hábiles después del pago. El sistema guardará la fecha de entrega **solo como dato de referencia** (DECISIONS A19).
 
 - Después de cada pago confirmado, el entrenador recibe un correo de compra con todos los datos del cliente y de la compra, y un botón **"Registrar entrega del plan"**.
-- El botón abre una pantalla con los datos de ese plan y un botón para confirmar. Al confirmar, el sistema guarda como fecha de entrega el día de hoy y muestra **"Fecha de entrega del plan confirmada"**. No hace nada más.
+- El botón abre una pantalla con los datos de ese plan, un campo de fecha (hoy por defecto, se puede cambiar) y un botón para confirmar. La fecha no puede ser futura ni anterior al día del pago. Al confirmar, el sistema guarda la fecha y muestra **"Fecha de entrega del plan confirmada"**. No hace nada más.
 - Se pide esa confirmación explícita porque algunos programas de correo abren los enlaces automáticamente. Si bastara con abrir el enlace, se registraría una fecha falsa en cuanto llega el correo.
-- El botón sirve una sola vez. Si se abre de nuevo, muestra la fecha ya registrada.
-- Mientras no se registre la fecha, el sistema envía al entrenador **cada día hábil** (lunes a viernes) un recordatorio: "Está pendiente el plan de [cliente]". El recordatorio no trae un botón nuevo: la fecha se registra con el botón del correo de compra. Los recordatorios se detienen en cuanto se registra la fecha.
+- La fecha se registra una sola vez. Si se abre un botón de ese plan después, muestra la fecha ya registrada.
+- Mientras no se registre la fecha, el sistema envía al entrenador **cada día hábil** (lunes a viernes) un recordatorio: "Está pendiente el plan de [cliente]", con su propio botón "Registrar entrega del plan". Los recordatorios se detienen en cuanto se registra la fecha con cualquiera de los botones.
 
 ---
 

@@ -306,22 +306,27 @@ periodo ni cobro.
 renovación de la suscripción), Ferro recibe un correo con todos los datos del cliente y de la compra (nombre,
 correo, WhatsApp, programa, modalidad, importe, referencia, fecha de pago y periodo) y un botón **"Registrar
 entrega del plan"**.
-- El botón abre `/plan/entrega/[token]`, una pantalla de **solo lectura** con los datos del plan y un botón
-  "Confirmar entrega". Al presionarlo (POST), se guarda como fecha de entrega el día de hoy
-  (`America/Mexico_City`) y se muestra **"Fecha de entrega del plan confirmada"**.
+- El botón abre `/plan/entrega/[token]`, una pantalla de **solo lectura** con los datos del plan, un campo de
+  fecha y un botón "Confirmar entrega". La fecha es **hoy por defecto** (`America/Mexico_City`) y Ferro puede
+  cambiarla "por cualquier cosa" (p. ej. si registra días después). No puede ser futura ni anterior al día del
+  pago. Al presionar el botón (POST), se guarda esa fecha y se muestra **"Fecha de entrega del plan
+  confirmada"**.
 - La pantalla intermedia es necesaria: los filtros de correo (Outlook, Gmail, antivirus) abren los enlaces
   automáticamente. Si el GET registrara la fecha, quedaría la fecha de llegada del correo y no la de entrega.
 - **Sin PIN.** El botón solo guarda un dato de referencia y no mueve dinero ni estados. Un enlace filtrado, en el
   peor caso, registra una fecha equivocada que se corrige a mano.
-- Token de 32 bytes guardado solo como hash, de **un solo uso** y **sin expiración**. Tiene que seguir sirviendo
-  mientras lleguen recordatorios. Si se abre después de usarlo, muestra la fecha ya registrada.
+- Token de 32 bytes guardado solo como hash. Cada botón vence a los 7 días (`TRANSFER_LINK_TTL_DAYS`), y deja de
+  servir en cuanto se registra la entrega con cualquiera de los botones de ese mes. Un mes puede tener varios
+  botones vigentes a la vez (el del correo de compra y los de los recordatorios), y ninguno invalida a los otros.
+  Si se abre después de registrar la entrega, muestra la fecha ya registrada.
 
 **Recordatorios.** Mientras un mes no tenga fecha de entrega, el cron diario le manda a Ferro, **cada día hábil**
 (lunes a viernes, sin festivos), **un correo por cliente**: "Está pendiente el plan de [cliente] · [programa] ·
 [referencia] · pagado el [fecha]". Empiezan el siguiente día hábil después del pago
 (`PLAN_DELIVERY_REMINDER_BUSINESS_DAYS`, 1 por defecto) y se detienen en cuanto se registra la fecha. El
-recordatorio **no trae un botón nuevo**: la fecha se registra con el botón del correo de compra, como lo pidió
-Ferro.
+recordatorio **trae su propio botón "Registrar entrega del plan"** (un token nuevo), así Ferro puede registrar
+la fecha desde el correo más reciente aunque haya borrado el de compra. Por eso los botones pueden vencer sin
+riesgo: mientras falte la fecha, cada día hábil llega uno nuevo.
 
 **Correos al cliente.** Como siempre: confirmación de compra y bienvenida al confirmarse el pago. La bienvenida
 avisa que Ferro entregará el plan en 3 a 5 días hábiles.
@@ -349,10 +354,14 @@ parcial). Al pedir una contratación con el correo ya verificado:
 `PENDING_CONTRACT_TTL_DAYS`) y pasa a `expired`. Cuenta como actividad crearlo, retomarlo, cambiarlo o
 regenerar su enlace (`Contract.lastActivityAt`). Se vence al leer (antes de buscar pendientes) y con el cron
 diario. Un contrato vencido ya no se reutiliza: si el cliente vuelve, se crea otro.
-- **Pago tardío** *(regla de implementación; confirmar con Ferro)*: si llega un pago confirmado para un contrato
-  ya vencido, se respeta y el contrato se activa. Por ejemplo, un webhook de Stripe atrasado,
-  o una transferencia que Ferro confirma con un enlace regenerado. Se registra `contract.paid_after_expiry`.
-  Así nunca se pierde un pago real.
+- **Pago tardío** (confirmado por Ferro el 2026-11-24): si llega un pago real para un contrato ya vencido, se
+  respeta y el contrato se activa. Se registra `contract.paid_after_expiry`. Así nunca se pierde un pago real.
+  Aplica a los dos caminos:
+  - **Transferencia:** el cliente transfiere después de los 7 días. Ferro regenera el enlace de confirmación
+    (también funciona con contratos vencidos), confirma con su PIN y el contrato se activa con la misma
+    referencia.
+  - **Stripe:** el cliente pagó en Checkout, pero el aviso de Stripe llega cuando el contrato ya venció (por
+    ejemplo, un pago que Stripe tarda en confirmar). El webhook activa el contrato igual.
 
 **Pago por adelantado con un periodo vigente.** Un cliente con un contrato de pago único o transferencia
 vigente o por empezar puede pagar su **siguiente mes** por adelantado, del mismo programa o de otro. Se paga
@@ -391,7 +400,7 @@ responsable (nombre o razón social, domicilio, correo de contacto) y conviene q
 | 6 | Fechas exactas del periodo de un mes | — | Resuelto en A19: un mes desde la fecha de pago; la entrega del plan es solo referencia |
 | 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19: Smart Retries; el servicio se suspende mientras haya un pago vencido |
 | 8 | Mecanismo de cancelación | — | Resuelto en A21: Stripe Customer Portal con OTP, al final del periodo |
-| 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | — | Resuelto en A20 (falta confirmar con Ferro la regla del pago tardío) |
+| 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | — | Resuelto en A20 |
 | 10 | WhatsApp oficial de Ferro | — | Resuelto en A17: se carga en Vercel |
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador en A22; faltan los datos del responsable y la revisión legal |
