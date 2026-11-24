@@ -1,10 +1,10 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.6 y SDD v1.6 (ya incluyen las decisiones A1–A12, A14 y A15). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.7 y SDD v1.8 (ya incluyen las decisiones A1–A12 y A14–A22). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
-Las fases 0–4 se pueden construir completas sin ninguna decisión pendiente.
-Las decisiones que bloquean cada fase están en `docs/DECISIONS.md`.
+Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
+Para el lanzamiento (Fase 8) faltan la compra del dominio y los datos del responsable en el aviso de privacidad.
 
 ---
 
@@ -86,43 +86,61 @@ WhatsApp en celulares. Pruebas: unitarias, de BD (servicios, rate limit y rutas,
 SDD §12.3 que aplican: sin sesión, cookie falsificada, enumeración de correos, precio manipulado) y de interfaz
 del flujo.
 
-## Fase 4 — Confirmación manual de transferencias ⬜ (RF-11, RF-12, RF-20, RN-04, RN-05)
+## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan ⬜ (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
+- **Migración (DECISIONS A18–A20, SDD §5.3):** `Program.subscriptionPrice`; entidades ServicePeriod y
+  PlanDeliveryLink; estados `scheduled` y `expired` con sus transiciones; `Contract.lastActivityAt`; índice único
+  parcial de un pendiente por cliente.
+- Catálogo y seed con `subscriptionPrice` (prueba de −10 %). La landing muestra los dos precios y deja de decir
+  "el mismo precio en cualquier modalidad"; se quita la nota "[Pendiente] Confirmar si el precio incluye IVA".
 - (El token ya se genera en la Fase 3: `createTransferApproval` en `transfer.service`, solo hash, 7 días.)
 - **Aplicar DECISIONS A5 y A7.** Script `npm run hash-pin` para generar `FERRO_APPROVAL_PIN_HASH`.
 - `GET /transfer/confirm/[token]`: pantalla de solo lectura (`noindex`, `no-referrer`) con los datos del
   contrato, un campo de PIN y los botones "Sí, confirmar pago" / "No, regresar" (este último no hace POST).
 - `POST /api/transfers/confirm` con `{ token, pin }`: valida el token, el PIN y que el contrato siga
-  en `pending_payment`; en una sola transacción marca el token como usado, crea el Payment, activa el contrato
-  (fechas de inicio y fin) y escribe la auditoría (IP, user-agent). Después envía los correos
-  Transfer Confirmed + Welcome. Con 5 PIN incorrectos, el token se invalida.
-- Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace.
+  en `pending_payment`; en una sola transacción marca el token como usado, crea el Payment, el ServicePeriod (un
+  mes desde la confirmación) y su botón de entrega, activa el contrato y escribe la auditoría (IP, user-agent).
+  Después envía Transfer Confirmed + Welcome (cliente) y Payment Received con todos los datos del cliente y el
+  botón "Registrar entrega del plan" (Ferro). Con 5 PIN incorrectos, el token se invalida.
+- **Entrega del plan, solo referencia (SDD §7.8, DECISIONS A19):** `delivery.service`,
+  `GET /plan/entrega/[token]` (solo lectura) y `POST /api/plan-delivery/confirm` (guarda la fecha elegida, hoy por defecto, y
+  muestra "Fecha de entrega del plan confirmada"). Sin PIN; cada botón vence a los 7 días.
+- `GET /api/cron/daily` con `CRON_SECRET`: vencimientos, `scheduled → active`, `active → completed`,
+  recordatorios de entrega de lunes a viernes (uno por cliente, cada uno con botón nuevo) y purga del rate limit.
+- Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace, también para un
+  contrato vencido (pago tardío, DECISIONS A20).
 - Pruebas de seguridad del SDD §12.3 relacionadas con tokens.
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD
-  (`stripePriceIdOneTime`) y una comprobación de que el importe en Stripe coincide (DECISIONS A8).
+  (`stripePriceIdOneTime`) y una comprobación de que el importe en Stripe coincide con `monthlyPrice`.
 - `POST /api/webhooks/stripe` con verificación de firma, registro en WebhookEvent e idempotencia.
   Solo se escuchan los eventos de DECISIONS A6.
-- Activación del contrato, registro del Payment y correos Purchase Confirmation, Welcome y Payment Received.
+- Payment + ServicePeriod + contrato `active`; correos Purchase Confirmation y Welcome (cliente) y Payment
+  Received con el botón de entrega (Ferro), construido en la Fase 4.
 - Páginas de éxito y cancelación que solo informan, sin confirmar nada.
 - Pruebas con Stripe CLI (`stripe listen`) y webhooks duplicados o con firma inválida.
 
-## Fase 6 — Suscripciones y renovaciones ⬜ (RF-08, RF-17, RF-18, RN-03)
-- Checkout en modo `subscription` con `stripePriceIdRecurring`. `customer.subscription.*` solo sincroniza el estado.
-- `invoice.paid` es la única fuente de los Payment (el primer pago y las renovaciones): se actualiza el periodo
-  del contrato y se avisa a Ferro (Renewal Successful en las renovaciones).
-- `invoice.payment_failed` → registrar el fallo, actualizar el estado y enviar Payment Failed.
-- Pruebas con Stripe test clocks para simular renovaciones.
+## Fase 6 — Suscripciones y renovaciones ⬜ (RF-08, RF-17, RF-18, RN-03, RN-14)
+- Checkout en modo `subscription` con `stripePriceIdRecurring` (importe = `subscriptionPrice`).
+  `customer.subscription.*` solo sincroniza el estado.
+- `invoice.paid` es la única fuente de los Payment (el primer pago y las renovaciones): crea un ServicePeriod en
+  y su botón de entrega con el periodo de la factura, extiende el contrato y avisa a Ferro (Renewal Successful
+  con botón en las renovaciones). Stripe cobra mes con mes desde el primer pago.
+- `invoice.payment_failed` → registrar el fallo, suspender (`payment_failed`) y enviar Payment Failed.
+  Smart Retries y cancelación al agotarse (configuración de Stripe documentada en el README).
+- Pruebas con Stripe test clocks para simular renovaciones y pagos fallidos.
 
-## Fase 7 — Clientes recurrentes y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21)
-- (El OTP ya existe desde la Fase 3.) Reutilizarlo para que el cliente acceda a la cancelación.
-- Cancelación según la decisión que se tome (recomendado: Stripe Customer Portal), con correos de
-  Subscription Cancelled.
-- Reglas para nuevas contrataciones sobre un periodo vigente (requiere decisión).
+## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
+- Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso
+  "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, un mes por adelantado y bloqueo
+  con suscripción activa. `GET /api/contracts/pending`. (Se puede adelantar.)
+- `POST /api/portal` con OTP y Stripe Customer Portal (cancelar al final del periodo, cambiar de plan,
+  actualizar tarjeta); webhooks y correos de Subscription Cancelled.
 
 ## Fase 8 — Lanzamiento ⬜ (RNF-01, RNF-03, RNF-08, SDD §11)
-- Páginas de política de privacidad y condiciones de contratación, enlazadas desde el formulario y el footer.
+- Versión final de privacidad y condiciones (hay un borrador desde el 2026-11-24, DECISIONS A22): datos del
+  responsable y revisión legal.
 - Metadatos SEO, Open Graph, favicon, sitemap y página 404.
-- Vercel (staging y producción), Neon, Prisma Migrate en el deploy, webhook de producción en Stripe,
-  dominio y remitente verificados en Resend.
-- Prueba de punta a punta de los tres flujos en staging.
+- Vercel (staging y producción) con el cron diario, Neon, Prisma Migrate en el deploy, webhook de producción en
+  Stripe, Customer Portal configurado, dominio de GoDaddy apuntado a Vercel y remitente verificado en Resend.
+- Prueba de punta a punta de los tres flujos en staging, incluida la entrega del plan.

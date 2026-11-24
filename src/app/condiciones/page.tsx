@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
-import { LegalPlaceholder } from "@/components/legal/LegalPlaceholder";
+import { LegalDocumentView } from "@/components/legal/LegalDocumentView";
+import { TERMS } from "@/content/legal";
 
 export const metadata: Metadata = { title: "Condiciones de contratación · THE HYBRID METHOD" };
 
 export default function TermsPage() {
-  return <LegalPlaceholder title="Condiciones de contratación" />;
+  return <LegalDocumentView document={TERMS} />;
 }

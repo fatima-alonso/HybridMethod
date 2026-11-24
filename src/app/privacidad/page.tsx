@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
-import { LegalPlaceholder } from "@/components/legal/LegalPlaceholder";
+import { LegalDocumentView } from "@/components/legal/LegalDocumentView";
+import { PRIVACY_POLICY } from "@/content/legal";
 
 export const metadata: Metadata = { title: "Política de privacidad · THE HYBRID METHOD" };
 
 export default function PrivacyPage() {
-  return <LegalPlaceholder title="Política de privacidad" />;
+  return <LegalDocumentView document={PRIVACY_POLICY} />;
 }
