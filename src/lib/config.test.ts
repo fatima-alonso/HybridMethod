@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ConfigError, getWhatsAppNumber, parseConfig } from "./config";
+import { ConfigError, getDatabaseUrl, getWhatsAppNumber, parseConfig } from "./config";
 
 const validProductionEnv = {
   NODE_ENV: "production",
-  DATABASE_URL: "postgresql://user:pass@host.neon.tech/db?sslmode=require",
+  DATABASE_URL: "postgresql://user:pass@host.neon.tech/db?sslmode=verify-full",
   STRIPE_SECRET_KEY: "sk_test_123",
   STRIPE_WEBHOOK_SECRET: "whsec_123",
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_123",
@@ -159,5 +159,27 @@ describe("getWhatsAppNumber", () => {
     expect(() =>
       getWhatsAppNumber({ NODE_ENV: "production", FERRO_WHATSAPP_NUMBER: "+52 55" }),
     ).toThrow(ConfigError);
+  });
+});
+
+describe("getDatabaseUrl (DECISIONS A14)", () => {
+  it("devuelve la URL sin exigir los demás secretos de producción (next build)", () => {
+    expect(getDatabaseUrl({ NODE_ENV: "production", DATABASE_URL: "postgresql://u:p@h/db" })).toBe(
+      "postgresql://u:p@h/db",
+    );
+  });
+
+  it("devuelve undefined si no está definida o está vacía", () => {
+    expect(getDatabaseUrl({})).toBeUndefined();
+    expect(getDatabaseUrl({ DATABASE_URL: "" })).toBeUndefined();
+  });
+
+  it("lanza ConfigError con un formato inválido, sin mostrar el valor", () => {
+    expect(() => getDatabaseUrl({ DATABASE_URL: "mysql://secreto@h/db" })).toThrow(ConfigError);
+    try {
+      getDatabaseUrl({ DATABASE_URL: "mysql://secreto@h/db" });
+    } catch (error) {
+      expect((error as Error).message).not.toContain("secreto");
+    }
   });
 });

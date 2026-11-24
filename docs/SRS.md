@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.5 |
+| **Versión** | 1.6 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -14,6 +14,7 @@
 | 1.3 | — | Borrador actualizado para desarrollo. |
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
+| 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
 
 ---
 
@@ -198,13 +199,13 @@ El sistema deberá solicitar los siguientes datos:
 | Programa seleccionado | Sí |
 | Aceptación de la política de privacidad | Sí |
 
-No se pedirá información deportiva ni otros datos (por ejemplo, el país) durante este proceso.
+No se pedirá información deportiva ni otros datos (por ejemplo, el país) durante este proceso. El selector de lada del WhatsApp solo sirve para leer el número y no se guarda como país del cliente (DECISIONS A15).
 
 ### RF-05. Validación del formulario
 El sistema deberá:
 - Validar los campos obligatorios.
 - Validar el formato del correo electrónico.
-- Validar que el número de contacto tenga un formato permitido: opcionalmente "+" y de 10 a 15 dígitos; se aceptan espacios, guiones, puntos y paréntesis como separadores y se guardan normalizados (DECISIONS A11).
+- Validar que el número de contacto sea válido para el país elegido en el selector de lada (México por defecto; se acepta cualquier país). Se aceptan espacios, guiones, puntos y paréntesis como separadores, y el número se guarda en formato internacional E.164 (DECISIONS A15).
 - Comprobar la aceptación de la política de privacidad.
 - Evitar registros incompletos.
 

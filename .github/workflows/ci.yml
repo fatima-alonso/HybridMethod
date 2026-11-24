@@ -19,6 +19,22 @@ jobs:
     timeout-minutes: 15
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      # Pruebas de integración con PostgreSQL (proyecto `db` de Vitest, Fase 2).
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hm_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +54,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Pruebas
+      - name: Migraciones al día con el esquema
+        env:
+          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hm_shadow
+        run: |
+          psql postgresql://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE hm_shadow"
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+
+      - name: Pruebas (unitarias y de BD)
         run: npm test
 
       - name: Build

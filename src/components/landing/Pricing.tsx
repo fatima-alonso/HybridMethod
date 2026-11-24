@@ -1,12 +1,12 @@
 import Link from "next/link";
 
-import { PROGRAMS } from "@/content/programs";
 import { PRICING, SECTION_IDS, applicationHref } from "@/content/landing";
 import { Container } from "@/components/shared/Container";
 import { SectionHeading } from "@/components/shared/SectionHeading";
+import type { LandingProgram } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
-export function Pricing() {
+export function Pricing({ programs }: { programs: readonly LandingProgram[] }) {
   return (
     <section
       id={SECTION_IDS.pricing}
@@ -17,7 +17,7 @@ export function Pricing() {
         <SectionHeading id="pricing-title" title={PRICING.title} lead={PRICING.lead} />
 
         <ul className="mt-12 divide-y divide-bone/15 border-y border-bone/15">
-          {PROGRAMS.map((program) => (
+          {programs.map((program) => (
             <li
               key={program.slug}
               className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3 py-6 sm:grid-cols-[1fr_auto_auto] sm:gap-x-8"

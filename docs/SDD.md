@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.5 |
+| **Versión** | 1.6 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.5 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -15,6 +15,7 @@
 | 1.3 | 2026-11-23 | Se incorporan las decisiones A1–A8 de `docs/DECISIONS.md`: sin `country`; relación Contract N:1 Program; estados de Contract sin `paid`; OTP obligatorio con sesión de verificación; confirmación de transferencia con enlace + PIN y sin `reject`; eventos de webhook con una sola fuente de verdad; dos Price IDs por programa; se agrega la entidad AuditLog. |
 | 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
+| 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
 
@@ -157,6 +158,7 @@ the-hybrid-method/
 │   │   ├── subscription.service.ts
 │   │   ├── transfer.service.ts
 │   │   ├── verification.service.ts
+│   │   ├── program.service.ts
 │   │   ├── audit.service.ts
 │   │   └── email.service.ts
 │   ├── content/          # catálogo de programas y textos de la landing (DECISIONS A12)
@@ -214,7 +216,7 @@ Guarda la información básica del cliente.
 | id | String / UUID | Identificador |
 | fullName | String | Nombre completo |
 | email | String (UNIQUE) | Correo electrónico normalizado (minúsculas, sin espacios) |
-| whatsapp | String | Número de contacto (formato E.164) |
+| whatsapp | String | Número de contacto en formato E.164, de cualquier país (DECISIONS A15) |
 | stripeCustomerId | String? (UNIQUE) | ID del cliente en Stripe |
 | createdAt | DateTime | Fecha de registro |
 | updatedAt | DateTime | Última actualización |
@@ -235,9 +237,11 @@ Guarda los programas disponibles.
 | stripePriceIdOneTime | String? | Price de Stripe de tipo `one_time` |
 | stripePriceIdRecurring | String? | Price de Stripe de tipo `recurring` mensual |
 | active | Boolean | Disponibilidad |
+| displayOrder | Integer | Orden en la landing |
 | createdAt | DateTime | Fecha de creación |
+| updatedAt | DateTime | Última actualización |
 
-Los dos Price de Stripe deben tener el mismo importe que `monthlyPrice`. El backend lo comprueba antes de crear un Checkout y registra un error si no coinciden. Los precios definitivos y su tratamiento fiscal deben validarse antes de producción.
+La tabla se llena con el seed desde `src/content/programs.ts`; la landing lee de la BD los programas activos y toma del catálogo solo los textos editoriales (DECISIONS A14). Los dos Price de Stripe deben tener el mismo importe que `monthlyPrice`. El backend lo comprueba antes de crear un Checkout y registra un error si no coinciden. Los precios definitivos y su tratamiento fiscal deben validarse antes de producción.
 
 #### Contract
 Representa una contratación específica.
@@ -386,7 +390,9 @@ Registra las operaciones sensibles (confirmación de transferencias, intentos fa
 
 ### 5.4 Consideraciones de integridad
 - Los identificadores principales deben ser únicos.
-- Las referencias de contratos tienen una restricción UNIQUE y se generan de forma segura ante concurrencia (secuencia de la BD).
+- Las referencias de contratos tienen una restricción UNIQUE y se generan de forma segura ante concurrencia con la secuencia `contract_reference_seq`: `HM-<año en America/Mexico_City>-<consecutivo de 6 dígitos o más>`, sin reinicio anual (DECISIONS A14).
+- Restricciones CHECK en la BD: correo normalizado, WhatsApp en E.164, importes positivos, moneda ISO de 3 letras, formato de la referencia, periodo de servicio coherente y límites de intentos (DECISIONS A14).
+- Las transiciones de estado del contrato son compare-and-set (`UPDATE … WHERE status IN (…)`), así que dos procesos simultáneos no pueden aplicar la misma transición dos veces.
 - Los importes se guardan como `Decimal`, nunca como `float`.
 - Las relaciones usan claves foráneas.
 - Los registros de pago nunca se sobrescriben cuando hay una renovación.

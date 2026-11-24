@@ -1,0 +1,248 @@
+// Esquema de datos de THE HYBRID METHOD (SDD §5, DECISIONS A1–A3, A7, A8, A14).
+//
+// - Dinero siempre en Decimal(10, 2), nunca float.
+// - Los cambios de estado de Contract, Payment y Subscription solo ocurren en `src/services/`.
+// - Restricciones adicionales que Prisma no expresa (CHECK, secuencia de referencias) están en
+//   la migración inicial `prisma/migrations/*_init/migration.sql`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+/// Estados del contrato (DECISIONS A3: no existe `paid`).
+enum ContractStatus {
+  pending_payment
+  active
+  completed
+  payment_failed
+  cancelled
+}
+
+enum PaymentType {
+  transfer
+  one_time
+  subscription
+}
+
+enum PaymentMethod {
+  transfer
+  stripe_one_time
+  stripe_subscription
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  refunded
+}
+
+enum SubscriptionStatus {
+  incomplete
+  active
+  past_due
+  canceled
+  unpaid
+}
+
+enum WebhookEventStatus {
+  received
+  processed
+  failed
+  ignored
+}
+
+// ─── Entidades ──────────────────────────────────────────────────────────────
+
+/// Cliente. Sin campo `country` (DECISIONS A1).
+model Customer {
+  id               String   @id @default(uuid()) @db.Uuid
+  fullName         String
+  /// Normalizado: minúsculas y sin espacios (CHECK en la migración).
+  email            String   @unique
+  /// Normalizado a "+" opcional y dígitos (DECISIONS A11).
+  whatsapp         String
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  contracts        Contract[]
+  subscriptions    Subscription[]
+  otpVerifications OTPVerification[]
+
+  @@map("customers")
+}
+
+/// Programa. Un único precio para todas las modalidades (DECISIONS A8).
+model Program {
+  id                     String   @id @default(uuid()) @db.Uuid
+  slug                   String   @unique
+  name                   String
+  description            String
+  monthlyPrice           Decimal  @db.Decimal(10, 2)
+  currency               String   @default("MXN") @db.Char(3)
+  /// Price de Stripe `one_time` (Fase 5). Mismo importe que `monthlyPrice`.
+  stripePriceIdOneTime   String?  @unique
+  /// Price de Stripe `recurring` mensual (Fase 6). Mismo importe que `monthlyPrice`.
+  stripePriceIdRecurring String?  @unique
+  active                 Boolean  @default(true)
+  /// Orden en la landing (DECISIONS A14).
+  displayOrder           Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  contracts     Contract[]
+  subscriptions Subscription[]
+
+  @@map("programs")
+}
+
+/// Contratación. N:1 con Program (DECISIONS A2).
+model Contract {
+  id                      String         @id @default(uuid()) @db.Uuid
+  /// `HM-AAAA-NNNNNN`, generada con la secuencia `contract_reference_seq`.
+  reference               String         @unique
+  customerId              String         @db.Uuid
+  programId               String         @db.Uuid
+  paymentType             PaymentType
+  status                  ContractStatus @default(pending_payment)
+  /// Copiado de `Program.monthlyPrice` al crear el contrato.
+  amount                  Decimal        @db.Decimal(10, 2)
+  currency                String         @db.Char(3)
+  stripeCheckoutSessionId String?        @unique
+  serviceStartDate        DateTime?
+  serviceEndDate          DateTime?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  program           Program            @relation(fields: [programId], references: [id], onDelete: Restrict)
+  payments          Payment[]
+  subscription      Subscription?
+  transferApprovals TransferApproval[]
+
+  @@index([customerId])
+  @@index([programId])
+  @@index([status, serviceEndDate])
+  @@map("contracts")
+}
+
+/// Cada transacción. Los registros nunca se sobrescriben en una renovación.
+model Payment {
+  id                    String        @id @default(uuid()) @db.Uuid
+  contractId            String        @db.Uuid
+  subscriptionId        String?       @db.Uuid
+  method                PaymentMethod
+  stripePaymentIntentId String?       @unique
+  stripeInvoiceId       String?       @unique
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @db.Char(3)
+  status                PaymentStatus @default(pending)
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+
+  contract     Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@index([contractId])
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+/// Copia local del estado de la suscripción en Stripe (sincronizada por webhooks).
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  customerId           String             @db.Uuid
+  programId            String             @db.Uuid
+  contractId           String             @unique @db.Uuid
+  stripeSubscriptionId String             @unique
+  status               SubscriptionStatus
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  program  Program   @relation(fields: [programId], references: [id], onDelete: Restrict)
+  contract Contract  @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@index([customerId])
+  @@index([programId])
+  @@map("subscriptions")
+}
+
+/// Enlace privado para que Ferro confirme una transferencia (DECISIONS A7).
+/// Válido solo si `usedAt` e `invalidatedAt` son nulos, `expiresAt > now` y `pinAttempts < 5`.
+model TransferApproval {
+  id            String    @id @default(uuid()) @db.Uuid
+  contractId    String    @db.Uuid
+  /// SHA-256 del token; el token en claro nunca se guarda.
+  tokenHash     String    @unique
+  expiresAt     DateTime
+  pinAttempts   Int       @default(0)
+  usedAt        DateTime?
+  invalidatedAt DateTime?
+  approvedBy    String?
+  createdAt     DateTime  @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+
+  @@index([contractId])
+  @@map("transfer_approvals")
+}
+
+/// Código OTP de verificación de correo (DECISIONS A4). Solo se guarda el hash.
+model OTPVerification {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String?   @db.Uuid
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@map("otp_verifications")
+}
+
+/// Eventos de Stripe recibidos. `stripeEventId` UNIQUE garantiza la idempotencia (RN-11).
+model WebhookEvent {
+  id            String             @id @default(uuid()) @db.Uuid
+  stripeEventId String             @unique
+  eventType     String
+  status        WebhookEventStatus @default(received)
+  error         String?
+  processedAt   DateTime?
+  createdAt     DateTime           @default(now())
+
+  @@map("webhook_events")
+}
+
+/// Operaciones sensibles (SRS §10). Nunca contiene códigos, tokens ni PIN (SDD §9.6).
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String
+  actor      String
+  entityType String
+  entityId   String
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

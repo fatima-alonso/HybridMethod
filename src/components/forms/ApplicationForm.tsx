@@ -4,15 +4,18 @@ import Link from "next/link";
 import { useId, useRef, useState, type FormEvent } from "react";
 
 import { APPLICATION } from "@/content/landing";
-import { PROGRAMS, type ProgramSlug } from "@/content/programs";
+import type { ProgramSlug } from "@/content/programs";
+import { DEFAULT_PHONE_COUNTRY, type PhoneCountryOption } from "@/lib/phone";
 import { applicationSchema } from "@/lib/validations";
 import { buttonPrimary } from "@/components/shared/styles";
+import type { ProgramOption } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
 type FieldName = "fullName" | "email" | "whatsapp" | "program" | "privacyAccepted";
 type Values = {
   fullName: string;
   email: string;
+  whatsappCountry: string;
   whatsapp: string;
   program: ProgramSlug | "";
   privacyAccepted: boolean;
@@ -22,7 +25,11 @@ type Errors = Partial<Record<FieldName, string>>;
 const FIELD_ORDER: FieldName[] = ["fullName", "email", "whatsapp", "program", "privacyAccepted"];
 
 function validate(values: Values): Errors {
-  const result = applicationSchema.safeParse(values);
+  const { whatsappCountry, whatsapp, ...rest } = values;
+  const result = applicationSchema.safeParse({
+    ...rest,
+    whatsapp: { country: whatsappCountry, number: whatsapp },
+  });
   if (result.success) return {};
   const errors: Errors = {};
   for (const issue of result.error.issues) {
@@ -33,6 +40,10 @@ function validate(values: Values): Errors {
 }
 
 type Props = {
+  /** Programas activos (de la BD, DECISIONS A14). */
+  programs: readonly ProgramOption[];
+  /** Países para la lada del WhatsApp (se calculan en el servidor, `getPhoneCountryOptions`). */
+  countries: readonly PhoneCountryOption[];
   /** Programa preseleccionado desde el CTA de un programa (RF-03). */
   preselectedProgram?: ProgramSlug;
 };
@@ -42,10 +53,11 @@ type Props = {
  * En la Fase 3 el envío pedirá el código OTP (`POST /api/verification/request`) con el mismo
  * esquema Zod validado también en el servidor.
  */
-export function ApplicationForm({ preselectedProgram }: Props) {
+export function ApplicationForm({ programs, countries, preselectedProgram }: Props) {
   const [values, setValues] = useState<Values>({
     fullName: "",
     email: "",
+    whatsappCountry: DEFAULT_PHONE_COUNTRY,
     whatsapp: "",
     program: preselectedProgram ?? "",
     privacyAccepted: false,
@@ -100,8 +112,8 @@ export function ApplicationForm({ preselectedProgram }: Props) {
     setDone(true);
   }
 
-  const inputClass = (field: FieldName) =>
-    `mt-2 block w-full border-2 bg-ink px-4 py-3 text-lg text-bone placeholder:text-bone/45 focus:border-volt focus:outline-none ${
+  const inputClass = (field: FieldName, size = "block w-full px-4 text-lg") =>
+    `mt-2 ${size} border-2 bg-ink py-3 text-bone placeholder:text-bone/45 focus:border-volt focus:outline-none ${
       errors[field] ? "border-volt" : "border-bone/25"
     }`;
 
@@ -141,7 +153,7 @@ export function ApplicationForm({ preselectedProgram }: Props) {
         {fieldError("fullName")}
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6">
         <div>
           <label htmlFor={ids.email} className="font-semibold">
             Correo electrónico
@@ -165,24 +177,40 @@ export function ApplicationForm({ preselectedProgram }: Props) {
           <label htmlFor={ids.whatsapp} className="font-semibold">
             WhatsApp
           </label>
-          <input
-            id={ids.whatsapp}
-            name="whatsapp"
-            type="tel"
-            autoComplete="tel"
-            inputMode="tel"
-            placeholder="55 1234 5678"
-            required
-            value={values.whatsapp}
-            onChange={(e) => update("whatsapp", e.target.value)}
-            aria-invalid={Boolean(errors.whatsapp)}
-            aria-describedby={[`${ids.whatsapp}-hint`, describedBy("whatsapp")]
-              .filter(Boolean)
-              .join(" ")}
-            className={inputClass("whatsapp")}
-          />
+          <div className="flex gap-2">
+            <select
+              name="whatsappCountry"
+              autoComplete="tel-country-code"
+              aria-label="País de tu número de WhatsApp"
+              value={values.whatsappCountry}
+              onChange={(e) => update("whatsappCountry", e.target.value)}
+              className={inputClass("whatsapp", "w-36 shrink-0 px-2 text-base sm:w-60")}
+            >
+              {countries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.label}
+                </option>
+              ))}
+            </select>
+            <input
+              id={ids.whatsapp}
+              name="whatsapp"
+              type="tel"
+              autoComplete="tel-national"
+              inputMode="tel"
+              placeholder="55 1234 5678"
+              required
+              value={values.whatsapp}
+              onChange={(e) => update("whatsapp", e.target.value)}
+              aria-invalid={Boolean(errors.whatsapp)}
+              aria-describedby={[`${ids.whatsapp}-hint`, describedBy("whatsapp")]
+                .filter(Boolean)
+                .join(" ")}
+              className={inputClass("whatsapp", "min-w-0 flex-1 px-4 text-lg")}
+            />
+          </div>
           <p id={`${ids.whatsapp}-hint`} className="mt-2 text-sm text-bone/65">
-            10 dígitos, o con lada internacional (+52…).
+            Selecciona el país y escribe tu número sin la lada. Aceptamos números de cualquier país.
           </p>
           {fieldError("whatsapp")}
         </div>
@@ -191,7 +219,7 @@ export function ApplicationForm({ preselectedProgram }: Props) {
       <fieldset aria-describedby={describedBy("program")}>
         <legend className="font-semibold">Programa</legend>
         <div className="mt-2 grid gap-3 sm:grid-cols-3">
-          {PROGRAMS.map((program) => {
+          {programs.map((program) => {
             const checked = values.program === program.slug;
             return (
               <label

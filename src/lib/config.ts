@@ -174,3 +174,21 @@ export function getWhatsAppNumber(
   }
   return result.data;
 }
+
+/**
+ * URL de PostgreSQL para el cliente de Prisma.
+ *
+ * Igual que `getWhatsAppNumber`, valida solo `DATABASE_URL` en lugar de llamar a `getConfig()`:
+ * la landing lee los programas de la BD al prerenderizarse en `next build`, donde no se exigen los
+ * demás secretos de producción (DECISIONS A9, A14). Devuelve `undefined` si no está definida; en
+ * producción el arranque del servidor ya garantiza que existe. Un valor inválido lanza `ConfigError`.
+ */
+export function getDatabaseUrl(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const result = optional(postgresUrl).safeParse(env.DATABASE_URL);
+  if (!result.success) {
+    throw new ConfigError([`DATABASE_URL: ${result.error.issues[0]?.message}`]);
+  }
+  return result.data;
+}
