@@ -1,15 +1,21 @@
 "use client";
 
 import { TRANSFER_PENDING } from "@/content/checkout";
-import { buttonPrimary } from "@/components/shared/styles";
+import { buttonPrimary, buttonSecondary } from "@/components/shared/styles";
 import { WhatsAppIcon } from "@/components/shared/WhatsAppIcon";
 import { formatPrice } from "@/utils/format";
 
 import type { TransferCreated } from "./api";
 import { StepHeading } from "./StepHeading";
 
+type Props = {
+  transfer: TransferCreated;
+  /** Cierra el flujo: limpia el formulario y regresa al inicio de la página. */
+  onDone: () => void;
+};
+
 /** Paso 4: transferencia pendiente con la referencia y el botón de WhatsApp (RF-09, RF-10). */
-export function TransferPendingStep({ transfer }: { transfer: TransferCreated }) {
+export function TransferPendingStep({ transfer, onDone }: Props) {
   return (
     <div className="space-y-6">
       <StepHeading title={TRANSFER_PENDING.title} />
@@ -47,6 +53,13 @@ export function TransferPendingStep({ transfer }: { transfer: TransferCreated })
       ) : (
         <p className="text-bone/85">{TRANSFER_PENDING.noWhatsapp}</p>
       )}
+
+      <div className="space-y-3 border-t border-bone/15 pt-6">
+        <p className="text-sm text-bone/70">{TRANSFER_PENDING.keepReference}</p>
+        <button type="button" onClick={onDone} className={`w-full sm:w-auto ${buttonSecondary}`}>
+          {TRANSFER_PENDING.done}
+        </button>
+      </div>
     </div>
   );
 }

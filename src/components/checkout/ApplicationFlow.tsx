@@ -59,6 +59,14 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     setStep({ name: "verify", notice: null });
   }
 
+  /** Al terminar: formulario vacío y regreso al inicio de la página. */
+  function finish() {
+    setValues(undefined);
+    setError(null);
+    setStep({ name: "form" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function backToForm() {
     setError(null);
     setStep({ name: "form" });
@@ -135,6 +143,6 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       );
     }
     case "pending":
-      return <TransferPendingStep transfer={step.transfer} />;
+      return <TransferPendingStep transfer={step.transfer} onDone={finish} />;
   }
 }

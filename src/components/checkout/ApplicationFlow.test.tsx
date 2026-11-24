@@ -100,6 +100,21 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(whatsapp.getAttribute("href")).toBe(transfer.whatsappUrl);
   });
 
+  it("al terminar, 'Volver al inicio' limpia el formulario y sube al inicio de la página", async () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    await reachPaymentStep();
+    reply("/api/transfers", 201, transfer);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Transferencia pendiente" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Volver al inicio" }));
+    expect((screen.getByLabelText("Nombre completo") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Correo electrónico") as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
   it("el encabezado de cada paso recibe el foco", async () => {
     await reachPaymentStep();
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Elige cómo pagar" }));

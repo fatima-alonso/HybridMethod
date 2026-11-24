@@ -64,6 +64,8 @@ export const TRANSFER_PENDING = {
   ],
   whatsapp: "Escribir a Ferro por WhatsApp",
   noWhatsapp: "Ferro te contactará por WhatsApp al número que registraste.",
+  keepReference: "Guarda tu referencia: la necesitarás para tu transferencia.",
+  done: "Volver al inicio",
 };
 
 export const FLOW_ERRORS = {
