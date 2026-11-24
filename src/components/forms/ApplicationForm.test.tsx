@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PROGRAMS } from "@/content/programs";
@@ -35,6 +36,21 @@ describe("ApplicationForm (RF-03, RF-04, RF-05)", () => {
     // El único selector de país es la lada del WhatsApp (DECISIONS B13), con México por defecto.
     expect(screen.getAllByRole("combobox")).toEqual([countrySelect()]);
     expect(countrySelect().value).toBe("MX");
+  });
+
+  it("nunca se envía con GET: los datos del cliente no pueden quedar en la URL", () => {
+    render(<ApplicationForm programs={PROGRAMS} countries={COUNTRIES} />);
+    const form = screen.getByRole("form", { name: "Athlete Application" }) as HTMLFormElement;
+    expect(form.method).toBe("post");
+    expect((screen.getByRole("button", { name: "Continuar" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("en el HTML del servidor el botón sale deshabilitado hasta hidratar", () => {
+    const html = renderToString(<ApplicationForm programs={PROGRAMS} countries={COUNTRIES} />);
+    expect(html).toMatch(/<form[^>]*method="post"/);
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
   });
 
   it("sin preselección, ningún programa está marcado", () => {

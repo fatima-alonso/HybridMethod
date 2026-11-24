@@ -298,6 +298,9 @@ invalidado o usado muestra solo la referencia. Además de los encabezados de `ne
 las metaetiquetas `robots` y `referrer`. Los formularios usan `method="post"` y el botón se habilita al
 hidratar, para que un envío temprano nunca ponga el PIN en la URL. "No, regresar" solo navega
 (atrás o al inicio).
+Lo mismo se aplicó al formulario de inscripción de la landing (`ApplicationForm`, que también se
+renderiza en el servidor): antes, un envío previo a la hidratación ponía el nombre, el correo y el
+WhatsApp en la URL. Los pasos de código y de método de pago también usan `method="post"`.
 
 **Correos tras confirmar.** Transfer Confirmed y Welcome al cliente, y Payment Received a Ferro (RF-13
 pide avisarle de la confirmación manual; le sirve como comprobante). Un fallo se registra en la

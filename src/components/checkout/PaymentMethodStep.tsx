@@ -49,7 +49,13 @@ export function PaymentMethodStep({
         </span>
       </div>
 
-      <form noValidate onSubmit={onSubmit} className="space-y-6" aria-label={PAYMENT_STEP.title}>
+      <form
+        method="post"
+        noValidate
+        onSubmit={onSubmit}
+        className="space-y-6"
+        aria-label={PAYMENT_STEP.title}
+      >
         <fieldset>
           <legend className="sr-only">{PAYMENT_STEP.title}</legend>
           <div className="grid gap-3">
