@@ -4,7 +4,7 @@ import { ConfigError, getDatabaseUrl, getWhatsAppNumber, parseConfig } from "./c
 
 const validProductionEnv = {
   NODE_ENV: "production",
-  DATABASE_URL: "postgresql://user:pass@host.neon.tech/db?sslmode=require",
+  DATABASE_URL: "postgresql://user:pass@host.neon.tech/db?sslmode=verify-full",
   STRIPE_SECRET_KEY: "sk_test_123",
   STRIPE_WEBHOOK_SECRET: "whsec_123",
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_123",
