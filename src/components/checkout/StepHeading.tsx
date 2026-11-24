@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 /**
  * Encabezado de un paso del flujo. Al aparecer recibe el foco, para que los lectores de pantalla
- * anuncien el cambio de paso y el teclado siga desde ahí.
+ * anuncien el cambio de paso y el teclado siga desde ahí. Se usa `useLayoutEffect` para que el foco
+ * se aplique en el mismo commit en que aparece el encabezado (con `useEffect` hay un instante en
+ * que el paso ya se ve pero el foco sigue en el elemento anterior).
  */
 export function StepHeading({ title }: { title: string }) {
   const ref = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     ref.current?.focus();
   }, []);
   return (
