@@ -166,6 +166,12 @@ existe (A4), de forma atómica. El WhatsApp llega ya en E.164 (A15).
 **Auditoría.** `recordAudit` rechaza metadatos con claves como `token`, `pin`, `otp`, `code`, `secret` o
 `hash` (SDD §9.6).
 
+**Dependencias.** Prisma 7.10.1 (CLI) trae `effect@3.20.0`, con una vulnerabilidad ReDoS
+(GHSA-7589-6fvf-x4pw) que `npm audit` marca como alta. Solo afecta a la CLI de Prisma al leer
+`prisma.config.ts`, no a la app. Se fuerza `effect@3.22.4` con `overrides` en `package.json` en lugar de
+`npm audit fix --force`, que bajaría Prisma a la v6. Quitar el override cuando Prisma traiga una
+versión corregida.
+
 **Pruebas.** Las pruebas de integración (`*.db.test.ts`) usan una BD real en `TEST_DATABASE_URL`
 (cuyo nombre debe contener "test", porque se borra) y se omiten si no está definida. La CI levanta
 PostgreSQL 16 y además comprueba que las migraciones coinciden con `schema.prisma`.
