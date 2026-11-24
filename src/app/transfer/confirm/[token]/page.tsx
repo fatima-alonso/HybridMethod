@@ -29,10 +29,7 @@ export const metadata: Metadata = {
 export default function TransferConfirmPage({ params }: PageProps<"/transfer/confirm/[token]">) {
   return (
     <Container className="max-w-3xl py-16 sm:py-24">
-      <p className="text-sm font-semibold tracking-widest text-volt uppercase">
-        {CONFIRM_PAGE.eyebrow}
-      </p>
-      <Suspense fallback={<p className="mt-6 text-bone/70">Cargando…</p>}>
+      <Suspense fallback={<p className="text-bone/70">Cargando…</p>}>
         <TransferApproval params={params} />
       </Suspense>
     </Container>
@@ -123,7 +120,7 @@ async function TransferApproval({ params }: { params: Promise<{ token: string }>
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="mt-3 space-y-6">
+    <div className="space-y-6">
       <h1 className="text-5xl sm:text-6xl">{title}</h1>
       {children}
     </div>

@@ -33,7 +33,6 @@ export const API_MESSAGES = {
 
 export const CONFIRM_PAGE = {
   metaTitle: "Confirmar transferencia · THE HYBRID METHOD",
-  eyebrow: "Solo para Ferro",
   title: "Confirmar transferencia",
   question: "¿Confirmas que recibiste el pago?",
   readOnlyNote:
