@@ -106,17 +106,17 @@ export const TERMS: LegalDocument = {
       ],
     },
     {
-      heading: "Inicio de tu mes",
+      heading: "Tu mes de servicio",
       paragraphs: [
-        "Tu entrenador te entrega el plan de 3 a 5 días hábiles después de que se confirma tu pago. Tu mes de servicio empieza el día en que recibes el plan y termina el mismo día del mes siguiente. Si pagas por adelantado tu siguiente mes, este empieza cuando termina el actual.",
+        "Tu mes de servicio empieza el día en que se confirma tu pago y termina el mismo día del mes siguiente. Tu siguiente pago corresponde al cumplirse ese mes. Si pagas por adelantado tu siguiente mes, este empieza cuando termina el actual.",
+        "Tu entrenador te entrega el plan de entrenamiento por WhatsApp de 3 a 5 días hábiles después de que se confirma tu pago.",
         "Una transferencia se considera pagada cuando tu entrenador confirma que la recibió.",
       ],
     },
     {
       heading: "Suscripción mensual",
       items: [
-        "Se renueva automáticamente cada mes, al terminar tu periodo, hasta que la canceles.",
-        "Cada mes nuevo empieza cuando recibes el plan de ese mes.",
+        "Se cobra automáticamente cada mes, en la misma fecha del primer pago, hasta que la canceles.",
         "Si un cobro falla, Stripe lo reintenta. Mientras haya un pago pendiente, el servicio se suspende. Si los reintentos no se completan, la suscripción se cancela.",
         'Puedes cancelarla, cambiar de programa o actualizar tu tarjeta desde "Administrar mi suscripción", después de verificar tu correo. La cancelación aplica al final del periodo pagado y no pierdes los días que ya pagaste. Un cambio de programa aplica en la siguiente renovación.',
       ],

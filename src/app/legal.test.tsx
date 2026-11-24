@@ -15,10 +15,10 @@ describe("borradores legales (DECISIONS A22)", () => {
     expect(screen.getByText(/Borrador/)).toBeTruthy();
   });
 
-  it("las condiciones explican el inicio del mes y el descuento de la suscripción", () => {
+  it("las condiciones explican el mes desde el pago y el descuento de la suscripción", () => {
     render(<TermsPage />);
-    expect(screen.getByRole("heading", { name: "Inicio de tu mes" })).toBeTruthy();
-    expect(screen.getByText(/empieza el día en que recibes el plan/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Tu mes de servicio" })).toBeTruthy();
+    expect(screen.getByText(/empieza el día en que se confirma tu pago/)).toBeTruthy();
     expect(screen.getByText(/10 % de descuento/)).toBeTruthy();
   });
 });

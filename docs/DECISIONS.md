@@ -13,7 +13,7 @@ decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 Un programa tiene muchos contratos (`Contract.programId` es una FK a `Program`). Corrige el 1:1 de SDD §5.2.
 Lo mismo aplica a `Subscription.programId`.
 
-### A3. Estados del contrato: se elimina `paid` — ampliada por A19 y A20
+### A3. Estados del contrato: se elimina `paid` — ampliada por A20 (estados `expired` y `scheduled`)
 El servicio empieza en el momento en que se confirma el pago, así que no hace falta un estado intermedio.
 Estados finales de `Contract.status`:
 
@@ -284,60 +284,52 @@ Ferro respondió las decisiones B1–B12. A17–A22 las integran en **SRS v1.7**
 - `Contract.amount` copia el importe de la modalidad elegida.
 - La landing muestra los dos precios ("$1,200 al mes · $1,080 con suscripción").
 
-### A19. El mes empieza cuando Ferro entrega el plan (B6, B7)
-Ferro entrega el plan de 3 a 5 días hábiles después del pago, y **el mes empieza el día de la entrega**. Esto
-vale para cada mes, también en las renovaciones de una suscripción: cada mes pagado espera su entrega.
-Reemplaza la parte de A3 que decía que el servicio empezaba al confirmarse el pago.
+### A19. Cobro mes con mes desde la fecha de pago; la entrega del plan es solo referencia (B6, B7)
+*Revisada el mismo día.* La primera versión hacía empezar el mes con la entrega del plan y recorría los cobros de
+Stripe con `trial_end`. Ferro prefirió algo más simple: el pago marca el mes, y la entrega solo se registra.
 
-**Datos.** Una entidad nueva, `ServicePeriod`: un registro por cada mes pagado. Guarda la **fecha de pago**,
-la **fecha de entrega** (el inicio del mes) y la **fecha de fin**. El primer mes y cada renovación tienen su
-propio registro, así siempre están a mano las dos fechas que pidió Ferro. `Contract.serviceStartDate` y
-`serviceEndDate` muestran el periodo vigente y se actualizan en la misma transacción.
+**Periodos.** Cada pago confirmado da un mes que **empieza en la fecha de pago** y termina el mismo día del mes
+siguiente. Si ese día no existe, termina el último día del mes (31 ene → 28/29 feb). Esto aplica a todos los
+métodos:
+- **Suscripción:** Stripe cobra mes con mes desde el primer pago (su comportamiento normal). El periodo es el de
+  la factura pagada.
+- **Pago único y transferencia:** el mes va desde el pago (en la transferencia, desde que Ferro la confirma). El
+  siguiente mes se paga cuando se cumple un mes.
+- Si el cliente pagó por adelantado con un periodo vigente (A20), el mes nuevo empieza cuando termina el vigente.
+- Vuelve la regla original de A3: el servicio se activa al confirmarse el pago.
 
-**Fechas.**
-- Ferro registra la **fecha real** de entrega. Por defecto es hoy, pero puede ser un día anterior. No puede ser
-  una fecha futura ni anterior al día del pago.
-- El mes va de las 00:00 del día de la entrega (hora de `America/Mexico_City`) al mismo día del mes siguiente.
-  Si ese día no existe, se toma el último día del mes (31 ene → 28/29 feb).
-- Si el cliente pagó por adelantado con un periodo vigente (A20), el mes nuevo empieza cuando termine el
-  vigente, aunque la entrega se registre antes.
+**Datos.** Una entidad `ServicePeriod` por cada mes pagado guarda la fecha de pago, el inicio, el fin y, como
+referencia, la fecha de entrega del plan (`planDeliveredOn`). La fecha de entrega no cambia ningún estado,
+periodo ni cobro.
 
-**Estados del contrato.** Se agregan `awaiting_delivery` ("pagado, plan en preparación"), `scheduled`
-(entregado, pero empieza al terminar el periodo vigente) y `expired` (pendiente vencido, A20). Ver SDD §5.3.
+**Correo de compra con botón.** Después de cada pago confirmado (pago único, transferencia, primer pago y cada
+renovación de la suscripción), Ferro recibe un correo con todos los datos del cliente y de la compra (nombre,
+correo, WhatsApp, programa, modalidad, importe, referencia, fecha de pago y periodo) y un botón **"Registrar
+entrega del plan"**.
+- El botón abre `/plan/entrega/[token]`, una pantalla de **solo lectura** con los datos del plan y un botón
+  "Confirmar entrega". Al presionarlo (POST), se guarda como fecha de entrega el día de hoy
+  (`America/Mexico_City`) y se muestra **"Fecha de entrega del plan confirmada"**.
+- La pantalla intermedia es necesaria: los filtros de correo (Outlook, Gmail, antivirus) abren los enlaces
+  automáticamente. Si el GET registrara la fecha, quedaría la fecha de llegada del correo y no la de entrega.
+- **Sin PIN.** El botón solo guarda un dato de referencia y no mueve dinero ni estados. Un enlace filtrado, en el
+  peor caso, registra una fecha equivocada que se corrige a mano.
+- Token de 32 bytes guardado solo como hash, de **un solo uso** y **sin expiración**. Tiene que seguir sirviendo
+  mientras lleguen recordatorios. Si se abre después de usarlo, muestra la fecha ya registrada.
 
-**Cómo se entera el sistema de la entrega.**
-- **Transferencia:** después de "Sí, confirmar pago", la misma pantalla pregunta "¿Ya entregaste el plan?".
-  Ferro puede registrar la entrega ahí mismo (la pantalla reutiliza en memoria el PIN que acaba de escribir) o
-  elegir "Lo registro después".
-- **Todos los métodos:** cuando se confirma un pago (transferencia, pago único o cualquier cobro de la
-  suscripción), Ferro recibe el correo **Registra la entrega del plan** con un enlace privado. El enlace usa las
-  mismas reglas que el de transferencias (A7): token aleatorio guardado solo como hash, GET de solo lectura,
-  POST con fecha y PIN, un solo uso, 5 PIN incorrectos lo invalidan y vence a los 7 días.
-- **Recordatorios (Ferro eligió "solo recordatorios"):** el sistema **no** empieza el mes por su cuenta. Un
-  cron diario, de lunes a viernes, le manda a Ferro **un solo correo** con todas las entregas pendientes que ya
-  llevan 3 días hábiles o más desde el pago. Cada una trae un enlace nuevo, que invalida el anterior de ese mes.
-  Se cuentan como días hábiles de lunes a viernes, sin días festivos. El umbral es configurable
-  (`PLAN_DELIVERY_REMINDER_BUSINESS_DAYS`, 3 por defecto).
+**Recordatorios.** Mientras un mes no tenga fecha de entrega, el cron diario le manda a Ferro, **cada día hábil**
+(lunes a viernes, sin festivos), **un correo por cliente**: "Está pendiente el plan de [cliente] · [programa] ·
+[referencia] · pagado el [fecha]". Empiezan el siguiente día hábil después del pago
+(`PLAN_DELIVERY_REMINDER_BUSINESS_DAYS`, 1 por defecto) y se detienen en cuanto se registra la fecha. El
+recordatorio **no trae un botón nuevo**: la fecha se registra con el botón del correo de compra, como lo pidió
+Ferro.
 
-**Correos al cliente.** Al confirmarse el pago: "Pago recibido. Ferro te entregará tu plan en 3 a 5 días
-hábiles". Al registrarse la entrega: "Tu mes empezó: del X al Y" (el Welcome en el primer mes).
-
-**Suscripciones: el cobro sigue a la entrega.** Stripe cobra al contratar y luego cada mes desde ese día. Para
-que el siguiente cobro coincida con el fin del mes real, al registrar la entrega el servidor mueve la fecha del
-siguiente cobro a la fecha de fin del periodo. Usa `stripe.subscriptions.update` con
-`trial_end = <fin del periodo>` y `proration_behavior = none`, que es la forma que ofrece Stripe para recorrer
-el siguiente cobro sin cobrar de más ni de menos.
-- Efecto secundario: hasta ese cobro, Stripe marca la suscripción como `trialing`. Para nosotros
-  `trialing` = al corriente. Hay que desactivar en Stripe los correos de "fin de prueba".
-- Si la llamada a Stripe falla, la entrega queda registrada igual. Se guarda el error en
-  `ServicePeriod.billingAlignedAt` (nulo = pendiente) y el cron lo reintenta.
-- Como cada renovación espera su entrega, el cliente queda sin plan entre el cobro y la entrega (de 3 a 5 días
-  hábiles), pero no pierde días: el mes cuenta desde la entrega.
+**Correos al cliente.** Como siempre: confirmación de compra y bienvenida al confirmarse el pago. La bienvenida
+avisa que Ferro entregará el plan en 3 a 5 días hábiles.
 
 **Pagos fallidos (B7).** Stripe reintenta con Smart Retries (configuración por defecto). **El servicio se
-suspende** mientras haya un pago vencido: el contrato pasa a `payment_failed` y no empieza ningún mes nuevo. Si
-un reintento se paga, se crea el siguiente periodo en `awaiting_delivery`. Si se agotan los reintentos, Stripe
-cancela la suscripción (configurarlo así en Stripe) y el contrato pasa a `cancelled`.
+suspende** mientras haya un pago vencido: el contrato pasa a `payment_failed`. Si un reintento se paga, vuelve a
+`active` con el periodo de esa factura. Si se agotan los reintentos, Stripe cancela la suscripción (configurarlo
+así en Stripe) y el contrato pasa a `cancelled`.
 
 ### A20. Contratos pendientes, vencimiento y pagos por adelantado (B9)
 **Un solo pendiente por cliente.** Un cliente tiene como máximo un contrato `pending_payment` (índice único
@@ -358,16 +350,16 @@ parcial). Al pedir una contratación con el correo ya verificado:
 regenerar su enlace (`Contract.lastActivityAt`). Se vence al leer (antes de buscar pendientes) y con el cron
 diario. Un contrato vencido ya no se reutiliza: si el cliente vuelve, se crea otro.
 - **Pago tardío** *(regla de implementación; confirmar con Ferro)*: si llega un pago confirmado para un contrato
-  ya vencido, se respeta y el contrato pasa a `awaiting_delivery`. Por ejemplo, un webhook de Stripe atrasado,
+  ya vencido, se respeta y el contrato se activa. Por ejemplo, un webhook de Stripe atrasado,
   o una transferencia que Ferro confirma con un enlace regenerado. Se registra `contract.paid_after_expiry`.
   Así nunca se pierde un pago real.
 
 **Pago por adelantado con un periodo vigente.** Un cliente con un contrato de pago único o transferencia
 vigente o por empezar puede pagar su **siguiente mes** por adelantado, del mismo programa o de otro. Se paga
-como cualquier contratación. El mes nuevo empieza cuando termina el vigente, y Ferro registra su entrega igual
-que siempre. Se permite **un solo mes por adelantado**: "su siguiente mes", tal como lo dijo Ferro.
+como cualquier contratación. El mes nuevo empieza cuando termina el vigente (estado `scheduled` hasta entonces),
+y Ferro registra su entrega igual que siempre. Se permite **un solo mes por adelantado**: "su siguiente mes", tal como lo dijo Ferro.
 
-**Con una suscripción activa** (incluye `trialing`, `past_due` y `awaiting_delivery`), el cliente **no** puede
+**Con una suscripción activa** (incluye `past_due`), el cliente **no** puede
 crear otra contratación. La página lo manda al portal de Stripe (A21), donde cambia de plan, y el cambio aplica
 en la siguiente renovación. Para eso `ServicePeriod` guarda el programa de cada mes.
 
@@ -383,7 +375,7 @@ Los cambios llegan por los webhooks `customer.subscription.updated/deleted`.
 ### A22. Borrador de privacidad y condiciones (B12)
 Se publica un borrador breve en `/privacidad` y `/condiciones`, y se usa mientras no haya una versión
 validada. Está marcado como borrador. Cubre: responsable, datos que se piden y para qué, encargados (Stripe,
-Resend, Vercel, Neon), derechos ARCO, contratación, precios, inicio del mes con la entrega del plan, renovación
+Resend, Vercel, Neon), derechos ARCO, contratación, precios, periodo de un mes desde el pago, entrega del plan, renovación
 y cancelación, pagos fallidos y reembolsos manuales. Antes del lanzamiento se completan los datos del
 responsable (nombre o razón social, domicilio, correo de contacto) y conviene que lo revise un abogado.
 
@@ -396,7 +388,7 @@ responsable (nombre o razón social, domicilio, correo de contacto) y conviene q
 | 3 | Correo de notificaciones de Ferro | — | Resuelto en A17: se carga en Vercel |
 | 4 | Dominio | Fase 8 | Resuelto en A17: se compra en GoDaddy |
 | 5 | Remitente de Resend | — | Resuelto en A17: se carga en Vercel; se verifica con el dominio (Fase 8) |
-| 6 | Fechas exactas del periodo de un mes | — | Resuelto en A19: el mes empieza con la entrega del plan |
+| 6 | Fechas exactas del periodo de un mes | — | Resuelto en A19: un mes desde la fecha de pago; la entrega del plan es solo referencia |
 | 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19: Smart Retries; el servicio se suspende mientras haya un pago vencido |
 | 8 | Mecanismo de cancelación | — | Resuelto en A21: Stripe Customer Portal con OTP, al final del periodo |
 | 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | — | Resuelto en A20 (falta confirmar con Ferro la regla del pago tardío) |

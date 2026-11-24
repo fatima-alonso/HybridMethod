@@ -16,7 +16,7 @@
 | 1.4 | 2026-11-23 | §9.1: política de validación de variables de entorno por entorno (DECISIONS A9). |
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
 | 1.7 | 2026-11-24 | Fase 3 (DECISIONS A16): §5.3 entidad RateLimitBucket y hash HMAC de los OTP; §7.1 límites concretos y nombre de la cookie; §7.6 body de `POST /api/transfers` (crea o asocia el cliente) y protección ante doble envío; §9.4 rate limit en PostgreSQL. |
-| 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `awaiting_delivery`, `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; registro de la entrega del plan (§7.8) y recordatorios; siguiente cobro de Stripe alineado con `trial_end`; Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
+| 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
@@ -212,7 +212,7 @@ Contract ──1:N──> TransferApproval  (un enlace vigente a la vez; los ant
 
 Payment  ──1:0..1──> ServicePeriod  (cada pago exitoso abre un mes)
 Program  ──1:N──> ServicePeriod     (programa de ese mes; en suscripciones puede cambiar)
-ServicePeriod ──1:N──> PlanDeliveryLink (un enlace vigente a la vez)
+ServicePeriod ──1:1──> PlanDeliveryLink (el botón del correo de compra)
 
 Subscription ──1:N──> Payment       (un Payment por cada factura pagada)
 
@@ -286,9 +286,8 @@ Estados:
 |---|---|
 | `pending_payment` | Creado y esperando el pago (transferencia sin aprobar o Checkout sin completar). |
 | `expired` | Pendiente vencido tras 7 días sin actividad. Ya no se reutiliza (DECISIONS A20). |
-| `awaiting_delivery` | Pagado, plan en preparación: hay un ServicePeriod sin fecha de entrega (DECISIONS A19). |
-| `scheduled` | Entrega registrada, pero el mes empieza al terminar el periodo vigente del cliente (pago por adelantado). |
-| `active` | Mes en curso: `serviceStartDate ≤ now < serviceEndDate`. |
+| `scheduled` | Pagado por adelantado: el mes empieza al terminar el periodo vigente del cliente (DECISIONS A20). |
+| `active` | Pago confirmado y mes en curso: `serviceStartDate ≤ now < serviceEndDate`. |
 | `completed` | Terminó el periodo pagado sin renovación (pago único o transferencia). |
 | `payment_failed` | Suscripción con un cobro vencido (`past_due`/`unpaid`) o pago asíncrono fallido. El servicio está suspendido. |
 | `cancelled` | Suscripción cancelada; no se recorta un periodo ya pagado. |
@@ -296,20 +295,18 @@ Estados:
 Transiciones permitidas (solo mediante `contract.service`):
 
 ```
-pending_payment   ──> awaiting_delivery  (pago confirmado)
-pending_payment   ──> expired            (7 días sin actividad)
-expired           ──> awaiting_delivery  (pago tardío: se respeta y se audita)
-awaiting_delivery ──> active             (entrega registrada)
-awaiting_delivery ──> scheduled          (entrega registrada; empieza al terminar el periodo vigente)
-scheduled         ──> active             (llega la fecha de inicio)
-active            ──> completed          (pago único o transferencia: terminó el mes)
-active            ──> awaiting_delivery  (suscripción: se pagó la renovación)
-active            ──> payment_failed     (suscripción: falló la renovación)
-payment_failed    ──> awaiting_delivery  (se pagó el reintento)
-awaiting_delivery | active | payment_failed ──> cancelled  (suscripción)
+pending_payment ──> active          (pago confirmado)
+pending_payment ──> scheduled       (pago confirmado con un periodo vigente: pago por adelantado)
+pending_payment ──> expired         (7 días sin actividad)
+expired         ──> active | scheduled  (pago tardío: se respeta y se audita)
+scheduled       ──> active          (llega la fecha de inicio)
+active          ──> completed       (pago único o transferencia: terminó el mes)
+active          ──> payment_failed  (suscripción: falló la renovación)
+payment_failed  ──> active          (se pagó el reintento)
+active | payment_failed ──> cancelled  (suscripción)
 ```
 
-Que el pago se hizo queda en `Payment.status = succeeded` y en `ServicePeriod.paidAt`. `scheduled → active`, `active → completed` y `pending_payment → expired` se calculan al leer (`effectiveContractStatus`) y el cron diario los persiste. En las suscripciones, cada `invoice.paid` abre un ServicePeriod nuevo en `awaiting_delivery`. Si la renovación se paga antes de que termine el mes en curso, el contrato sigue `active` hasta `serviceEndDate`; el ServicePeriod nuevo espera su entrega y empieza cuando termine el mes en curso.
+Que el pago se hizo queda en `Payment.status = succeeded` y en `ServicePeriod.paidAt`. Cada mes va de la fecha de pago al mismo día del mes siguiente (DECISIONS A19); en suscripciones, es el periodo de la factura pagada, y cada `invoice.paid` crea un ServicePeriod y extiende `serviceEndDate`. `scheduled → active`, `active → completed` y `pending_payment → expired` se calculan al leer (`effectiveContractStatus`) y el cron diario los persiste. La fecha de entrega del plan no cambia ningún estado.
 
 #### Payment
 Guarda cada transacción.
@@ -343,16 +340,15 @@ Un mes pagado (DECISIONS A19). Guarda las tres fechas que pide Ferro.
 | programId | String (FK) | Programa de ese mes (en suscripciones puede cambiar desde el portal) |
 | sequence | Integer | Número de mes dentro del contrato (1, 2, …); UNIQUE con `contractId` |
 | paidAt | DateTime | Fecha de pago |
-| planDeliveredOn | Date? | Día de entrega del plan, registrado por Ferro |
-| startDate | DateTime? | Inicio del mes: 00:00 (`America/Mexico_City`) del día de entrega, o el fin del periodo vigente del cliente si pagó por adelantado |
-| endDate | DateTime? | Mismo día del mes siguiente (último día del mes si no existe) |
+| planDeliveredOn | Date? | Día de entrega del plan, registrado por Ferro. Solo referencia |
+| startDate | DateTime | Inicio del mes: la fecha de pago, o el fin del periodo vigente del cliente si pagó por adelantado (en suscripciones, el inicio del periodo de la factura) |
+| endDate | DateTime | Mismo día del mes siguiente (último día del mes si no existe) |
 | deliveryRecordedAt | DateTime? | Cuándo se registró la entrega |
-| billingAlignedAt | DateTime? | Suscripción: cuándo se movió el siguiente cobro de Stripe a `endDate` (nulo = pendiente) |
 | lastReminderAt | DateTime? | Último recordatorio enviado a Ferro |
 | createdAt | DateTime | Creación |
 | updatedAt | DateTime | Última actualización |
 
-Restricciones: `planDeliveredOn` ≥ día de `paidAt` y ≤ hoy; `startDate`/`endDate` ambos nulos o ambos presentes, con `endDate > startDate`. Una vez registrada, la entrega no se cambia desde la web; una corrección es un cambio manual con AuditLog.
+Restricciones: `endDate > startDate`; `planDeliveredOn` ≥ día de `paidAt`. Una vez registrada, la entrega no se cambia desde la web; una corrección es un cambio manual con AuditLog.
 
 #### Subscription
 Guarda la información de las suscripciones recurrentes.
@@ -371,7 +367,7 @@ Guarda la información de las suscripciones recurrentes.
 | createdAt | DateTime | Fecha de creación |
 | updatedAt | DateTime | Última actualización |
 
-Estados: `incomplete`, `trialing`, `active`, `past_due`, `canceled`, `unpaid`. `trialing` aparece porque el siguiente cobro se mueve con `trial_end` (§6.1) y significa "al corriente".
+Estados: `incomplete`, `active`, `past_due`, `canceled`, `unpaid`.
 
 Stripe es la fuente principal del estado de facturación. La base de datos local mantiene una copia sincronizada mediante webhooks.
 
@@ -393,18 +389,17 @@ Controla los enlaces privados para confirmar transferencias.
 Un token es válido solo si `usedAt`, `invalidatedAt` son nulos, `expiresAt > now` y `pinAttempts < 5`. Al generar un enlace nuevo para un contrato, los anteriores se invalidan.
 
 #### PlanDeliveryLink
-Enlaces privados para registrar la entrega del plan (DECISIONS A19). Mismas reglas que TransferApproval.
+El botón "Registrar entrega del plan" del correo de compra (DECISIONS A19). Uno por ServicePeriod.
 
 | Campo | Tipo | Descripción |
 |---|---|---|
 | id | String / UUID | Identificador |
-| servicePeriodId | String (FK) | Mes al que se le registra la entrega |
+| servicePeriodId | String (FK, UNIQUE) | Mes al que pertenece |
 | tokenHash | String (UNIQUE) | Hash SHA-256 del token |
-| expiresAt | DateTime | Expiración (7 días, `TRANSFER_LINK_TTL_DAYS`) |
-| pinAttempts | Integer | Intentos con PIN incorrecto |
-| usedAt | DateTime? | Fecha en que se registró la entrega |
-| invalidatedAt | DateTime? | Invalidación (enlace nuevo, recordatorio o exceso de intentos) |
+| usedAt | DateTime? | Cuándo se registró la entrega |
 | createdAt | DateTime | Creación |
+
+Sin expiración y sin PIN: solo registra un dato de referencia y tiene que seguir sirviendo mientras lleguen recordatorios. Es de un solo uso.
 
 #### OTPVerification
 Permite verificar el correo electrónico.
@@ -486,11 +481,10 @@ Stripe procesa los pagos y administra las suscripciones. Se usarán:
 
 Cada programa tiene en Stripe un Product con dos Prices: uno `one_time` por `monthlyPrice` y uno `recurring` mensual por `subscriptionPrice` (10 % menos; DECISIONS A18).
 
-**Siguiente cobro alineado con la entrega (DECISIONS A19).** Al registrarse la entrega de un mes de suscripción, `delivery.service` llama a `stripe.subscriptions.update(id, { trial_end: <endDate>, proration_behavior: "none" })` con una clave de idempotencia derivada del ServicePeriod. Así el siguiente cobro cae en `endDate`. Mientras tanto Stripe muestra la suscripción como `trialing`. Si la llamada falla, la entrega queda registrada, `billingAlignedAt` sigue nulo y el cron lo reintenta.
+Las suscripciones cobran mes con mes desde el primer pago, el comportamiento normal de Stripe (DECISIONS A19).
 
 **Configuración en el Dashboard de Stripe:**
 - Smart Retries con la configuración por defecto. Al agotarse los reintentos, cancelar la suscripción.
-- Desactivar los correos de Stripe sobre el fin de la prueba.
 - Customer Portal (§7.7): cancelación al final del periodo; cambio entre los tres Price recurrentes sin prorrateo; actualización del método de pago.
 
 Solo el backend crea las sesiones de Checkout. El navegador nunca decide importes ni Price IDs. La sesión incluye `metadata.contractId` y `client_reference_id` para relacionar los eventos con el contrato.
@@ -501,17 +495,15 @@ Resend envía los correos electrónicos.
 | Plantilla | Destinatario | Evento |
 |---|---|---|
 | Verification Code | Cliente | Solicitud de verificación de correo |
-| Purchase Confirmation | Cliente | Pago exitoso (incluye "tu plan llega en 3 a 5 días hábiles") |
-| Welcome Email | Cliente | Entrega del primer plan registrada (fechas del mes) |
-| Period Started | Cliente | Entrega registrada en un mes siguiente (fechas del mes) |
-| Plan Delivery Request | Entrenador | Pago confirmado de cualquier método (enlace para registrar la entrega) |
-| Plan Delivery Reminder | Entrenador | Cron de días hábiles: un solo correo con las entregas de 3 días hábiles o más, cada una con un enlace nuevo |
+| Purchase Confirmation | Cliente | Pago inicial exitoso |
+| Welcome Email | Cliente | Activación del servicio (incluye "Ferro te entregará tu plan en 3 a 5 días hábiles") |
+| Plan Delivery Reminder | Entrenador | Cada día hábil, uno por cada mes sin fecha de entrega: "Está pendiente el plan de [cliente]". Sin botón |
 | Transfer Pending | Entrenador | Nueva transferencia pendiente (incluye el enlace privado) |
-| Payment Received | Entrenador | Pago exitoso |
-| Renewal Successful | Entrenador | Renovación exitosa |
+| Payment Received | Entrenador | Cada pago confirmado (pago único, transferencia, primer pago de suscripción): datos completos del cliente y de la compra, y botón "Registrar entrega del plan" |
+| Renewal Successful | Entrenador | Renovación exitosa: los mismos datos y su propio botón de entrega |
 | Payment Failed | Cliente y entrenador | Pago fallido |
 | Subscription Cancelled | Cliente y entrenador | Cancelación |
-| Transfer Confirmed | Cliente | Transferencia confirmada (incluye "tu plan llega en 3 a 5 días hábiles") |
+| Transfer Confirmed | Cliente | Transferencia confirmada |
 
 El remitente ya está definido; se verifica en Resend junto con el dominio (Fase 8). En desarrollo, si no hay `RESEND_API_KEY`, los correos se registran en la consola.
 
@@ -619,12 +611,12 @@ El servidor determina el importe a partir del programa guardado y de la modalida
 
 **Reglas antes de crear cualquier contrato** (también en `/api/checkout` y `/api/transfers`; DECISIONS A20), dentro de una transacción con el `pg_advisory_xact_lock` del cliente:
 1. Vencer los pendientes del cliente con más de 7 días sin actividad.
-2. Si el cliente tiene una suscripción en `incomplete`, `trialing`, `active`, `past_due` o `unpaid`, responder `409 subscription_active` (la página ofrece el portal).
+2. Si el cliente tiene una suscripción en `incomplete`, `active`, `past_due` o `unpaid`, responder `409 subscription_active` (la página ofrece el portal).
 3. Si tiene un contrato `pending_payment`:
    - Del mismo programa y modalidad: reutilizarlo (misma referencia), actualizar `lastActivityAt` y, si es transferencia sin enlace vigente, generar uno nuevo y avisar a Ferro.
    - De otro programa o modalidad: responder `409 pending_contract_exists` con el resumen del pendiente (programa, modalidad, importe, referencia) para que la página pregunte "¿continuar o cambiar?". La elección vuelve en el mismo endpoint con `pendingAction: "continue" | "change"`.
    - Con `change`: actualizar ese contrato (programa, modalidad, importe de la BD), invalidar su enlace de transferencia o expirar su Checkout en Stripe, y escribir `contract.pending_changed` en AuditLog.
-4. Si tiene un mes pagado sin terminar (`awaiting_delivery`, `scheduled` o `active`, de pago único o transferencia), se permite **un** contrato más por adelantado. Si ya tiene uno, responder `409 prepaid_limit`.
+4. Si tiene un mes pagado sin terminar (`scheduled` o `active`, de pago único o transferencia), se permite **un** contrato más por adelantado. Si ya tiene uno, responder `409 prepaid_limit`.
 
 **`GET /api/contracts/pending`**: requiere la sesión de verificación. Devuelve el resumen del pendiente del cliente de esa sesión, si existe. Nunca recibe un correo ni una referencia como parámetro.
 
@@ -657,11 +649,11 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 
 | Flujo | Evento | Acción |
 |---|---|---|
-| Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y pasar el contrato a `awaiting_delivery`. Si es `unpaid` (pago asíncrono), esperar. |
+| Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago por adelantado). Si es `unpaid` (pago asíncrono), esperar. |
 | Pago único | `checkout.session.async_payment_succeeded` | Igual que el anterior con `paid`. |
 | Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido y pasar el contrato a `payment_failed`. |
 | Suscripción | `checkout.session.completed` (modo subscription) | Solo relacionar `stripeSubscriptionId` con el contrato; **no** crea el Payment. |
-| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y un ServicePeriod en espera de entrega (con el programa del Price facturado). En renovaciones, avisa a Ferro. Una factura de importe 0 no abre un mes. |
+| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la factura y el programa del Price facturado; activa o extiende el contrato. En renovaciones, avisa a Ferro. Una factura de importe 0 no abre un mes. |
 | Suscripción | `invoice.payment_failed` | Registrar el Payment fallido, pasar el contrato a `payment_failed` (servicio suspendido) y avisar. |
 | Suscripción | `customer.subscription.created` / `updated` / `deleted` | Solo sincronizar Subscription (estado, periodo, `cancelAtPeriodEnd`). |
 
@@ -673,7 +665,7 @@ Pasos del procesamiento:
 3. Recuperar el contrato o la suscripción asociada.
 4. Actualizar los registros en una transacción.
 5. Marcar el evento como `processed`.
-6. Enviar las notificaciones: al cliente, la confirmación del pago; a Ferro, Plan Delivery Request con el enlace de entrega.
+6. Enviar las notificaciones: al cliente, Purchase Confirmation y Welcome (primer pago); a Ferro, Payment Received o Renewal Successful con el botón de entrega.
 
 Si el contrato estaba `expired`, el pago se respeta igual y se audita `contract.paid_after_expiry` (DECISIONS A20).
 
@@ -725,9 +717,8 @@ Comportamiento:
 1. Calcula el hash del token y busca un TransferApproval válido.
 2. Verifica el PIN contra `FERRO_APPROVAL_PIN_HASH`. Si es incorrecto, incrementa `pinAttempts`, escribe la auditoría y responde con error; con 5 errores, invalida el token.
 3. Verifica que el contrato siga en `pending_payment`.
-4. En una sola transacción: marca `usedAt` y `approvedBy = "ferro"`, crea el Payment (`method = transfer`, `succeeded`) y el ServicePeriod, pasa el contrato a `awaiting_delivery`, crea un PlanDeliveryLink y escribe AuditLog (IP, user-agent).
-5. Después de la transacción, envía Transfer Confirmed al cliente y Plan Delivery Request a Ferro.
-6. La respuesta incluye el token del PlanDeliveryLink. La pantalla pregunta "¿Ya entregaste el plan?" y, si Ferro registra la fecha, llama a `POST /api/plan-delivery/confirm` con ese token y el PIN que acaba de escribir (guardado solo en memoria de la página). Con "Lo registro después", no se envía nada.
+4. En una sola transacción: marca `usedAt` y `approvedBy = "ferro"`, crea el Payment (`method = transfer`, `succeeded`), el ServicePeriod (un mes desde la confirmación) y su PlanDeliveryLink, pasa el contrato a `active` (o `scheduled`) y escribe AuditLog (IP, user-agent).
+5. Después de la transacción, envía Transfer Confirmed y Welcome al cliente y Payment Received (con el botón de entrega) a Ferro.
 
 Está protegido contra reenvíos y solicitudes duplicadas: un token usado o un contrato ya activo se rechazan sin efectos.
 
@@ -744,25 +735,27 @@ En el portal (DECISIONS A21), el cliente puede:
 El sistema se entera por `customer.subscription.updated/deleted`: sincroniza Subscription y, al cancelarse, pasa el contrato a `cancelled` y envía Subscription Cancelled al cliente y a Ferro. No hay endpoints propios de cancelación ni de consulta de suscripciones.
 
 ### 7.8 Entrega del plan
-**`GET /plan/entrega/[token]`**: página privada para que Ferro registre la entrega de un mes. Es solo lectura, con los mismos encabezados que `/transfer/confirm/[token]`. Muestra el cliente, el programa, la referencia, el número de mes y la fecha de pago, y tiene un campo de fecha (hoy por defecto), el PIN y el botón "Registrar entrega".
+Solo registra un dato de referencia (DECISIONS A19). Cada ServicePeriod crea su PlanDeliveryLink en la misma transacción del pago, y el botón va en el correo Payment Received o Renewal Successful.
+
+**`GET /plan/entrega/[token]`**: página de **solo lectura**, con los mismos encabezados que `/transfer/confirm/[token]`.
+- Muestra el cliente, el programa, la referencia, la fecha de pago y el periodo, y un botón "Confirmar entrega".
+- Si la entrega ya se registró, muestra la fecha registrada.
+- Si el token no existe, muestra "Enlace no válido" sin dar más detalles.
 
 **`POST /api/plan-delivery/confirm`**
 ```json
-{ "token": "secure_random_token", "pin": "******", "deliveredOn": "2026-11-27" }
+{ "token": "secure_random_token" }
 ```
-1. Valida el token (hash, vigente, sin usar, menos de 5 intentos) y el PIN, con las mismas reglas y la misma auditoría que §7.6.
-2. Valida que `deliveredOn` no sea futuro (en `America/Mexico_City`) ni anterior al día de `paidAt`, y que el ServicePeriod siga sin entrega.
-3. Calcula las fechas. `startDate` es el mayor entre las 00:00 de `deliveredOn` y el fin del periodo vigente del cliente (un mes por adelantado, o una renovación pagada antes de tiempo). `endDate` es `startDate` + 1 mes calendario.
-4. En una transacción: guarda las fechas en el ServicePeriod, marca el token como usado, actualiza el contrato (`active` si `startDate ≤ now`; `scheduled` si no; en suscripciones, renovaciones adelantadas siguen `active`), copia el periodo vigente a `serviceStartDate`/`serviceEndDate` y escribe `plan.delivered` en AuditLog.
-5. Fuera de la transacción: en suscripciones alinea el siguiente cobro (§6.1). Envía Welcome (primer mes) o Period Started al cliente.
+1. Calcula el hash del token y busca el PlanDeliveryLink.
+2. En una transacción con compare-and-set (`WHERE usedAt IS NULL`): marca `usedAt`, guarda en el ServicePeriod `planDeliveredOn` = hoy en `America/Mexico_City` y `deliveryRecordedAt`, y escribe `plan.delivered` en AuditLog (IP, user-agent).
+3. Responde con la fecha. La página muestra "Fecha de entrega del plan confirmada".
 
-Un segundo registro del mismo mes se rechaza sin efectos.
+No cambia estados, periodos ni cobros, y no envía correos. Si la entrega ya estaba registrada, responde con la fecha existente sin cambiar nada. Rate limit por IP.
 
 **`GET /api/cron/daily`**: lo llama Vercel Cron una vez al día. Exige `Authorization: Bearer ${CRON_SECRET}`. Ejecuta tareas idempotentes:
 - Vencer los pendientes (`pending_payment → expired`).
 - Persistir `scheduled → active` y `active → completed`.
-- Reintentar las alineaciones de cobro pendientes (`billingAlignedAt` nulo).
-- De lunes a viernes: enviar Plan Delivery Reminder con los ServicePeriod sin entrega que tengan `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` días hábiles o más desde `paidAt`. Genera un enlace nuevo por mes, que invalida el anterior, y actualiza `lastReminderAt`.
+- De lunes a viernes: por cada ServicePeriod sin `planDeliveredOn` que tenga `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` días hábiles o más desde `paidAt` (1 por defecto) y no tenga recordatorio hoy, enviar Plan Delivery Reminder y actualizar `lastReminderAt`. El recordatorio no lleva un enlace nuevo.
 - Purgar `rate_limit_buckets`.
 
 ---
@@ -809,12 +802,10 @@ Webhook checkout.session.completed / async_payment_succeeded
 Validar firma + idempotencia
   |
   v
-[Transacción] Payment(succeeded) + ServicePeriod + Contract -> awaiting_delivery + PlanDeliveryLink
+[Transacción] Payment(succeeded) + ServicePeriod (1 mes desde el pago) + PlanDeliveryLink + Contract -> active
   |
-  +--> Purchase Confirmation (cliente: "tu plan llega en 3 a 5 días hábiles")
-  +--> Payment Received + Plan Delivery Request (Ferro)
-  v
-Entrega del plan (§8.6)
+  +--> Purchase Confirmation + Welcome (cliente)
+  +--> Payment Received con botón de entrega (Ferro) -> §8.6
 ```
 
 ### 8.3 Suscripción mensual
@@ -832,17 +823,15 @@ Stripe Checkout (subscription)
   |
   v
 invoice.paid (primera factura)
-  |--> Payment(succeeded) + ServicePeriod + Contract -> awaiting_delivery
-  |--> Purchase Confirmation (cliente), Payment Received + Plan Delivery Request (Ferro)
-  v
-Entrega del plan (§8.6) -> Contract active + trial_end = endDate (siguiente cobro)
+  |--> Payment(succeeded) + ServicePeriod + PlanDeliveryLink + Contract -> active
+  |--> Purchase Confirmation + Welcome (cliente), Payment Received con botón de entrega (Ferro)
   |
-Al terminar el mes: renovación automática
+Al cumplirse un mes del pago: renovación automática
   |
   +--> invoice.paid
-  |       +--> Payment nuevo + ServicePeriod nuevo -> awaiting_delivery
-  |       +--> Renewal Successful + Plan Delivery Request (Ferro)
-  |       +--> Entrega del plan (§8.6)
+  |       +--> Payment nuevo + ServicePeriod nuevo + PlanDeliveryLink
+  |       +--> Extender serviceEndDate
+  |       +--> Renewal Successful con botón de entrega (Ferro)
   |
   +--> invoice.payment_failed
           +--> Payment(failed)
@@ -880,11 +869,10 @@ Ferro abre el enlace (GET, solo lectura)
           +--> PIN incorrecto -> pinAttempts++ ; a los 5, se invalida el token
           |
           v
-       [Transacción] token usado + Payment + ServicePeriod + Contract -> awaiting_delivery + AuditLog
+       [Transacción] token usado + Payment + ServicePeriod + PlanDeliveryLink + Contract -> active + AuditLog
           |
-          +--> Transfer Confirmed (cliente), Plan Delivery Request (Ferro)
-          v
-       "¿Ya entregaste el plan?" -> registrar ahora (§8.6) | "Lo registro después"
+          +--> Transfer Confirmed + Welcome (cliente)
+          +--> Payment Received con botón de entrega (Ferro)
 ```
 
 ### 8.5 Cancelación de suscripción
@@ -895,27 +883,21 @@ Cliente -> verificación OTP -> POST /api/portal -> Stripe Customer Portal
   -> Subscription Cancelled (cliente y Ferro)
 ```
 
-### 8.6 Entrega del plan
+### 8.6 Entrega del plan (solo referencia)
 ```
-Pago confirmado (cualquier método) -> ServicePeriod sin entrega + PlanDeliveryLink
-  |--> Plan Delivery Request (Ferro, con enlace)
+Pago confirmado (cualquier método) -> ServicePeriod + PlanDeliveryLink
+  |--> Payment Received / Renewal Successful (Ferro): datos del cliente + botón "Registrar entrega del plan"
   v
 Ferro entrega el plan por WhatsApp (3 a 5 días hábiles)
   |
   v
-GET /plan/entrega/[token] (solo lectura)  -- o la pantalla tras confirmar una transferencia
+Botón del correo -> GET /plan/entrega/[token] (solo lectura) -> "Confirmar entrega"
   |
   v
-POST /api/plan-delivery/confirm { token, pin, deliveredOn }
-  |
-  v
-[Transacción] fechas del ServicePeriod + token usado + Contract -> active | scheduled + AuditLog
-  |
-  +--> Suscripción: trial_end = endDate (siguiente cobro)
-  +--> Welcome / Period Started (cliente)
+POST /api/plan-delivery/confirm { token } -> planDeliveredOn = hoy -> "Fecha de entrega del plan confirmada"
 
-Si no se registra: cron de días hábiles -> Plan Delivery Reminder (un correo con todas, enlaces nuevos).
-El mes nunca empieza solo.
+Mientras no se registre: cron de días hábiles -> Plan Delivery Reminder (uno por cliente, sin botón).
+Se detiene al registrar la fecha. Nada de esto cambia periodos ni cobros.
 ```
 
 ---
@@ -941,11 +923,11 @@ FERRO_APPROVAL_PIN_HASH=
 OTP_SESSION_SECRET=
 TRANSFER_LINK_TTL_DAYS=7
 PENDING_CONTRACT_TTL_DAYS=7
-PLAN_DELIVERY_REMINDER_BUSINESS_DAYS=3
+PLAN_DELIVERY_REMINDER_BUSINESS_DAYS=1
 CRON_SECRET=
 ```
 Los valores reales nunca se suben al repositorio. `src/lib/config.ts` valida al iniciar que existan las variables obligatorias.
-En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto, también para los enlaces de entrega), `PENDING_CONTRACT_TTL_DAYS` (7 por defecto) y `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` (3 por defecto); en desarrollo y pruebas son opcionales para poder trabajar sin claves reales (modo desarrollo de cada servicio). Una variable definida siempre se valida en formato. La validación se ejecuta al arrancar el servidor (`src/instrumentation.ts`), no durante `next build` (DECISIONS A9).
+En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto), `PENDING_CONTRACT_TTL_DAYS` (7 por defecto) y `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` (1 por defecto); en desarrollo y pruebas son opcionales para poder trabajar sin claves reales (modo desarrollo de cada servicio). Una variable definida siempre se valida en formato. La validación se ejecuta al arrancar el servidor (`src/instrumentation.ts`), no durante `next build` (DECISIONS A9).
 
 ### 9.2 Stripe
 - Verificar la firma de todos los webhooks.
@@ -956,11 +938,11 @@ En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAY
 - Comprobar el estado del pago antes de activar el servicio.
 
 ### 9.3 Enlaces privados y PIN de aprobación
-Aplica a los enlaces de transferencia (TransferApproval) y de entrega del plan (PlanDeliveryLink). El token del enlace:
+El token del enlace de transferencia (TransferApproval):
 - Se genera con 32 bytes aleatorios criptográficamente seguros.
 - Es único y se guarda solo como hash SHA-256.
 - Expira en 7 días (configurable).
-- Es de un solo uso y se invalida al usarse, al generar uno nuevo (regeneración o recordatorio) o tras 5 PIN incorrectos.
+- Es de un solo uso y se invalida al confirmar, al regenerar el enlace o tras 5 PIN incorrectos.
 
 El PIN de aprobación:
 - Lo conoce solo Ferro. Se guarda solo como hash (bcrypt o argon2) en `FERRO_APPROVAL_PIN_HASH`, generado con `npm run hash-pin`.
@@ -968,6 +950,8 @@ El PIN de aprobación:
 - Es un segundo factor: el enlace es lo que Ferro *tiene* (su correo) y el PIN lo que *sabe*. Un enlace reenviado, filtrado o abierto por un escáner de correo no basta para aprobar.
 
 Abrir el enlace es solo lectura; confirmar requiere un POST explícito con el PIN. Los escáneres automáticos de enlaces no pueden aprobar transferencias. Si el enlace expira, el contrato sigue pendiente y se puede regenerar.
+
+El botón de entrega del plan (PlanDeliveryLink) usa el mismo tipo de token (32 bytes, solo el hash, un solo uso), pero sin expiración ni PIN: solo guarda un dato de referencia. También es solo lectura en el GET y escribe únicamente con un POST explícito, para que los escáneres de correo no registren una fecha falsa.
 
 ### 9.4 Verificación de correo
 - Códigos de 6 dígitos guardados como hash, 10 minutos de vigencia, máximo 5 intentos, un solo uso.
@@ -1006,9 +990,7 @@ Se pide y guarda solo la información necesaria para prestar el servicio y proce
 | Token ya usado | Rechazar una nueva confirmación |
 | PIN incorrecto | Rechazar, registrar en auditoría e incrementar intentos; con 5, invalidar el token |
 | Contrato ya activo | Evitar una nueva activación |
-| Entrega ya registrada | Rechazar sin efectos |
-| Fecha de entrega futura o anterior al pago | Rechazar con el error de validación |
-| Falla al mover el siguiente cobro en Stripe | Conservar la entrega, dejar `billingAlignedAt` nulo, registrar el error y reintentar en el cron |
+| Entrega ya registrada | Mostrar la fecha registrada, sin cambios |
 | Cliente con suscripción activa intenta contratar | `409 subscription_active`; ofrecer el portal |
 | Cliente con otro pendiente | `409 pending_contract_exists`; preguntar si continúa o cambia |
 | Cliente que ya pagó un mes por adelantado | `409 prepaid_limit` |
@@ -1065,9 +1047,9 @@ El dominio se compra en GoDaddy (DECISIONS A17). Sus DNS se apuntan a Vercel y s
 - Envío de correos.
 - Cancelación y cambio de plan desde el portal (webhooks).
 - Transiciones válidas e inválidas de estados del contrato.
-- Registro de la entrega: fechas, fin de mes en meses cortos, mes por adelantado (`scheduled`), fecha futura o anterior al pago, doble registro.
-- Recordatorios: días hábiles, umbral de 3 días, un solo correo, enlaces nuevos.
-- Alineación del siguiente cobro (`trial_end`) y su reintento.
+- Periodos: un mes desde la fecha de pago, fin de mes en meses cortos, mes por adelantado (`scheduled`).
+- Registro de la entrega: GET sin efectos, POST guarda la fecha de hoy, doble registro sin cambios.
+- Recordatorios: solo días hábiles, uno por cliente y por día, se detienen al registrar la entrega.
 - Pendiente reutilizado, cambiado y vencido; pago tardío; límite de un mes por adelantado; suscripción activa.
 - Precio de suscripción con 10 % de descuento.
 
@@ -1082,7 +1064,8 @@ Interacciones con:
 ### 12.3 Pruebas de seguridad
 - Webhooks con firma inválida.
 - Webhooks duplicados y fuera de orden.
-- Tokens expirados, usados o invalidados (transferencia y entrega).
+- Tokens expirados, usados o invalidados.
+- El GET del botón de entrega no registra nada.
 - Cron sin `CRON_SECRET` o con uno incorrecto.
 - `GET /api/contracts/pending` y `POST /api/portal` sin sesión o con la sesión de otro correo.
 - PIN incorrecto e invalidación tras 5 intentos.
@@ -1099,8 +1082,8 @@ Interacciones con:
 - Navegación.
 - Botones de contratación.
 - Pantalla de pago pendiente.
-- Pantalla de confirmación de transferencia y paso "¿Ya entregaste el plan?".
-- Pantalla de registro de la entrega.
+- Pantalla de confirmación de transferencia.
+- Pantalla de entrega del plan y su confirmación.
 - Aviso de registro pendiente (continuar o cambiar).
 - Mensajes de error y éxito.
 
@@ -1115,7 +1098,7 @@ Interacciones con:
 | 3 | Correo de notificaciones de Ferro | **Definido.** Variable de entorno en Vercel. |
 | 4 | Dominio | **Definido:** GoDaddy. Pendiente de compra; afecta DNS, `APP_URL` y Resend. |
 | 5 | Remitente de Resend | **Definido.** Se verifica con el dominio. |
-| 6 | Periodos de servicio | **Definido:** el mes empieza con la entrega del plan (ServicePeriod, §7.8). |
+| 6 | Periodos de servicio | **Definido:** un mes desde la fecha de pago (ServicePeriod); la entrega del plan es solo referencia (§7.8). |
 | 7 | Reintentos y suspensión | **Definido:** Smart Retries; `payment_failed` suspende el servicio; al agotarse, se cancela. |
 | 8 | Mecanismo de cancelación | **Definido:** Stripe Customer Portal con OTP (§7.7). |
 | 9 | Nuevas contrataciones con un periodo vigente | **Definido** en §7.3. Falta confirmar con Ferro el pago tardío de un contrato vencido. |
@@ -1130,12 +1113,12 @@ Interacciones con:
 - Stripe para pagos y suscripciones.
 - Resend para correos.
 - Vercel para hosting.
-- Servicio contratado por periodos de un mes que empiezan con la entrega del plan.
+- Servicio contratado por periodos de un mes desde la fecha de pago.
 - Renovación automática mensual de las suscripciones.
 - Suscripción con 10 % de descuento sobre el precio del programa.
 - Verificación de correo por OTP obligatoria antes de cualquier contratación.
 - Transferencias confirmadas manualmente por Ferro con enlace + PIN; sin acción de rechazo.
-- Estados del contrato sin `paid`; el pago confirmado sin entrega es `awaiting_delivery`.
+- Estados del contrato sin `paid`.
 - `invoice.paid` como única fuente de pagos de suscripción.
 - Comunicación deportiva por WhatsApp.
 - Sin cuentas tradicionales ni dashboard de atletas.

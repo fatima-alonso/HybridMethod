@@ -15,7 +15,7 @@
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
-| 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); el mes empieza con la entrega del plan, registrada por Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
+| 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); cobro mes con mes desde la fecha de pago y registro informativo de la fecha de entrega del plan, con recordatorios a Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
 
 ---
 
@@ -65,7 +65,7 @@ La comunicación posterior a la contratación y la entrega de los planes de entr
 13. Notificaciones por correo electrónico.
 14. Reconocimiento de clientes recurrentes mediante verificación de correo.
 15. Cancelación de suscripciones y cambio de programa en el Stripe Customer Portal, con acceso por OTP.
-17. Registro de la fecha de entrega del plan por parte del entrenador, que marca el inicio de cada mes.
+17. Registro informativo de la fecha de entrega de cada plan por parte del entrenador, con recordatorios mientras esté pendiente.
 16. Acceso directo a WhatsApp para contactar al entrenador.
 
 ### 2.2 Funcionalidades fuera del alcance
@@ -123,7 +123,7 @@ Recibe notificaciones sobre:
 - Cancelaciones de suscripciones.
 - Entregas de plan pendientes de registrar.
 
-Registra en el sistema la fecha en que entrega cada plan (RF-23), con el enlace privado y su PIN.
+Registra en el sistema la fecha en que entrega cada plan con el botón del correo de compra (RF-23).
 
 En el caso de las transferencias, verifica manualmente que recibió el dinero y confirma el pago con el enlace privado que recibe por correo y su PIN personal.
 
@@ -224,20 +224,20 @@ Una vez verificado el correo (RF-15), el sistema deberá permitir seleccionar un
 El sistema deberá permitir que el cliente haga un pago único mediante Stripe Checkout.
 
 Una vez confirmado el pago, deberá:
-- Registrar la transacción y la fecha de pago.
-- Dejar el contrato en espera de la entrega del plan (RF-22).
+- Registrar la transacción.
+- Registrar el contrato.
+- Activar el periodo de servicio: un mes desde la fecha de pago (RF-22).
 - Enviar un correo de confirmación al cliente.
-- Enviar al entrenador un correo de notificación con el enlace para registrar la entrega del plan (RF-23).
+- Enviar al entrenador el correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
 
 ### RF-08. Suscripción mensual mediante Stripe
 El sistema deberá permitir contratar un programa mediante una suscripción mensual.
 
 La suscripción deberá:
 - Renovarse automáticamente cada mes.
-- Cobrar cada mes al terminar el periodo anterior. Como el mes empieza con la entrega del plan (RF-22), el sistema mueve el siguiente cobro de Stripe al fin de cada periodo.
+- Cobrar mes con mes desde la fecha del primer pago, sin depender de la fecha de entrega del plan (RF-22).
 - Registrar cada pago exitoso.
 - Prestar el servicio solo mientras los pagos estén al corriente.
-- Esperar la entrega del plan en cada mes pagado, también en las renovaciones (RF-22).
 - Notificar al entrenador por correo cada vez que se complete una renovación.
 - Enviar al cliente los correos de contratación y renovación.
 
@@ -300,19 +300,15 @@ Cuando el entrenador confirme una transferencia, el sistema deberá:
 - Registrar el pago como exitoso.
 - Registrar quién confirmó el pago y cuándo.
 - Invalidar el enlace usado.
-- Dejar el contrato en espera de la entrega del plan (RF-22).
-- Enviar al cliente un correo de confirmación del pago.
-
-Después de confirmar, la misma pantalla le pregunta al entrenador si ya entregó el plan, para que pueda registrarlo ahí mismo (RF-23) o hacerlo después con el enlace que le llega por correo.
+- Cambiar el contrato a `active` y activar el periodo de servicio: un mes desde la fecha de confirmación (RF-22).
+- Enviar al cliente un correo de confirmación y bienvenida.
+- Enviar al entrenador el correo de compra con el botón para registrar la entrega del plan (RF-23).
 
 ### RF-13. Notificaciones al entrenador
 El sistema deberá enviar un correo al entrenador cuando ocurra alguno de estos eventos:
 - Nueva contratación por transferencia (incluye el enlace privado de confirmación).
-- Cualquier pago confirmado, con el enlace para registrar la entrega del plan (RF-23).
-- Recordatorio diario de entregas pendientes (RF-23).
-- Pago único exitoso.
-- Nueva suscripción activa.
-- Renovación exitosa.
+- Cada pago confirmado (pago único, transferencia, primer pago y renovaciones de la suscripción): correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
+- Cada día hábil, mientras haya un plan sin fecha de entrega: un recordatorio por cliente (RF-23).
 - Pago fallido.
 - Cancelación de suscripción.
 - Confirmación manual de una transferencia.
@@ -323,8 +319,8 @@ La dirección de correo definitiva ya está disponible y deberá agregarse a la 
 El sistema deberá enviar:
 - El código de verificación de correo.
 - La confirmación de compra.
-- La confirmación de pago, con el aviso de que el plan llegará en 3 a 5 días hábiles.
-- El correo de bienvenida, o el aviso de inicio de mes en los meses siguientes, cuando se registra la entrega del plan (RF-22).
+- El correo de bienvenida, con el aviso de que Ferro entregará el plan en 3 a 5 días hábiles.
+- La confirmación de pago.
 - La confirmación de cancelación de la suscripción.
 - Avisos sobre renovaciones y pagos fallidos.
 
@@ -348,7 +344,7 @@ Cada renovación exitosa deberá generar una notificación al entrenador.
 ### RF-18. Pagos fallidos
 El sistema deberá registrar los intentos de cobro fallidos y actualizar el estado de la suscripción.
 
-Stripe reintenta el cobro con Smart Retries (configuración por defecto). Mientras haya un pago vencido, el servicio queda suspendido y no empieza ningún mes nuevo. Si un reintento se paga, el siguiente mes espera la entrega del plan como cualquier otro. Si se agotan los reintentos, la suscripción se cancela (DECISIONS A19).
+Stripe reintenta el cobro con Smart Retries (configuración por defecto). Mientras haya un pago vencido, el servicio queda suspendido. Si un reintento se paga, el servicio se reanuda. Si se agotan los reintentos, la suscripción se cancela (DECISIONS A19).
 
 ### RF-19. Cancelación de suscripciones
 El cliente podrá cancelar su suscripción en el Stripe Customer Portal, al que entra después de verificar su correo con un código (DECISIONS A21).
@@ -356,7 +352,7 @@ El cliente podrá cancelar su suscripción en el Stripe Customer Portal, al que 
 La cancelación se aplica al final del periodo: impide las renovaciones futuras sin quitar el servicio ya pagado. En el mismo portal, el cliente puede cambiar de programa (el cambio aplica en la siguiente renovación) y actualizar su tarjeta.
 
 ### RF-20. Enlaces privados de confirmación
-Los enlaces para confirmar transferencias y para registrar la entrega del plan deberán:
+Los enlaces para confirmar transferencias deberán:
 - Ser únicos.
 - Usar tokens seguros.
 - Guardar únicamente el hash del token.
@@ -365,7 +361,9 @@ Los enlaces para confirmar transferencias y para registrar la entrega del plan d
 - Invalidarse después de la confirmación.
 - Invalidarse después de 5 intentos con un PIN incorrecto.
 
-Si un enlace expira o se invalida, el contrato no se elimina ni se cancela y se puede generar un enlace nuevo. Los recordatorios de entrega siempre traen un enlace nuevo.
+Si un enlace expira o se invalida, el contrato no se elimina ni se cancela: sigue en `pending_payment` y se puede generar un enlace nuevo.
+
+El botón de entrega del plan (RF-23) tiene sus propias reglas: token seguro guardado solo como hash, un solo uso y sin expiración.
 
 ### RF-21. Contrataciones posteriores
 Reglas para un cliente que vuelve a contratar (DECISIONS A20):
@@ -374,26 +372,21 @@ Reglas para un cliente que vuelve a contratar (DECISIONS A20):
 - **Pago por adelantado.** Con un contrato de pago único o transferencia vigente o por empezar, el cliente puede pagar su siguiente mes, del mismo programa o de otro. Ese mes empieza cuando termina el vigente. Se permite un solo mes por adelantado.
 - **Con suscripción activa** no se puede crear otra contratación: el cambio de programa se hace en el portal (RF-19).
 
-### RF-22. Inicio del mes con la entrega del plan
-El entrenador entrega el plan de entrenamiento de 3 a 5 días hábiles después del pago. **El mes de servicio empieza el día en que se entrega el plan**, no el día del pago. Esto aplica al primer mes y a cada renovación (DECISIONS A19).
+### RF-22. Periodos de servicio y fechas de pago
+Cada pago confirmado da un mes de servicio que **empieza en la fecha de pago** y termina el mismo día del mes siguiente (o el último día de ese mes si el día no existe). Así aplica a todos los métodos: con la suscripción, el siguiente cobro llega al cumplirse un mes del pago anterior; con pago único o transferencia, el siguiente mes se paga cuando se cumple un mes del pago (DECISIONS A19).
 
-Para cada mes pagado, el sistema deberá guardar:
-- La fecha de pago.
-- La fecha de entrega del plan, que es el inicio del mes.
-- La fecha de fin: el mismo día del mes siguiente, o el último día de ese mes si el día no existe.
+Si el cliente pagó por adelantado con un periodo vigente (RF-21), el mes nuevo empieza cuando termina el vigente.
 
-Mientras no se registre la entrega, el contrato queda como "pagado, plan en preparación". Si el cliente pagó por adelantado con un periodo vigente, el mes nuevo empieza cuando termina el vigente.
+La fecha de entrega del plan no cambia el periodo ni los cobros.
 
-### RF-23. Registro de la entrega del plan
-El entrenador registrará la fecha real de entrega con:
-- La pantalla que aparece después de confirmar una transferencia (RF-12).
-- El enlace privado que recibe por correo cada vez que se confirma un pago, de cualquier método.
+### RF-23. Registro de la fecha de entrega del plan
+El entrenador entrega el plan de 3 a 5 días hábiles después del pago. El sistema guardará la fecha de entrega **solo como dato de referencia** (DECISIONS A19).
 
-La fecha es por defecto el día de hoy. No puede ser futura ni anterior al día del pago. Registrarla requiere el PIN de aprobación, y el enlace sigue las reglas de RF-20.
-
-Si el entrenador no la registra, el sistema no empieza el mes por su cuenta. Cada día hábil le envía un solo correo con las entregas que lleven 3 días hábiles o más pendientes, cada una con un enlace nuevo.
-
-En las suscripciones, al registrar la entrega, el sistema mueve el siguiente cobro de Stripe a la fecha de fin del mes.
+- Después de cada pago confirmado, el entrenador recibe un correo de compra con todos los datos del cliente y de la compra, y un botón **"Registrar entrega del plan"**.
+- El botón abre una pantalla con los datos de ese plan y un botón para confirmar. Al confirmar, el sistema guarda como fecha de entrega el día de hoy y muestra **"Fecha de entrega del plan confirmada"**. No hace nada más.
+- Se pide esa confirmación explícita porque algunos programas de correo abren los enlaces automáticamente. Si bastara con abrir el enlace, se registraría una fecha falsa en cuanto llega el correo.
+- El botón sirve una sola vez. Si se abre de nuevo, muestra la fecha ya registrada.
+- Mientras no se registre la fecha, el sistema envía al entrenador **cada día hábil** (lunes a viernes) un recordatorio: "Está pendiente el plan de [cliente]". El recordatorio no trae un botón nuevo: la fecha se registra con el botón del correo de compra. Los recordatorios se detienen en cuanto se registra la fecha.
 
 ---
 
@@ -401,17 +394,17 @@ En las suscripciones, al registrar la entrega, el sistema mueve el siguiente cob
 
 **RN-01. Contratación directa.** El cliente podrá seleccionar un programa y contratarlo directamente, después de verificar su correo. No existirá un proceso de aprobación de clientes.
 
-**RN-02. Duración del servicio.** Cada mes pagado da un periodo de servicio de un mes calendario, que empieza el día en que el entrenador entrega el plan (RF-22).
+**RN-02. Duración del servicio.** Cada mes pagado da un periodo de servicio de un mes calendario desde la fecha de pago (RF-22).
 
 **RN-03. Renovación automática.** Las suscripciones se renovarán automáticamente cada mes hasta que el cliente las cancele.
 
 **RN-04. Transferencias.** Una transferencia solo se considerará pagada después de que Ferro confirme que la recibió, usando el enlace privado y su PIN.
 
-**RN-05. Activación del servicio.** El servicio solo podrá activarse después de confirmar un pago exitoso, ya sea por Stripe o por la confirmación manual de una transferencia. El mes empieza con la entrega del plan (RF-22).
+**RN-05. Activación del servicio.** El servicio solo podrá activarse después de confirmar un pago exitoso, ya sea por Stripe o por la confirmación manual de una transferencia.
 
 **RN-06. Comunicación deportiva.** Ferro recopilará la información deportiva del cliente por WhatsApp después de la contratación.
 
-**RN-07. Entrega del entrenamiento.** Ferro preparará y enviará los planes de entrenamiento directamente por WhatsApp, de 3 a 5 días hábiles después del pago, y registrará en el sistema la fecha de entrega (RF-23).
+**RN-07. Entrega del entrenamiento.** Ferro preparará y enviará los planes de entrenamiento directamente por WhatsApp, de 3 a 5 días hábiles después del pago, y registrará en el sistema la fecha de entrega como dato de referencia (RF-23).
 
 **RN-08. Cambios de programa.** Los cambios de programa respetan el periodo ya pagado: con pago único o transferencia, el siguiente mes se paga por adelantado con el nuevo programa; con suscripción, el cambio se hace en el portal y aplica en la siguiente renovación (RF-21).
 
@@ -479,10 +472,10 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 9. El cliente completa el pago en Stripe Checkout.
 10. Stripe notifica el resultado al backend mediante un webhook.
 11. El sistema verifica el evento y registra el pago.
-12. El contrato queda como "pagado, plan en preparación".
-13. El cliente recibe la confirmación del pago.
-14. El entrenador recibe la notificación con el enlace para registrar la entrega.
-15. El entrenador entrega el plan por WhatsApp y registra la fecha. El mes empieza ese día y el cliente recibe la bienvenida.
+12. El sistema cambia el contrato a `active`: un mes desde la fecha de pago.
+13. Se envía el correo de bienvenida al cliente.
+14. El entrenador recibe el correo de compra con el botón para registrar la entrega del plan.
+15. Cuando entrega el plan, registra la fecha con ese botón. Mientras no lo haga, recibe un recordatorio cada día hábil.
 
 ### 9.2 Flujo de suscripción mensual
 1. El visitante selecciona un programa.
@@ -494,13 +487,12 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 7. El cliente completa el pago.
 8. Stripe notifica el resultado mediante un webhook.
 9. El sistema registra la suscripción y el primer pago.
-10. El contrato queda como "pagado, plan en preparación".
-11. El cliente recibe la confirmación del pago.
-12. El entrenador recibe una notificación con el enlace para registrar la entrega.
-13. El entrenador registra la entrega. El mes empieza ese día y el siguiente cobro se mueve al fin del mes.
-14. Al terminar el mes, Stripe hace la renovación automática.
-15. Cada renovación exitosa se registra, se notifica al entrenador y espera la entrega del nuevo plan (pasos 12 y 13).
-16. Si un cobro falla, el servicio se suspende hasta que se pague.
+10. Se activa el servicio: un mes desde la fecha de pago.
+11. El cliente recibe la confirmación y la bienvenida.
+12. El entrenador recibe el correo de compra con el botón para registrar la entrega del plan.
+13. Al cumplirse un mes del pago, Stripe hace la renovación automática.
+14. Cada renovación exitosa se registra y el entrenador recibe otro correo de compra con su botón de entrega.
+15. Si un cobro falla, el servicio se suspende hasta que se pague.
 
 ### 9.3 Flujo de transferencia bancaria
 1. El visitante selecciona un programa.
@@ -518,8 +510,7 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 13. Ferro abre el enlace privado.
 14. El sistema muestra la pantalla de confirmación.
 15. Ferro escribe su PIN y selecciona "Sí, confirmar pago". Si selecciona "No, regresar", no pasa nada y el contrato sigue pendiente.
-16. El sistema registra el pago, deja el contrato en espera de la entrega y envía los correos correspondientes.
-17. La pantalla pregunta si ya entregó el plan. Ferro registra la fecha ahí mismo o después, con el enlace que le llega por correo. El mes empieza ese día.
+16. El sistema registra el pago, activa el servicio (un mes desde la confirmación) y envía los correos correspondientes, incluido el correo de compra a Ferro con el botón de entrega del plan.
 
 ### 9.4 Flujo de cancelación
 1. El cliente entra a "Administrar mi suscripción".
@@ -539,7 +530,7 @@ El sistema deberá guardar información de:
 - Programas.
 - Contratos.
 - Pagos.
-- Periodos de servicio (fecha de pago, entrega del plan y fin de cada mes).
+- Periodos de servicio (fecha de pago, inicio y fin de cada mes, y fecha de entrega del plan como referencia).
 - Suscripciones.
 - Confirmaciones manuales de transferencia.
 - Verificaciones de correo electrónico.
@@ -581,7 +572,7 @@ La primera versión se considerará funcional cuando:
 9. Las transferencias se puedan registrar como pendientes.
 10. Ferro pueda confirmar transferencias con el enlace privado, su PIN y una acción explícita.
 11. Los clientes reciban los correos de confirmación y bienvenida.
-12. Ferro pueda registrar la entrega del plan, y el mes empiece ese día.
+12. Ferro pueda registrar la fecha de entrega de cada plan y reciba recordatorios mientras esté pendiente.
 13. Ferro reciba notificaciones de nuevas contrataciones y renovaciones exitosas.
 14. Los datos se guarden correctamente.
 15. La interfaz funcione en celulares y computadoras.
@@ -614,7 +605,7 @@ La primera versión se considerará funcional cuando:
 | 3 | Correo de notificaciones de Ferro | **Definido.** Se carga en las variables de entorno. |
 | 4 | Dominio definitivo | **Definido:** GoDaddy. Pendiente de compra y configuración (Fase 8). |
 | 5 | Remitente de Resend | **Definido.** Se verifica con el dominio (Fase 8). |
-| 6 | Fechas de los periodos de servicio | **Definido:** el mes empieza con la entrega del plan (RF-22). |
+| 6 | Fechas de los periodos de servicio | **Definido:** un mes desde la fecha de pago en todos los métodos; la entrega del plan es solo referencia (RF-22, RF-23). |
 | 7 | Reintentos y suspensión por pagos fallidos | **Definido:** Smart Retries; servicio suspendido mientras haya un pago vencido (RF-18). |
 | 8 | Mecanismo de cancelación | **Definido:** Stripe Customer Portal con OTP, al final del periodo (RF-19). |
 | 9 | Nuevas contrataciones con un periodo vigente | **Definido** en RF-21. |
@@ -643,8 +634,8 @@ La primera versión se considerará funcional cuando:
 | Suscripción | Contratación recurrente con renovación automática. |
 | Pago único | Transacción que se hace una sola vez. |
 | Transferencia pendiente | Pago que espera la confirmación manual. |
-| Entrega del plan | Día en que Ferro entrega el plan de entrenamiento; marca el inicio del mes de servicio. |
-| Periodo de servicio | Un mes pagado, desde la entrega del plan hasta el mismo día del mes siguiente. |
+| Entrega del plan | Día en que Ferro entrega el plan de entrenamiento. Se guarda como referencia. |
+| Periodo de servicio | Un mes pagado, desde la fecha de pago hasta el mismo día del mes siguiente. |
 | Webhook | Notificación que un servicio externo envía a nuestro backend. |
 | OTP | Código temporal para verificar la identidad mediante el correo electrónico. |
 | PIN de aprobación | Código secreto que solo conoce Ferro y que se necesita para confirmar transferencias. |

@@ -89,8 +89,8 @@ del flujo.
 
 ## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan ⬜ (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
 - **Migración (DECISIONS A18–A20, SDD §5.3):** `Program.subscriptionPrice`; entidades ServicePeriod y
-  PlanDeliveryLink; estados `awaiting_delivery`, `scheduled` y `expired` con sus transiciones;
-  `Contract.lastActivityAt`; índice único parcial de un pendiente por cliente; Subscription con `trialing`.
+  PlanDeliveryLink; estados `scheduled` y `expired` con sus transiciones; `Contract.lastActivityAt`; índice único
+  parcial de un pendiente por cliente.
 - Catálogo y seed con `subscriptionPrice` (prueba de −10 %). La landing muestra los dos precios y deja de decir
   "el mismo precio en cualquier modalidad"; se quita la nota "[Pendiente] Confirmar si el precio incluye IVA".
 - (El token ya se genera en la Fase 3: `createTransferApproval` en `transfer.service`, solo hash, 7 días.)
@@ -98,15 +98,15 @@ del flujo.
 - `GET /transfer/confirm/[token]`: pantalla de solo lectura (`noindex`, `no-referrer`) con los datos del
   contrato, un campo de PIN y los botones "Sí, confirmar pago" / "No, regresar" (este último no hace POST).
 - `POST /api/transfers/confirm` con `{ token, pin }`: valida el token, el PIN y que el contrato siga
-  en `pending_payment`; en una sola transacción marca el token como usado, crea el Payment y el ServicePeriod,
-  pasa el contrato a `awaiting_delivery`, crea el enlace de entrega y escribe la auditoría (IP, user-agent).
-  Después envía Transfer Confirmed (cliente) y Plan Delivery Request (Ferro). Con 5 PIN incorrectos, el token se
-  invalida.
-- **Entrega del plan (SDD §7.8):** `delivery.service`, `GET /plan/entrega/[token]`,
-  `POST /api/plan-delivery/confirm` y el paso "¿Ya entregaste el plan?" tras confirmar una transferencia.
-  Correos Welcome y Period Started.
+  en `pending_payment`; en una sola transacción marca el token como usado, crea el Payment, el ServicePeriod (un
+  mes desde la confirmación) y su botón de entrega, activa el contrato y escribe la auditoría (IP, user-agent).
+  Después envía Transfer Confirmed + Welcome (cliente) y Payment Received con todos los datos del cliente y el
+  botón "Registrar entrega del plan" (Ferro). Con 5 PIN incorrectos, el token se invalida.
+- **Entrega del plan, solo referencia (SDD §7.8, DECISIONS A19):** `delivery.service`,
+  `GET /plan/entrega/[token]` (solo lectura) y `POST /api/plan-delivery/confirm` (guarda la fecha de hoy y
+  muestra "Fecha de entrega del plan confirmada"). Sin PIN ni expiración.
 - `GET /api/cron/daily` con `CRON_SECRET`: vencimientos, `scheduled → active`, `active → completed`,
-  recordatorios de entrega de lunes a viernes y purga del rate limit. (Alinear cobros se agrega en la Fase 6.)
+  recordatorios de entrega de lunes a viernes (uno por cliente, sin botón) y purga del rate limit.
 - Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace.
 - Pruebas de seguridad del SDD §12.3 relacionadas con tokens.
 
@@ -115,8 +115,8 @@ del flujo.
   (`stripePriceIdOneTime`) y una comprobación de que el importe en Stripe coincide con `monthlyPrice`.
 - `POST /api/webhooks/stripe` con verificación de firma, registro en WebhookEvent e idempotencia.
   Solo se escuchan los eventos de DECISIONS A6.
-- Payment + ServicePeriod + contrato `awaiting_delivery`; correos Purchase Confirmation (cliente) y Payment
-  Received + Plan Delivery Request (Ferro). La entrega usa lo construido en la Fase 4.
+- Payment + ServicePeriod + contrato `active`; correos Purchase Confirmation y Welcome (cliente) y Payment
+  Received con el botón de entrega (Ferro), construido en la Fase 4.
 - Páginas de éxito y cancelación que solo informan, sin confirmar nada.
 - Pruebas con Stripe CLI (`stripe listen`) y webhooks duplicados o con firma inválida.
 
@@ -124,11 +124,11 @@ del flujo.
 - Checkout en modo `subscription` con `stripePriceIdRecurring` (importe = `subscriptionPrice`).
   `customer.subscription.*` solo sincroniza el estado.
 - `invoice.paid` es la única fuente de los Payment (el primer pago y las renovaciones): crea un ServicePeriod en
-  espera de entrega y avisa a Ferro (Renewal Successful en las renovaciones).
-- Al registrar la entrega, mover el siguiente cobro con `trial_end` (DECISIONS A19); reintento en el cron.
+  y su botón de entrega con el periodo de la factura, extiende el contrato y avisa a Ferro (Renewal Successful
+  con botón en las renovaciones). Stripe cobra mes con mes desde el primer pago.
 - `invoice.payment_failed` → registrar el fallo, suspender (`payment_failed`) y enviar Payment Failed.
   Smart Retries y cancelación al agotarse (configuración de Stripe documentada en el README).
-- Pruebas con Stripe test clocks para simular renovaciones, entregas y pagos fallidos.
+- Pruebas con Stripe test clocks para simular renovaciones y pagos fallidos.
 
 ## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
 - Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso
