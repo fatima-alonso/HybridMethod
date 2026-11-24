@@ -264,8 +264,25 @@ registra en la consola, incluido el código OTP para poder probar el flujo. En d
 | 6 | Fechas exactas del periodo de un mes | Fase 4 | Propuesta: el periodo de Stripe para suscripciones; el mismo día del mes siguiente para pago único y transferencia |
 | 7 | Reintentos y suspensión por pagos fallidos | Fase 6 | Propuesta: Smart Retries de Stripe con la configuración por defecto; el servicio sigue mientras esté `past_due` |
 | 8 | Mecanismo de cancelación | Fase 7 | Propuesta: Stripe Customer Portal con acceso por OTP; cancelar al final del periodo |
-| 9 | Nuevas contrataciones con un periodo vigente | Fase 7 | Pendiente |
+| 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | Fase 7 (se puede adelantar) | Pendiente. Ver la nota B9 abajo |
 | 10 | WhatsApp oficial de Ferro | Fase 1 (placeholder en la variable de entorno) | Pendiente |
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador existente |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
+
+### Nota B9. Cliente que vuelve a contratar con un contrato pendiente (2026-11-24)
+Hoy (Fase 3), si un cliente que ya tiene un contrato `pending_payment` vuelve a contratar en otra sesión,
+se reutiliza su Customer (mismo correo) pero se crea **otro contrato** con otra referencia, y Ferro recibe otro
+correo Transfer Pending. Solo se evita el duplicado por doble envío dentro de la misma sesión (A16).
+Ejemplo: alguien elige transferencia, no paga y vuelve días después → dos referencias para la misma persona.
+
+Opciones a decidir con Ferro:
+1. **Reutilizar el contrato pendiente** (recomendada): tras verificar el correo, si ya hay un contrato
+   `pending_payment` del mismo programa y modalidad, mostrar esa referencia en lugar de crear otro. No expone
+   datos de terceros porque el cliente ya verificó su correo (RF-15).
+2. **Permitirlo y avisar a Ferro**: crear el contrato nuevo, pero indicar en el correo Transfer Pending que el
+   cliente tiene otro pendiente.
+3. **Dejarlo como está** hasta la Fase 7.
+
+Falta definir también: qué pasa si el pendiente es de otro programa, si los pendientes viejos vencen o se
+cancelan, y cómo encaja con un contrato `active` vigente (el resto de B9).
