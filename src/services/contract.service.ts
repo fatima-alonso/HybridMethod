@@ -341,3 +341,40 @@ export async function expireStalePendingContracts(
   });
   return count;
 }
+
+// ─── Sesión de Stripe Checkout (Fase 5) ─────────────────────────────────────
+
+/**
+ * Guarda la sesión de Checkout de un contrato pendiente con un compare-and-set sobre la sesión
+ * anterior (`previous`): si otra solicitud simultánea ya guardó otra, devuelve `false` y quien
+ * llama usa esa. No cambia el estado del contrato.
+ */
+export async function attachCheckoutSession(
+  contractId: string,
+  sessionId: string,
+  previous: string | null,
+  db: Db = getPrisma(),
+  now: Date = new Date(),
+): Promise<boolean> {
+  const { count } = await db.contract.updateMany({
+    where: { id: contractId, status: "pending_payment", stripeCheckoutSessionId: previous },
+    data: { stripeCheckoutSessionId: sessionId, lastActivityAt: now },
+  });
+  return count === 1;
+}
+
+/**
+ * Quita la sesión de Checkout del contrato si sigue siendo `sessionId` (se expiró en Stripe, el
+ * pago asíncrono falló o el pendiente se cambió). Devuelve `true` si la quitó.
+ */
+export async function detachCheckoutSession(
+  contractId: string,
+  sessionId: string,
+  db: Db = getPrisma(),
+): Promise<boolean> {
+  const { count } = await db.contract.updateMany({
+    where: { id: contractId, stripeCheckoutSessionId: sessionId },
+    data: { stripeCheckoutSessionId: null },
+  });
+  return count === 1;
+}

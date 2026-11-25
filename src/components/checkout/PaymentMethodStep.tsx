@@ -25,8 +25,8 @@ type Props = {
 };
 
 /**
- * Paso 3: método de pago (RF-06). En la Fase 3 solo está disponible la transferencia; los pagos con
- * Stripe se muestran deshabilitados hasta las Fases 5 y 6.
+ * Paso 3: método de pago (RF-06). Transferencia y pago único con tarjeta (Fase 5); la suscripción se
+ * muestra deshabilitada hasta la Fase 6.
  */
 export function PaymentMethodStep({
   program,

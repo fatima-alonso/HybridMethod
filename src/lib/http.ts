@@ -32,6 +32,9 @@ export type ApiErrorCode =
   | "prepaid_limit"
   | "invalid_date"
   | "service_unavailable"
+  | "payments_unavailable"
+  | "invalid_signature"
+  | "payment_in_progress"
   | "internal_error";
 
 const NO_STORE = { "Cache-Control": "no-store" };

@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.10 |
+| **Versión** | 1.11 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.7 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.11 | 2026-11-25 | Fase 5, pago único con Stripe (DECISIONS A26): §4 `checkout`, `stripe-webhook`, `stripe-catalog` y `payment-notifications` services, script `stripe-sync` y páginas `/pago/exito` y `/pago/cancelado`; §6.1 productos y Prices por `lookup_key`; §7.4 body, reutilización de la sesión y respuestas; §7.5 bloqueo del evento, reintentos, cobro adicional y pago asíncrono fallido sin `payment_failed` (pendiente B15). |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
@@ -121,7 +122,8 @@ the-hybrid-method/
 │   ├── logos/
 │   └── fonts/
 ├── scripts/
-│   └── hash-pin.ts
+│   ├── hash-pin.ts
+│   └── stripe-sync.ts
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx
@@ -134,6 +136,9 @@ the-hybrid-method/
 │   │   ├── plan/
 │   │   │   └── entrega/[token]/
 │   │   ├── confirmation/
+│   │   ├── pago/
+│   │   │   ├── exito/            # regreso de Stripe Checkout (solo informa)
+│   │   │   └── cancelado/
 │   │   └── api/
 │   │       ├── customers/
 │   │       ├── contracts/
@@ -163,6 +168,10 @@ the-hybrid-method/
 │   │   ├── customer.service.ts
 │   │   ├── contract.service.ts
 │   │   ├── payment.service.ts
+│   │   ├── payment-notifications.service.ts
+│   │   ├── checkout.service.ts
+│   │   ├── stripe-webhook.service.ts
+│   │   ├── stripe-catalog.service.ts
 │   │   ├── subscription.service.ts
 │   │   ├── transfer.service.ts
 │   │   ├── transfer-approval.service.ts
@@ -487,7 +496,7 @@ Stripe procesa los pagos y administra las suscripciones. Se usarán:
 - Stripe Billing para los ciclos recurrentes.
 - Stripe Webhooks para sincronizar los eventos con la aplicación.
 
-Cada programa tiene en Stripe un Product con dos Prices: uno `one_time` por `monthlyPrice` y uno `recurring` mensual por `subscriptionPrice` (10 % menos; DECISIONS A18).
+Cada programa tiene en Stripe un Product con dos Prices: uno `one_time` por `monthlyPrice` y uno `recurring` mensual por `subscriptionPrice` (10 % menos; DECISIONS A18). El Product usa el slug como id y los Prices se identifican con `lookup_key` (`<slug>_one_time`, `<slug>_recurring`). `npm run stripe:sync` los crea o actualiza y guarda sus IDs en `programs`; un precio que cambia crea un Price nuevo y archiva el anterior (DECISIONS A26).
 
 Las suscripciones cobran mes con mes desde el primer pago, el comportamiento normal de Stripe (DECISIONS A19).
 
@@ -633,24 +642,35 @@ El servidor determina el importe a partir del programa guardado y de la modalida
 ### 7.4 Checkout
 **`POST /api/checkout`** — Crea una sesión de Stripe Checkout. Requiere la sesión de verificación.
 
-Request:
+Request (igual que `POST /api/transfers` más `mode`; el correo sale de la sesión y el Price y el importe, de la BD; DECISIONS A26):
 ```json
 {
-  "customerId": "customer_id",
-  "programId": "program_id",
-  "mode": "payment"
+  "fullName": "Nombre del cliente",
+  "whatsapp": { "country": "MX", "number": "55 1234 5678" },
+  "program": "hm-run",
+  "privacyAccepted": true,
+  "mode": "payment",
+  "pendingAction": "continue"
 }
 ```
-Valores permitidos para `mode`: `payment`, `subscription`.
+Valores permitidos para `mode`: `payment` (Fase 5) y `subscription` (Fase 6). `pendingAction` es opcional.
 
-Response:
+Response (201 al crear el contrato; 200 al reutilizar, retomar o cambiar el pendiente):
 ```json
 {
   "success": true,
-  "checkoutUrl": "stripe_checkout_url"
+  "checkoutUrl": "stripe_checkout_url",
+  "reference": "HM-2026-000001",
+  "status": "pending_payment",
+  "outcome": "created"
 }
 ```
-El backend valida el programa, su disponibilidad, el Price correspondiente y que su importe coincida con `monthlyPrice` (`payment`) o `subscriptionPrice` (`subscription`). Aplica las reglas de §7.3, crea o reutiliza el contrato `pending_payment` y guarda `stripeCheckoutSessionId`.
+El backend valida el programa, su disponibilidad, el Price correspondiente y que su importe coincida con `monthlyPrice` (`payment`) o `subscriptionPrice` (`subscription`), antes de crear el contrato. Aplica las reglas de §7.3, crea o reutiliza el contrato `pending_payment` y guarda `stripeCheckoutSessionId`.
+- Un pendiente reutilizado conserva su sesión si sigue abierta y cobra el mismo Price; si venció, se abre otra con la misma referencia. Si ya se completó y Stripe todavía no avisa (pago asíncrono), responde `409 payment_in_progress`.
+- "Cambiar" invalida el enlace de transferencia o expira la sesión anterior en Stripe.
+- El cliente de Stripe se crea una sola vez y se guarda en `Customer.stripeCustomerId`.
+- Respuestas de error: `401` sin sesión; `400` datos inválidos; `409` reglas de §7.3 o `payment_in_progress`; `422 program_unavailable`; `503 payments_unavailable` (sin Stripe, Price ausente o distinto, o error de Stripe). Rate limit: 10 por IP por hora.
+- La sesión regresa a `/pago/exito` o `/pago/cancelado`, páginas que solo informan.
 
 ### 7.5 Webhooks de Stripe
 **`POST /api/webhooks/stripe`** — Recibe los eventos de Stripe.
@@ -661,7 +681,7 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 |---|---|---|
 | Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago por adelantado). Si es `unpaid` (pago asíncrono), esperar. |
 | Pago único | `checkout.session.async_payment_succeeded` | Igual que el anterior con `paid`. |
-| Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido y pasar el contrato a `payment_failed`. |
+| Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido. El contrato sigue `pending_payment` (nunca se activó) y el cliente puede reintentar; se le avisa (DECISIONS A26, pendiente B15). |
 | Suscripción | `checkout.session.completed` (modo subscription) | Solo relacionar `stripeSubscriptionId` con el contrato; **no** crea el Payment. |
 | Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la factura y el programa del Price facturado; activa o extiende el contrato. En renovaciones, avisa a Ferro. Una factura de importe 0 no abre un mes. |
 | Suscripción | `invoice.payment_failed` | Registrar el Payment fallido, pasar el contrato a `payment_failed` (servicio suspendido) y avisar. |
@@ -670,12 +690,14 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 No se escuchan `payment_intent.succeeded` ni `payment_intent.payment_failed`.
 
 Pasos del procesamiento:
-1. Verificar la firma del webhook con `STRIPE_WEBHOOK_SECRET` usando el body crudo.
-2. Insertar el evento en WebhookEvent; si `stripeEventId` ya existe, responder 200 sin procesarlo.
-3. Recuperar el contrato o la suscripción asociada.
-4. Actualizar los registros en una transacción.
-5. Marcar el evento como `processed`.
-6. Enviar las notificaciones: al cliente, Purchase Confirmation y Welcome (primer pago); a Ferro, Payment Received o Renewal Successful con el botón de entrega.
+1. Verificar la firma del webhook con `STRIPE_WEBHOOK_SECRET` usando el body crudo (400 si falla; 503 si falta el secreto).
+2. Insertar el evento en WebhookEvent (`ON CONFLICT DO NOTHING`) y, en una transacción, bloquear su fila (`FOR UPDATE`); si ya está `processed` o `ignored`, responder 200 sin procesarlo.
+3. Recuperar y bloquear el contrato o la suscripción asociada.
+4. Actualizar los registros en la misma transacción.
+5. Marcar el evento como `processed` (o `ignored` si no es de esta tabla). Si algo falla, se revierte todo, el evento queda `failed` y se responde 500 para que Stripe lo reintente.
+6. Después de confirmar, enviar las notificaciones: al cliente, Purchase Confirmation y Welcome (primer pago); a Ferro, Payment Received o Renewal Successful con el botón de entrega.
+
+El Payment guarda el importe que cobró Stripe; si no coincide con el contrato, se respeta y se audita. Un cobro para un contrato que ya estaba pagado se registra sin abrir otro mes y se avisa a Ferro para que lo revise en Stripe (DECISIONS A26).
 
 Si el contrato estaba `expired`, el pago se respeta igual y se audita `contract.paid_after_expiry` (DECISIONS A20).
 

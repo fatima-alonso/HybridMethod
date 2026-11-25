@@ -116,6 +116,41 @@ export class PendingNotTransferError extends ServiceError {
   }
 }
 
+/** El cliente retomó, desde el pago con tarjeta, un pendiente de otra modalidad. */
+export class PendingNotCardError extends ServiceError {
+  constructor(
+    public readonly reference: string,
+    public readonly paymentType: string,
+  ) {
+    super(`El pendiente ${reference} no es de pago único con tarjeta.`, "pending_not_card");
+  }
+}
+
+// ─── Stripe (Fase 5) ────────────────────────────────────────────────────────
+
+export type PaymentsUnavailableReason =
+  /** Falta `STRIPE_SECRET_KEY` (solo desarrollo). */
+  | "not_configured"
+  /** El programa no tiene Price de Stripe (`npm run stripe:sync`). */
+  | "price_missing"
+  /** El Price de Stripe no coincide con el precio de la BD (SDD §5.3, §10). */
+  | "price_mismatch"
+  /** Stripe no respondió o rechazó la solicitud. */
+  | "stripe_error";
+
+/** No se puede cobrar con tarjeta ahora: el cliente puede pagar por transferencia. */
+export class PaymentsUnavailableError extends ServiceError {
+  constructor(
+    public readonly reason: PaymentsUnavailableReason,
+    detail?: string,
+  ) {
+    super(
+      `El pago con tarjeta no está disponible (${reason})${detail ? `: ${detail}` : ""}.`,
+      "payments_unavailable",
+    );
+  }
+}
+
 // ─── Entrega del plan (DECISIONS A19) ───────────────────────────────────────
 
 export class DeliveryLinkUnavailableError extends ServiceError {
@@ -127,5 +162,15 @@ export class DeliveryLinkUnavailableError extends ServiceError {
 export class InvalidDeliveryDateError extends ServiceError {
   constructor(public readonly reason: "future" | "before_payment") {
     super(`Fecha de entrega inválida (${reason}).`, "invalid_delivery_date");
+  }
+}
+
+/**
+ * La sesión de Checkout del pendiente ya se pagó (o el pago asíncrono sigue en proceso) y Stripe
+ * todavía no avisa: no se abre otra para no cobrar dos veces.
+ */
+export class CheckoutInProgressError extends ServiceError {
+  constructor(public readonly reference: string) {
+    super(`El pago de ${reference} ya está en proceso.`, "payment_in_progress");
   }
 }

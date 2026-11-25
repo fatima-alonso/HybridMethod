@@ -69,7 +69,7 @@ export async function purgeRateLimitBuckets(
   return count;
 }
 
-/** Límites de las Fases 3 y 4 (DECISIONS A16, A23). */
+/** Límites de las Fases 3 a 5 (DECISIONS A16, A23, A26). */
 export const RATE_LIMITS = {
   /** Pedir código: por IP. */
   otpRequestIp: { scope: "otp-request:ip", limit: 20, windowMs: 60 * 60 * 1000 },
@@ -82,6 +82,8 @@ export const RATE_LIMITS = {
   otpConfirmEmail: { scope: "otp-confirm:email", limit: 15, windowMs: 15 * 60 * 1000 },
   /** Crear transferencias: por IP. */
   transferCreateIp: { scope: "transfer-create:ip", limit: 10, windowMs: 60 * 60 * 1000 },
+  /** Crear o retomar un pago con tarjeta (Stripe Checkout): por IP (Fase 5, DECISIONS A26). */
+  checkoutCreateIp: { scope: "checkout-create:ip", limit: 10, windowMs: 60 * 60 * 1000 },
   /** Confirmar una transferencia: por IP (además de los 5 PIN por enlace). */
   transferConfirmIp: { scope: "transfer-confirm:ip", limit: 20, windowMs: 15 * 60 * 1000 },
   /** Regenerar un enlace: por IP y en total, porque no hay un enlace que cuente los PIN. */

@@ -20,6 +20,17 @@ export const CONTRACT_RULE_MESSAGES = {
     "Ya pagaste tu siguiente mes por adelantado. Podrás contratar otro cuando empiece ese mes.",
   pendingNotTransfer:
     "Tu registro pendiente es de pago con tarjeta. Para pagarlo por transferencia, elige «Cambiar».",
+  pendingNotCard:
+    "Tu registro pendiente es de otra modalidad. Para pagarlo con tarjeta, elige «Cambiar».",
+} as const;
+
+/** Pago con tarjeta (Stripe Checkout, Fase 5). */
+export const CHECKOUT_MESSAGES = {
+  unavailable:
+    "El pago con tarjeta no está disponible en este momento. Puedes pagar por transferencia o intentarlo más tarde.",
+  inProgress:
+    "Ya recibimos tu pago con tarjeta y Stripe lo está confirmando. Te avisaremos por correo en cuanto quede listo.",
+  redirecting: "Te estamos llevando a Stripe para pagar de forma segura…",
 } as const;
 
 /** Nombre de cada modalidad para el aviso del pendiente. */
@@ -67,8 +78,9 @@ export const PAYMENT_STEP = {
     {
       id: "one_time",
       name: "Pago único con tarjeta",
-      description: "Pagas un mes con Stripe.",
-      available: false,
+      description:
+        "Pagas un mes en la página segura de Stripe. Tu plan empieza en cuanto se confirma tu pago.",
+      available: true,
     },
     {
       id: "subscription",
@@ -101,3 +113,28 @@ export const FLOW_ERRORS = {
   generic: "Ocurrió un error. Intenta de nuevo en unos minutos.",
   sessionExpired: "Tu verificación venció. Te enviamos un código nuevo para continuar.",
 };
+
+/**
+ * Páginas de regreso de Stripe Checkout (SDD §7.5): solo informan. El pago lo confirma el webhook,
+ * nunca estas páginas, así que no muestran ni cambian ningún dato del contrato.
+ */
+export const CHECKOUT_RETURN_PAGES = {
+  success: {
+    metaTitle: "Pago enviado · THE HYBRID METHOD",
+    title: "¡Gracias!",
+    lead: "Stripe está procesando tu pago. En cuanto lo confirme te llegarán por correo tu confirmación de compra y la bienvenida a tu programa.",
+    steps: [
+      "Revisa tu correo (y la carpeta de spam) en los próximos minutos.",
+      "Si pagaste en efectivo o con otro método que tarda en confirmarse, te avisaremos cuando se acredite.",
+      "Ferro te escribirá por WhatsApp y te entregará tu plan en 3 a 5 días hábiles.",
+    ],
+    home: "Volver al inicio",
+  },
+  cancelled: {
+    metaTitle: "Pago no completado · THE HYBRID METHOD",
+    title: "No se completó el pago",
+    lead: "No se hizo ningún cargo. Tu registro queda pendiente 7 días: puedes volver a intentarlo con tu mismo correo, con tarjeta o por transferencia.",
+    retry: "Intentarlo de nuevo",
+    home: "Volver al inicio",
+  },
+} as const;

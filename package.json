@@ -18,7 +18,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "test:db": "vitest run --project db",
-    "hash-pin": "tsx scripts/hash-pin.ts"
+    "hash-pin": "tsx scripts/hash-pin.ts",
+    "stripe:sync": "tsx scripts/stripe-sync.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
@@ -30,6 +31,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "resend": "^6.39.0",
+    "stripe": "23.1.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

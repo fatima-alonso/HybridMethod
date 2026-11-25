@@ -9,7 +9,7 @@ entrenamiento personalizado de fuerza, running y rendimiento híbrido.
 ## Stack
 
 Next.js 16 (App Router, Route Handlers) · React 19 · TypeScript estricto · Tailwind CSS v4 · Zod ·
-Vitest · PostgreSQL (Neon) + Prisma 7. En fases posteriores: Stripe, Resend y despliegue en Vercel.
+Vitest · PostgreSQL (Neon) + Prisma 7 · Stripe (Checkout y webhooks) · Resend. Despliegue en Vercel (Fase 8).
 
 ## Requisitos previos
 
@@ -70,6 +70,43 @@ Para probar el flujo de contratación (Fase 3) en local hace falta `DATABASE_URL
 seed aplicados. Sin `RESEND_API_KEY`, el código de verificación aparece en la terminal de `npm run dev`
 (`[email:dev] … Tu código: 123456`), igual que el correo Transfer Pending con el enlace para Ferro.
 
+### Pagos con Stripe (Fase 5)
+
+Sin `STRIPE_SECRET_KEY` el pago con tarjeta responde "no disponible" y la transferencia sigue
+funcionando. Para probarlo en local con tu cuenta de Stripe **en modo de prueba**:
+
+1. En el Dashboard de Stripe (modo de prueba), copia la clave secreta `sk_test_…` y la publicable
+   `pk_test_…` a `STRIPE_SECRET_KEY` y `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` en `.env.local`.
+2. Crea los productos y precios de los tres programas y guarda sus IDs en la BD (después de
+   `npm run db:seed`; se puede repetir, y hay que repetirlo cada vez que cambie un precio):
+
+   ```bash
+   npm run stripe:sync
+   ```
+
+3. Instala la [Stripe CLI](https://docs.stripe.com/stripe-cli), inicia sesión y reenvía los
+   webhooks a tu app. El comando imprime un secreto `whsec_…`: ponlo en `STRIPE_WEBHOOK_SECRET` y
+   reinicia `npm run dev`.
+
+   ```bash
+   stripe login
+   ```
+
+   ```bash
+   stripe listen --forward-to localhost:3000/api/webhooks/stripe --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
+   ```
+
+4. Haz una inscripción en la landing, elige "Pago único con tarjeta" y paga con la tarjeta de prueba
+   `4242 4242 4242 4242` (cualquier fecha futura y cualquier CVC). El webhook activa el contrato y en
+   la terminal aparecen los correos (Purchase Confirmation, Welcome y Payment Received con el botón
+   de entrega).
+
+Pruebas útiles con la CLI: reenviar un evento (`stripe events resend evt_…`) debe responder
+`duplicate` sin duplicar nada, y un pago con la tarjeta `4000 0000 0000 0002` se rechaza en Checkout
+sin tocar el contrato. Para producción (Fase 8): un endpoint de webhook en el Dashboard apuntando a
+`https://<dominio>/api/webhooks/stripe` con esos tres eventos (y los de suscripción en la Fase 6), y
+`npm run stripe:sync -- --live` con la clave live. Detalle en DECISIONS A26.
+
 ## Scripts
 
 | Script                 | Qué hace                                                   |
@@ -89,6 +126,7 @@ seed aplicados. Sin `RESEND_API_KEY`, el código de verificación aparece en la 
 | `npm run format`       | Formatea el código con Prettier.                           |
 | `npm run format:check` | Comprueba el formato (lo ejecuta la CI).                   |
 | `npm run hash-pin`     | Genera `FERRO_APPROVAL_PIN_HASH` a partir del PIN de Ferro. |
+| `npm run stripe:sync`  | Crea o actualiza en Stripe los productos y precios y guarda sus IDs. |
 
 Antes de abrir un PR: `npm run lint`, `npm run typecheck` y `npm test` sin errores. La CI
 (`.github/workflows/ci.yml`) ejecuta además `format:check` y `build` en cada PR.
@@ -100,7 +138,7 @@ Sigue la sección 4 del SDD:
 ```
 prisma/              Esquema, seed y migraciones
 public/              images/, logos/, fonts/
-scripts/             Scripts de soporte (hash-pin)
+scripts/             Scripts de soporte (hash-pin, stripe-sync)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
 src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
 src/content/         Catálogo de programas (precios) y textos de la landing

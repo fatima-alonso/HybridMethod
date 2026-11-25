@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -520,6 +520,56 @@ Puntos que el SDD no definía y que se resolvieron así al implementar A18–A20
 precio completo; el paso "Elige cómo pagar" muestra el importe de cada modalidad. Se quitaron los textos de
 "mismo precio" y la nota pendiente sobre el IVA.
 
+### A26. Fase 5: pago único con Stripe (2026-11-25)
+Puntos que el SDD no definía y que se resolvieron así al implementar el pago único. Todos son reversibles.
+
+**Precios en Stripe (`npm run stripe:sync`).** Cada programa tiene en Stripe un Product con el mismo id que su slug
+(`hm-run`, …) y dos Prices identificados por `lookup_key`: `<slug>_one_time` (`monthlyPrice`) y `<slug>_recurring`
+(`subscriptionPrice`, mensual; se crea ya para la Fase 6). El script los crea o reutiliza y guarda sus IDs en
+`programs`. Si un precio del catálogo cambia, crea un Price nuevo (transfiere la `lookup_key`) y archiva el anterior,
+porque en Stripe un Price no se puede editar. Los Prices se crean con `tax_behavior: inclusive` (precios finales, A18).
+Con una clave live exige `--live`. Antes de cada Checkout el servidor lee el Price en Stripe y comprueba que esté
+activo, sea del programa, en MXN, del tipo correcto y por el importe de la BD; si no, no crea el contrato ni el
+Checkout, registra el error y responde `503 payments_unavailable` (el cliente puede pagar por transferencia).
+
+**`POST /api/checkout`.** Igual que `POST /api/transfers` (A16), recibe el formulario completo más `mode`
+(solo `payment` en esta fase) y crea o asocia el cliente en la misma llamada; `customerId` y `programId` del SDD §7.4
+no se exponen. Aplica las reglas de A20/A25 con `paymentType = one_time`:
+- Un pendiente igual se reutiliza con **la misma sesión** de Checkout si sigue abierta y cobra el mismo Price; si
+  venció, se abre otra con la misma referencia. Si la sesión guardada ya se completó (p. ej. un pago en OXXO que
+  todavía no se acredita), responde `409 payment_in_progress` y no abre otra, para no cobrar dos veces.
+- "Cambiar" desde una transferencia invalida el enlace de Ferro; "cambiar" desde otro pago con tarjeta (o de tarjeta
+  a transferencia en `POST /api/transfers`) expira la sesión anterior en Stripe. "Continuar" con un pendiente de otra
+  modalidad responde 409 y pide elegir "cambiar" (como en A25).
+- El cliente de Stripe se crea una vez por cliente (clave de idempotencia `customer-<id>`) y se guarda en
+  `Customer.stripeCustomerId`. La sesión se guarda en el contrato con un compare-and-set: con dos solicitudes
+  simultáneas gana una y la otra sesión se expira. Sin `STRIPE_SECRET_KEY` (desarrollo) responde 503.
+- Checkout en `es-419`, con `metadata.contractId`, `client_reference_id` y la referencia en la descripción del pago.
+  Regresa a `/pago/exito` o `/pago/cancelado`, páginas estáticas que solo informan (no leen la sesión). Rate limit:
+  10 por IP por hora.
+
+**Webhook.** La firma se verifica con el body crudo y `STRIPE_WEBHOOK_SECRET` (sin él, 503). El evento se inserta en
+WebhookEvent y se procesa en una transacción que bloquea su fila (`FOR UPDATE`): una entrega repetida o simultánea
+responde 200 sin volver a aplicarse. Si el procesamiento falla, todo se revierte, el evento queda `failed` y se
+responde 500 para que Stripe reintente; el reintento sí se procesa. Un evento sin contrato propio se marca `failed` y
+responde 200 (reintentarlo no ayudaría). Los eventos que no son de A6 se marcan `ignored`.
+- El pago (`stripe_one_time`) se registra con el importe que cobró Stripe y su Payment Intent (UNIQUE). Si no coincide
+  con el contrato, se respeta y se audita `stripe.amount_mismatch`. `paidAt` es la fecha del evento; el mes empieza
+  ahí o al terminar el mes vigente (pago por adelantado, `scheduled`). Un contrato vencido se activa igual
+  (`contract.paid_after_expiry`, A20).
+- Un cobro para un contrato **ya pagado** (p. ej. dos pestañas de Checkout) se registra como Payment, no abre otro
+  mes, se audita `stripe.extra_payment` y Ferro recibe "Revisa un pago adicional" para reembolsarlo desde Stripe si
+  corresponde (los reembolsos son manuales).
+- Correos después de confirmar la transacción: Purchase Confirmation y Welcome (cliente) y Payment Received con el
+  botón de entrega (Ferro), con el mismo código que la transferencia (`payment-notifications.service`).
+
+**Pago asíncrono fallido (`checkout.session.async_payment_failed`).** El SDD §7.5 decía "pasar el contrato a
+`payment_failed`", pero la máquina de estados (§5.3) no permite `pending_payment → payment_failed` y ese estado
+significa "servicio suspendido", que no aplica a un contrato que nunca se activó. Se implementó así: se registra el
+Payment `failed`, el contrato **sigue `pending_payment`** (vence a los 7 días como cualquier pendiente), se suelta su
+sesión para que el siguiente intento abra otra, se audita `stripe.async_payment_failed` y el cliente recibe "Tu pago
+no se completó" con un botón para intentarlo de nuevo. Pendiente de confirmar (B15).
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -538,3 +588,4 @@ precio completo; el paso "Elige cómo pagar" muestra el importe de cada modalida
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador en A22; faltan los datos del responsable y la revisión legal |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
+| 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` (SDD §7.5) o sigue pendiente? | — | Pendiente de confirmar. Hoy sigue `pending_payment` y el cliente puede reintentar (A26): §5.3 no permite `pending_payment → payment_failed`. Cambiarlo es agregar esa transición y usarla en `failAsyncCheckout` |

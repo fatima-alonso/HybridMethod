@@ -115,6 +115,17 @@ export const transferRequestSchema = applicationSchema.omit({ email: true }).ext
 
 export type TransferRequestBody = z.input<typeof transferRequestSchema>;
 
+/**
+ * `POST /api/checkout` (Fase 5, DECISIONS A26): lo mismo que una transferencia más `mode`. El
+ * Price y el importe los decide el servidor con el programa de la BD (SDD §9.2). Por ahora solo
+ * `payment` (pago único); `subscription` llega en la Fase 6.
+ */
+export const checkoutRequestSchema = transferRequestSchema.extend({
+  mode: z.enum(["payment"], { error: "Modalidad de pago no disponible." }),
+});
+
+export type CheckoutRequestBody = z.input<typeof checkoutRequestSchema>;
+
 // ─── Confirmación de transferencias (Fase 4, DECISIONS A7) ──────────────────
 
 /** PIN de aprobación de Ferro: de 6 a 12 dígitos. */

@@ -2,6 +2,7 @@ import type { Contract, Customer, Program } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 import { generateToken, hashToken } from "@/lib/crypto";
 import { getPrisma, type Db } from "@/lib/prisma";
+import { getStripe } from "@/lib/stripe";
 import type { CustomerDataInput } from "@/lib/validations";
 import { formatBusinessDateTime, formatPrice } from "@/utils/format";
 
@@ -11,6 +12,8 @@ import {
   type ContractRequestOutcome,
   type PendingAction,
 } from "./contract-request.service";
+import { expireCheckoutSessionQuietly } from "./checkout.service";
+import { detachCheckoutSession } from "./contract.service";
 import { upsertVerifiedCustomer } from "./customer.service";
 import { sendTransferPendingEmail } from "./email.service";
 import { PendingNotTransferError } from "./errors";
@@ -138,6 +141,13 @@ export async function requestTransfer(
       throw new PendingNotTransferError(contract.reference);
     }
 
+    // Si el pendiente era de pago con tarjeta, su sesión de Checkout ya no corresponde (A20).
+    let staleSessionId: string | null = null;
+    if (outcome === "changed" && contract.stripeCheckoutSessionId) {
+      staleSessionId = contract.stripeCheckoutSessionId;
+      await detachCheckoutSession(contract.id, staleSessionId, tx);
+    }
+
     let approval: { token: string; expiresAt: Date } | null = null;
     if (
       outcome === "created" ||
@@ -173,10 +183,14 @@ export async function requestTransfer(
         tx,
       );
     }
-    return { customer, contract, program, outcome, approval };
+    return { customer, contract, program, outcome, approval, staleSessionId };
   });
 
-  const { customer, contract, program, outcome, approval } = result;
+  const { customer, contract, program, outcome, approval, staleSessionId } = result;
+  const stripe = staleSessionId ? getStripe() : null;
+  if (stripe && staleSessionId) {
+    await expireCheckoutSessionQuietly(stripe, staleSessionId, contract.reference);
+  }
   if (approval) {
     await notifyFerro(customer, contract, program, approval, db);
   }
