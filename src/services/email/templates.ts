@@ -182,7 +182,8 @@ export function welcomeEmail(input: WelcomeEmailInput): EmailContent {
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Bienvenido a THE HYBRID METHOD</h1>
-<p style="margin:0 0 16px;">Hola ${escapeHtml(input.customerName)}, ya eres parte de <strong>${escapeHtml(input.programName)}</strong>. Tu plan va del ${escapeHtml(input.serviceStart)} al ${escapeHtml(input.serviceEnd)}.</p>
+<p style="margin:0 0 16px;">Hola ${escapeHtml(input.customerName)}, ya eres parte de <strong>${escapeHtml(input.programName)}</strong>.</p>
+<p style="margin:0 0 16px;"><strong>Periodo de pago:</strong> del ${escapeHtml(input.serviceStart)} al ${escapeHtml(input.serviceEnd)}</p>
 <p style="margin:0;">Ferro te va a escribir por WhatsApp para conocer tus objetivos y arrancar con tu programa.${input.whatsappUrl ? " Si quieres adelantarte, escríbele tú:" : ""}</p>
 ${input.whatsappUrl ? button(input.whatsappUrl, "Escribirle a Ferro") : ""}
 <p style="margin:16px 0 0;color:${COLORS.muted};font-size:14px;">Run. Lift. Hybrid.</p>`,
@@ -190,7 +191,9 @@ ${input.whatsappUrl ? button(input.whatsappUrl, "Escribirle a Ferro") : ""}
   const text = [
     "Bienvenido a THE HYBRID METHOD",
     "",
-    `Hola ${input.customerName}, ya eres parte de ${input.programName}. Tu plan va del ${input.serviceStart} al ${input.serviceEnd}.`,
+    `Hola ${input.customerName}, ya eres parte de ${input.programName}.`,
+    "",
+    `Periodo de pago: del ${input.serviceStart} al ${input.serviceEnd}`,
     "",
     "Ferro te va a escribir por WhatsApp para conocer tus objetivos y arrancar con tu programa.",
     ...(input.whatsappUrl ? ["Si quieres adelantarte, escríbele tú:", input.whatsappUrl] : []),

@@ -84,6 +84,13 @@ describe("plantillas de correo (SDD §6.2)", () => {
       whatsappUrl: null,
     });
     expect(withoutLink.html).not.toContain("wa.me");
+    for (const email of [withLink, withoutLink]) {
+      expect(email.text).toContain(
+        `Periodo de pago: del ${period.serviceStart} al ${period.serviceEnd}`,
+      );
+      expect(email.html).toContain("Periodo de pago:");
+      expect(email.text).not.toContain("Tu plan va");
+    }
   });
 
   it("Payment Received (Ferro) incluye los datos del cliente y el método", () => {
