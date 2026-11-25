@@ -8,7 +8,7 @@ import { useHydrated } from "@/components/shared/useHydrated";
 import { buttonPrimary, buttonSecondary } from "@/components/shared/styles";
 import { CONFIRM_PAGE } from "@/content/transfer-approval";
 import { approvalPinSchema } from "@/lib/validations";
-import { formatBusinessDateTime } from "@/utils/format";
+import { formatBusinessDate, formatBusinessDateTime } from "@/utils/format";
 
 import { RegenerateLinkForm } from "./RegenerateLinkForm";
 import { inputClass } from "./styles";
@@ -83,7 +83,11 @@ export function ConfirmTransferForm({ token, reference }: Props) {
         </h2>
         <p>
           {confirmed.status === "scheduled"
-            ? CONFIRM_PAGE.confirmedScheduled(confirmed.reference)
+            ? CONFIRM_PAGE.confirmedScheduled(
+                confirmed.reference,
+                formatBusinessDate(confirmed.serviceStartDate),
+                formatBusinessDate(confirmed.serviceEndDate),
+              )
             : CONFIRM_PAGE.confirmed(confirmed.reference)}
         </p>
         <p className="text-bone/85">

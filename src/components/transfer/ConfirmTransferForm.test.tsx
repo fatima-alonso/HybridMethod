@@ -64,6 +64,24 @@ describe("ConfirmTransferForm (RF-11)", () => {
     expect(JSON.parse(String(init.body))).toEqual({ token: TOKEN, pin: "482917" });
   });
 
+  it("un pago por adelantado explica hasta cuándo va el mes vigente y qué cubre el nuevo", async () => {
+    respond(200, {
+      success: true,
+      reference: "HM-2026-000010",
+      status: "scheduled",
+      serviceStartDate: "2026-12-25T00:33:00.000Z",
+      serviceEndDate: "2027-01-25T00:33:00.000Z",
+    });
+    render(<ConfirmTransferForm token={TOKEN} reference="HM-2026-000010" />);
+    fireEvent.change(pinInput(), { target: { value: "482917" } });
+    fireEvent.click(confirmButton());
+    expect(
+      await screen.findByText(
+        /Este cliente ya tiene un mes pagado hasta el 24 de diciembre de 2026, así que este pago cubre del 24 de diciembre de 2026 al 24 de enero de 2027/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("con un PIN incorrecto muestra los intentos restantes y limpia el campo", async () => {
     respond(403, {
       success: false,

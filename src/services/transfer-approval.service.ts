@@ -11,7 +11,7 @@ import { ApprovalPinNotConfiguredError, verifyApprovalPin } from "@/lib/approval
 import { getConfig, getWhatsAppNumber } from "@/lib/config";
 import { hashToken } from "@/lib/crypto";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { formatBusinessDateTime } from "@/utils/format";
+import { formatBusinessDate, formatBusinessDateTime } from "@/utils/format";
 import { buildWhatsAppLink } from "@/utils/whatsapp";
 
 import { recordAudit } from "./audit.service";
@@ -436,7 +436,13 @@ async function sendConfirmationEmails(
           paidAt: formatBusinessDateTime(servicePeriod.paidAt),
           serviceStart,
           serviceEnd,
-          scheduled: contract.status === "scheduled",
+          prepaid:
+            contract.status === "scheduled"
+              ? {
+                  from: formatBusinessDate(contract.serviceStartDate!),
+                  to: formatBusinessDate(contract.serviceEndDate!),
+                }
+              : null,
           deliveryUrl,
         }),
     ],

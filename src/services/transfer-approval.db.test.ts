@@ -352,9 +352,9 @@ describe.skipIf(!testDatabaseUrl)(
         expect(period.deliveryLinks).toHaveLength(1);
         const email = sendPaymentReceivedEmail.mock.calls[0]?.[0] as {
           deliveryUrl: string;
-          scheduled: boolean;
+          prepaid: unknown;
         };
-        expect(email.scheduled).toBe(false);
+        expect(email.prepaid).toBeNull();
         const deliveryToken = email.deliveryUrl.split("/plan/entrega/")[1]!;
         expect(period.deliveryLinks[0]!.tokenHash).toBe(hashToken(deliveryToken));
       });
@@ -404,8 +404,11 @@ describe.skipIf(!testDatabaseUrl)(
           serviceEndDate: new Date("2027-01-25T16:30:00Z"),
         });
         expect(result.servicePeriod.paidAt).toEqual(new Date(now.getTime() + day));
-        const email = sendPaymentReceivedEmail.mock.calls.at(-1)?.[0] as { scheduled: boolean };
-        expect(email.scheduled).toBe(true);
+        const email = sendPaymentReceivedEmail.mock.calls.at(-1)?.[0] as { prepaid: unknown };
+        expect(email.prepaid).toEqual({
+          from: "25 de diciembre de 2026",
+          to: "25 de enero de 2027",
+        });
       });
     });
 

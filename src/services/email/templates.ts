@@ -222,8 +222,11 @@ export type PaymentReceivedEmailInput = {
   paidAt: string;
   serviceStart: string;
   serviceEnd: string;
-  /** `true` si es un mes pagado por adelantado que empieza después (DECISIONS A20). */
-  scheduled: boolean;
+  /**
+   * Si es un mes pagado por adelantado (DECISIONS A20): fechas sin hora del mes nuevo. Empieza
+   * cuando termina el mes que el cliente ya tenía pagado.
+   */
+  prepaid: { from: string; to: string } | null;
   /** Botón "Registrar entrega del plan" (DECISIONS A19). */
   deliveryUrl: string;
 };
@@ -243,8 +246,8 @@ export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailCon
     ["Fecha de pago", input.paidAt],
     ["Periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
-  const lead = input.scheduled
-    ? "El cliente pagó su siguiente mes por adelantado: empieza cuando termine el mes que tiene vigente. Ya recibió su confirmación y el correo de bienvenida."
+  const lead = input.prepaid
+    ? `El contrato quedó pagado por adelantado. Este cliente ya tiene un mes pagado hasta el ${input.prepaid.from}, así que este pago cubre del ${input.prepaid.from} al ${input.prepaid.to}. Ya recibió su confirmación y el correo de bienvenida.`
     : "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.";
   const html = layout(
     subject,
