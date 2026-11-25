@@ -92,6 +92,8 @@ describe("plantillas de correo (SDD §6.2)", () => {
       );
       expect(email.html).toContain("Periodo de pago:");
       expect(email.text).not.toContain("Tu plan va");
+      expect(email.text).toContain("Ferro te entregará tu plan en 3 a 5 días hábiles.");
+      expect(email.html).toContain("Ferro te entregará tu plan en 3 a 5 días hábiles.");
     }
   });
 

@@ -115,14 +115,14 @@ dígitos, hash escapado para `.env`); `GET /transfer/confirm/[token]` (solo lect
 `POST /api/transfers/confirm` (cada intento de PIN se cuenta antes de compararlo; al quinto error se invalida el
 enlace; en una transacción: enlace usado, Payment, contrato `active` con un mes desde la confirmación y auditoría
 con IP y user-agent; después Transfer Confirmed, Welcome y Payment Received); `POST /api/transfers/regenerate`,
-ofrecida en la misma página; formulario de inscripción y de Ferro sin envío nativo (nada en la URL). Decisiones en
+ofrecida en la misma página; Welcome con el aviso de entrega en 3 a 5 días hábiles; formulario de inscripción y de Ferro sin envío nativo (nada en la URL). Decisiones en
 DECISIONS A23. Pruebas unitarias, de servicio y de rutas (SDD §12.3).
 
 Pendiente de esta fase: la migración (A18–A20) y lo que depende de ella: `subscriptionPrice` y los dos precios en
 la landing; ServicePeriod y PlanDeliveryLink (hoy el periodo se guarda en `Contract.serviceStartDate/EndDate`);
 el botón "Registrar entrega del plan" en Payment Received, `delivery.service` y sus páginas; los estados
 `scheduled` y `expired`, un pendiente por cliente y el pago tardío (confirmar y regenerar contratos vencidos);
-el aviso de entrega en 3 a 5 días hábiles en Welcome; y `GET /api/cron/daily`.
+y `GET /api/cron/daily`.
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD
