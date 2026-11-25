@@ -2,23 +2,21 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Container } from "@/components/shared/Container";
-import { buttonPrimary, buttonSecondary } from "@/components/shared/styles";
+import { buttonPrimary } from "@/components/shared/styles";
 
 type Action = { href: string; label: string };
 
-/** Estructura común de las páginas de regreso de Stripe Checkout (solo informan, SDD §7.5). */
+/** Página de regreso de Stripe Checkout (solo informa, SDD §7.5). */
 export function CheckoutReturnPage({
   title,
   lead,
   children,
   primary,
-  secondary,
 }: {
   title: string;
   lead: string;
   children?: ReactNode;
   primary: Action;
-  secondary?: Action;
 }) {
   return (
     <Container className="max-w-3xl py-16 sm:py-24">
@@ -30,11 +28,6 @@ export function CheckoutReturnPage({
           <Link href={primary.href} className={buttonPrimary}>
             {primary.label}
           </Link>
-          {secondary ? (
-            <Link href={secondary.href} className={buttonSecondary}>
-              {secondary.label}
-            </Link>
-          ) : null}
         </div>
       </div>
     </Container>

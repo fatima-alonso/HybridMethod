@@ -7,6 +7,23 @@ import { getPhoneCountryOptions } from "@/lib/phone";
 
 import { ApplicationFlow } from "./ApplicationFlow";
 
+// Stripe.js carga un script de js.stripe.com: en las pruebas se sustituye el formulario incrustado.
+const stripeMounts: Array<{ clientSecret?: string | null }> = [];
+vi.mock("@stripe/stripe-js", () => ({ loadStripe: vi.fn(async () => null) }));
+vi.mock("@stripe/react-stripe-js", () => ({
+  EmbeddedCheckoutProvider: ({
+    options,
+    children,
+  }: {
+    options: { clientSecret?: string | null };
+    children: React.ReactNode;
+  }) => {
+    stripeMounts.push(options);
+    return <div data-testid="embedded-provider">{children}</div>;
+  },
+  EmbeddedCheckout: () => <div>Formulario de Stripe</div>,
+}));
+
 const COUNTRIES = getPhoneCountryOptions();
 
 type Reply = { status: number; body: Record<string, unknown> };
@@ -55,6 +72,21 @@ const transfer = {
   currency: "MXN",
   whatsappUrl: "https://wa.me/5215512345678?text=Hola",
 };
+
+function checkoutCreated(overrides: Record<string, unknown> = {}) {
+  return {
+    success: true,
+    clientSecret: "cs_test_1_secret_x",
+    publishableKey: "pk_test_123",
+    reference: "HM-2026-000050",
+    status: "pending_payment",
+    outcome: "created",
+    program: { slug: "hm-run", name: "HM RUN" },
+    amount: "1200.00",
+    currency: "MXN",
+    ...overrides,
+  };
+}
 
 async function reachPaymentStep() {
   reply("/api/verification/request", 200, { success: true, message: "ok" });
@@ -167,23 +199,16 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     );
   });
 
-  it("pago único: pide el Checkout al servidor y lleva al navegador a Stripe (SDD §8.2)", async () => {
-    const assign = vi.fn();
-    vi.stubGlobal("location", { ...window.location, assign });
+  it("pago único: pide el Checkout al servidor y muestra el formulario de Stripe (DECISIONS A27)", async () => {
+    stripeMounts.length = 0;
     await reachPaymentStep();
-    reply("/api/checkout", 201, {
-      success: true,
-      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test_1",
-      reference: "HM-2026-000050",
-      status: "pending_payment",
-      outcome: "created",
-      program: { slug: "hm-run", name: "HM RUN" },
-      amount: "1200.00",
-      currency: "MXN",
-    });
+    reply("/api/checkout", 201, checkoutCreated());
     fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-    await screen.findByText(/Te estamos llevando a Stripe/);
+    await screen.findByRole("heading", { name: "Paga con tarjeta" });
+    expect(screen.getByText("Formulario de Stripe")).toBeTruthy();
+    expect(screen.getByText("HM-2026-000050")).toBeTruthy();
+    expect(stripeMounts.at(-1)).toEqual({ clientSecret: "cs_test_1_secret_x" });
 
     // Solo programa y modalidad: el importe y el Price los decide el servidor (SDD §9.2).
     expect(calls.at(-1)).toEqual({
@@ -196,7 +221,10 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
         mode: "payment",
       },
     });
-    expect(assign).toHaveBeenCalledWith("https://checkout.stripe.com/c/pay/cs_test_1");
+
+    // Puede regresar a elegir otra forma de pago.
+    fireEvent.click(screen.getByRole("button", { name: "Elegir otra forma de pago" }));
+    await screen.findByRole("heading", { name: "Elige cómo pagar" });
   });
 
   it("pago único: si Stripe no está disponible muestra el aviso y deja elegir otra forma", async () => {
@@ -230,20 +258,13 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     await screen.findByRole("heading", { name: "Tienes un registro pendiente" });
-    reply("/api/checkout", 200, {
-      success: true,
-      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test_2",
-      reference: "HM-2026-000007",
-      status: "pending_payment",
-      outcome: "changed",
-      program: { slug: "hm-run", name: "HM RUN" },
-      amount: "1200.00",
-      currency: "MXN",
-    });
-    const assign = vi.fn();
-    vi.stubGlobal("location", { ...window.location, assign });
+    reply(
+      "/api/checkout",
+      200,
+      checkoutCreated({ reference: "HM-2026-000007", outcome: "changed" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /Cambiar a HM RUN · Pago único/ }));
-    await waitFor(() => expect(assign).toHaveBeenCalled());
+    await screen.findByRole("heading", { name: "Paga con tarjeta" });
     expect(calls.at(-1)?.body).toMatchObject({ mode: "payment", pendingAction: "change" });
   });
 

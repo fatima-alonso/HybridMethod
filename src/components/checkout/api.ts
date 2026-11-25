@@ -78,9 +78,10 @@ export type TransferCreated = {
   whatsappUrl: string | null;
 };
 
-/** Respuesta de `POST /api/checkout`: la URL de Stripe Checkout (Fase 5). */
+/** Respuesta de `POST /api/checkout`: lo necesario para montar Embedded Checkout (DECISIONS A27). */
 export type CheckoutCreated = {
-  checkoutUrl: string;
+  clientSecret: string;
+  publishableKey: string;
   reference: string;
   status: string;
   outcome: string;

@@ -29,8 +29,8 @@ import {
  * el correo sale de la cookie firmada. El Price y el importe salen de la BD y se comprueban contra
  * Stripe (SDD §9.2): el navegador solo elige el programa y la modalidad.
  *
- * Responde 201 al crear el contrato y 200 al reutilizar, retomar o cambiar el pendiente, con la
- * URL de Stripe Checkout. Esta ruta nunca confirma un pago: eso lo hace solo el webhook.
+ * Responde 201 al crear el contrato y 200 al reutilizar, retomar o cambiar el pendiente, con el
+ * `client_secret` de la sesión de Embedded Checkout y la clave publicable (DECISIONS A27). Esta ruta nunca confirma un pago: eso lo hace solo el webhook.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     const body = await parseJsonBody(request, checkoutRequestSchema);
     if (!body.ok) return body.response;
 
-    const { contract, program, outcome, checkoutUrl } = await requestCheckout(
+    const { contract, program, outcome, clientSecret, publishableKey } = await requestCheckout(
       {
         verifiedEmail: session.email,
         fullName: body.data.fullName,
@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
 
     return jsonOk(
       {
-        checkoutUrl,
+        clientSecret,
+        publishableKey,
         reference: contract.reference,
         status: contract.status,
         outcome,

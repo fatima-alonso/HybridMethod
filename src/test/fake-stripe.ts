@@ -18,6 +18,7 @@ type FakeSession = {
   status: Stripe.Checkout.Session.Status;
   payment_status: Stripe.Checkout.Session.PaymentStatus;
   url: string | null;
+  client_secret: string | null;
   customer: string | null;
   client_reference_id: string | null;
   metadata: Record<string, string>;
@@ -81,6 +82,7 @@ export class FakeStripe {
     session.status = "complete";
     session.payment_status = paymentStatus;
     session.url = null;
+    session.client_secret = null;
     session.payment_intent ??= this.nextId("pi");
     return this.asSession(session);
   }
@@ -112,7 +114,9 @@ export class FakeStripe {
           mode: params.mode!,
           status: "open",
           payment_status: "unpaid",
-          url: `https://checkout.stripe.test/c/pay/${id}`,
+          url:
+            params.ui_mode === "embedded_page" ? null : `https://checkout.stripe.test/c/pay/${id}`,
+          client_secret: params.ui_mode === "embedded_page" ? `${id}_secret_test` : null,
           customer: (params.customer as string | undefined) ?? null,
           client_reference_id: params.client_reference_id ?? null,
           metadata: { ...(params.metadata as Record<string, string>) },
@@ -137,6 +141,7 @@ export class FakeStripe {
         if (session.status !== "open") throw new Error("Only open sessions can be expired.");
         session.status = "expired";
         session.url = null;
+        session.client_secret = null;
         return this.asSession(session);
       },
       listLineItems: async (id: string) => {

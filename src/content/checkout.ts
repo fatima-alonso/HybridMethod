@@ -30,7 +30,14 @@ export const CHECKOUT_MESSAGES = {
     "El pago con tarjeta no está disponible en este momento. Puedes pagar por transferencia o intentarlo más tarde.",
   inProgress:
     "Ya recibimos tu pago con tarjeta y Stripe lo está confirmando. Te avisaremos por correo en cuanto quede listo.",
-  redirecting: "Te estamos llevando a Stripe para pagar de forma segura…",
+} as const;
+
+/** Paso del formulario de pago de Stripe incrustado (Embedded Checkout, DECISIONS A27). */
+export const CARD_STEP = {
+  title: "Paga con tarjeta",
+  lead: "Completa tu pago en el formulario seguro de Stripe. Nosotros nunca vemos ni guardamos los datos de tu tarjeta.",
+  referenceLabel: "Referencia",
+  back: "Elegir otra forma de pago",
 } as const;
 
 /** Nombre de cada modalidad para el aviso del pendiente. */
@@ -79,7 +86,7 @@ export const PAYMENT_STEP = {
       id: "one_time",
       name: "Pago único con tarjeta",
       description:
-        "Pagas un mes en la página segura de Stripe. Tu plan empieza en cuanto se confirma tu pago.",
+        "Pagas un mes aquí mismo, en el formulario seguro de Stripe. Tu plan empieza en cuanto se confirma tu pago.",
       available: true,
     },
     {
@@ -115,7 +122,7 @@ export const FLOW_ERRORS = {
 };
 
 /**
- * Páginas de regreso de Stripe Checkout (SDD §7.5): solo informan. El pago lo confirma el webhook,
+ * Página de regreso de Stripe Checkout (SDD §7.5): solo informa. El pago lo confirma el webhook,
  * nunca estas páginas, así que no muestran ni cambian ningún dato del contrato.
  */
 export const CHECKOUT_RETURN_PAGES = {
@@ -128,13 +135,6 @@ export const CHECKOUT_RETURN_PAGES = {
       "Si pagaste en efectivo o con otro método que tarda en confirmarse, te avisaremos cuando se acredite.",
       "Ferro te escribirá por WhatsApp y te entregará tu plan en 3 a 5 días hábiles.",
     ],
-    home: "Volver al inicio",
-  },
-  cancelled: {
-    metaTitle: "Pago no completado · THE HYBRID METHOD",
-    title: "No se completó el pago",
-    lead: "No se hizo ningún cargo. Tu registro queda pendiente 7 días: puedes volver a intentarlo con tu mismo correo, con tarjeta o por transferencia.",
-    retry: "Intentarlo de nuevo",
     home: "Volver al inicio",
   },
 } as const;

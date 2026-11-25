@@ -120,6 +120,8 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
   beforeAll(() => {
     process.env.DATABASE_URL = testDatabaseUrl;
     process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.STRIPE_SECRET_KEY = "sk_test_phase5";
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_phase5";
     resetConfigCache();
   });
   beforeEach(async () => {
@@ -133,6 +135,8 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
   afterAll(async () => {
     delete process.env.DATABASE_URL;
     delete process.env.STRIPE_WEBHOOK_SECRET;
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     resetConfigCache();
     await prisma.$disconnect();
   });
@@ -210,7 +214,8 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
         amount: "1500.00",
         program: { slug: "hm-strength" },
       });
-      expect(body.checkoutUrl).toMatch(/^https:\/\/checkout\.stripe\.test\//);
+      expect(body.clientSecret).toMatch(/_secret_test$/);
+      expect(body.publishableKey).toBe("pk_test_phase5");
 
       const contract = await prisma.contract.findUniqueOrThrow({
         where: { reference: body.reference },
@@ -223,8 +228,8 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
         line_items: [{ price: contract.program.stripePriceIdOneTime, quantity: 1 }],
         client_reference_id: contract.id,
         metadata: { contractId: contract.id, reference: contract.reference },
-        success_url: "http://localhost:3000/pago/exito",
-        cancel_url: "http://localhost:3000/pago/cancelado",
+        ui_mode: "embedded_page",
+        return_url: "http://localhost:3000/pago/exito",
       });
       expect(session.amount_total).toBe(150000);
       // El cliente de Stripe se crea una vez y se guarda.
@@ -238,7 +243,7 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       expect(again.status).toBe(200);
       const body = await again.json();
       expect(body).toMatchObject({ reference: first.body.reference, outcome: "reused" });
-      expect(body.checkoutUrl).toBe(first.body.checkoutUrl);
+      expect(body.clientSecret).toBe(first.body.clientSecret);
       expect(fake.calls.sessionCreate).toBe(1);
       expect(fake.calls.customerCreate).toBe(1);
     });
@@ -248,7 +253,7 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       await fake.checkout.sessions.expire(first.sessionId);
       const again = await (await checkout()).json();
       expect(again.reference).toBe(first.body.reference);
-      expect(again.checkoutUrl).not.toBe(first.body.checkoutUrl);
+      expect(again.clientSecret).not.toBe(first.body.clientSecret);
       expect(fake.calls.sessionCreate).toBe(2);
     });
 
@@ -275,6 +280,22 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       expect(mismatch.status).toBe(503);
       expect(await prisma.contract.count()).toBe(0);
       expect(fake.calls.sessionCreate).toBe(0);
+    });
+
+    it("sin clave publicable, o con claves de modos distintos, responde 503", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+        resetConfigCache();
+        expect((await checkout()).status).toBe(503);
+        process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_live_phase5";
+        resetConfigCache();
+        expect((await checkout()).status).toBe(503);
+        expect(await prisma.contract.count()).toBe(0);
+      } finally {
+        process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_phase5";
+        resetConfigCache();
+      }
     });
 
     it("si Stripe falla al crear la sesión responde 503 y el pendiente se conserva", async () => {

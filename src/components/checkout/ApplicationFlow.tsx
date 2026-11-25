@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { CHECKOUT_MESSAGES, FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
+import { FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
 import type { ProgramSlug } from "@/content/programs";
 import { ApplicationForm, type ApplicationFormValues } from "@/components/forms/ApplicationForm";
 import type { PhoneCountryOption } from "@/lib/phone";
@@ -18,6 +18,7 @@ import {
   type PendingSummary,
   type TransferCreated,
 } from "./api";
+import { CardPaymentStep } from "./CardPaymentStep";
 import { PaymentMethodStep, type PaymentMethodId } from "./PaymentMethodStep";
 import { PendingChoiceStep } from "./PendingChoiceStep";
 import { TransferPendingStep } from "./TransferPendingStep";
@@ -29,12 +30,7 @@ type Step =
   | { name: "payment" }
   | { name: "pendingChoice"; pending: PendingSummary; method: PaymentMethodId }
   | { name: "pending"; transfer: TransferCreated }
-  | { name: "redirecting" };
-
-/** Lleva al navegador a Stripe Checkout. */
-function redirectToCheckout(url: string): void {
-  window.location.assign(url);
-}
+  | { name: "card"; checkout: CheckoutCreated };
 
 type Props = {
   programs: readonly ProgramOption[];
@@ -49,8 +45,9 @@ function failureMessage(result: ApiFailure): string {
 
 /**
  * Flujo de contratación (SDD §8.1, §8.2, §8.4, DECISIONS A4):
- * formulario → código de verificación → método de pago → transferencia pendiente, o Stripe
- * Checkout para el pago con tarjeta (el pago lo confirma solo el webhook, nunca esta página).
+ * formulario → código de verificación → método de pago → transferencia pendiente, o el formulario
+ * de Stripe incrustado para el pago con tarjeta (el pago lo confirma solo el webhook, nunca esta
+ * página).
  *
  * Los datos del formulario se quedan en el navegador hasta crear la contratación; el servidor los
  * vuelve a validar y toma el correo de la sesión de verificación, no del body.
@@ -112,9 +109,8 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       const body: CheckoutRequestBody = { ...base, mode: "payment" };
       result = await postJson<CheckoutCreated>("/api/checkout", body);
       if (result.ok) {
-        // Se queda "ocupado": la página cambia a Stripe.
-        setStep({ name: "redirecting" });
-        redirectToCheckout((result.data as CheckoutCreated).checkoutUrl);
+        setBusy(false);
+        setStep({ name: "card", checkout: result.data as CheckoutCreated });
         return;
       }
     }
@@ -196,11 +192,15 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     }
     case "pending":
       return <TransferPendingStep transfer={step.transfer} onDone={finish} />;
-    case "redirecting":
+    case "card":
       return (
-        <p role="status" aria-live="polite" className="text-lg font-semibold">
-          {CHECKOUT_MESSAGES.redirecting}
-        </p>
+        <CardPaymentStep
+          checkout={step.checkout}
+          onBack={() => {
+            setError(null);
+            setStep({ name: "payment" });
+          }}
+        />
       );
   }
 }

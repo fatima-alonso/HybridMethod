@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import type { Contract, Customer, Program } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, isLiveKey } from "@/lib/stripe";
 import type { CustomerDataInput } from "@/lib/validations";
 
 import { recordAudit } from "./audit.service";
@@ -27,14 +27,16 @@ import type { RequestContext } from "./transfer.service";
  * Pago único con Stripe Checkout (RF-07, SDD §7.4, §8.2, DECISIONS A26).
  *
  * `requestCheckout` resuelve la contratación con las mismas reglas que la transferencia (SDD §7.3)
- * y devuelve la URL de una sesión de Checkout en modo `payment`. El Price sale del programa en la
+ * y devuelve el `client_secret` de una sesión de Embedded Checkout en modo `payment`. El Price sale del programa en la
  * BD y se comprueba contra Stripe antes de cobrar (SDD §6.1, §9.2). Aquí **no** se confirma ningún
  * pago: eso solo lo hace el webhook (`stripe-webhook.service`).
  */
 
-/** Rutas de regreso de Stripe Checkout. Solo informan (SDD §7.5): no confirman nada. */
-export const CHECKOUT_SUCCESS_PATH = "/pago/exito";
-export const CHECKOUT_CANCEL_PATH = "/pago/cancelado";
+/**
+ * Página a la que Stripe regresa al terminar el pago en el formulario incrustado. Solo informa
+ * (SDD §7.5): no lee la sesión ni confirma nada.
+ */
+export const CHECKOUT_RETURN_PATH = "/pago/exito";
 
 export type CheckoutRequestInput = {
   /** Correo verificado, tomado de la sesión de verificación (nunca del body). */
@@ -51,7 +53,10 @@ export type CheckoutRequestResult = {
   program: Program;
   customer: Customer;
   outcome: ContractRequestOutcome;
-  checkoutUrl: string;
+  /** `client_secret` de la sesión de Embedded Checkout (DECISIONS A27). */
+  clientSecret: string;
+  /** Clave publicable para montar el formulario en el navegador (misma cuenta y modo). */
+  publishableKey: string;
 };
 
 /** Expira una sesión de Checkout que ya no corresponde. Si falla (ya expiró o se pagó), solo se registra. */
@@ -68,6 +73,21 @@ export async function expireCheckoutSessionQuietly(
       error instanceof Error ? error.name : "error desconocido",
     );
   }
+}
+
+/**
+ * Clave publicable de Stripe para el formulario incrustado. Debe ser del mismo modo (test o live)
+ * que la clave secreta: si no, el formulario no podría abrir la sesión.
+ */
+function checkoutPublishableKey(): string {
+  const { NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: publishable, STRIPE_SECRET_KEY: secret } =
+    getConfig();
+  if (!publishable) throw new PaymentsUnavailableError("not_configured", "sin clave publicable");
+  if (secret && isLiveKey(secret) !== publishable.startsWith("pk_live_")) {
+    console.error("[checkout] STRIPE_SECRET_KEY y la clave publicable son de modos distintos.");
+    throw new PaymentsUnavailableError("not_configured", "claves de modos distintos");
+  }
+  return publishable;
 }
 
 /**
@@ -89,6 +109,7 @@ export async function requestCheckout(
   stripe: Stripe | null = getStripe(),
 ): Promise<CheckoutRequestResult> {
   if (!stripe) throw new PaymentsUnavailableError("not_configured");
+  const publishableKey = checkoutPublishableKey();
 
   const requested = await db.program.findUnique({ where: { slug: input.programSlug } });
   if (!requested || !requested.active) throw new ProgramUnavailableError(input.programSlug);
@@ -167,14 +188,14 @@ export async function requestCheckout(
     verifiedPrices.get(program.id) ?? (await verifyProgramPrice(stripe, program, "one_time"));
 
   try {
-    const checkoutUrl = await openCheckoutSession(
+    const clientSecret = await openCheckoutSession(
       stripe,
       { contract, customer, program, priceId },
       db,
       now,
     );
     contract = await db.contract.findUniqueOrThrow({ where: { id: contract.id } });
-    return { contract, program, customer, outcome, checkoutUrl };
+    return { contract, program, customer, outcome, clientSecret, publishableKey };
   } catch (error) {
     if (error instanceof CheckoutInProgressError || error instanceof PaymentsUnavailableError) {
       throw error;
@@ -188,7 +209,7 @@ export async function requestCheckout(
 }
 
 /**
- * Devuelve la URL de la sesión abierta del contrato, o crea una nueva. Si la sesión guardada ya se
+ * Devuelve el `client_secret` de la sesión abierta del contrato, o crea una nueva. Si la sesión guardada ya se
  * completó (Stripe todavía no confirma el pago), no abre otra para no cobrar dos veces.
  */
 async function openCheckoutSession(
@@ -204,7 +225,9 @@ async function openCheckoutSession(
     const session = await stripe.checkout.sessions.retrieve(previous);
     if (session.status === "complete") throw new CheckoutInProgressError(contract.reference);
     const samePrice = await sessionUsesPrice(stripe, session, priceId);
-    if (session.status === "open" && session.url && samePrice) return session.url;
+    if (session.status === "open" && session.client_secret && samePrice) {
+      return session.client_secret;
+    }
     if (session.status === "open") {
       await expireCheckoutSessionQuietly(stripe, session.id, contract.reference);
     }
@@ -224,12 +247,15 @@ async function openCheckoutSession(
       description: `${program.name} · ${contract.reference}`,
     },
     locale: "es-419",
-    success_url: `${appUrl}${CHECKOUT_SUCCESS_PATH}`,
-    cancel_url: `${appUrl}${CHECKOUT_CANCEL_PATH}`,
+    // Formulario de Stripe incrustado en la landing (DECISIONS A27).
+    ui_mode: "embedded_page",
+    return_url: `${appUrl}${CHECKOUT_RETURN_PATH}`,
   });
-  if (!session.url) throw new Error("Stripe no devolvió la URL de Checkout.");
+  if (!session.client_secret) throw new Error("Stripe no devolvió el client_secret de Checkout.");
 
-  if (await attachCheckoutSession(contract.id, session.id, previous, db, now)) return session.url;
+  if (await attachCheckoutSession(contract.id, session.id, previous, db, now)) {
+    return session.client_secret;
+  }
 
   // Otra solicitud simultánea guardó otra sesión (o el contrato dejó de estar pendiente): se usa
   // esa y la nuestra se expira.
@@ -239,9 +265,9 @@ async function openCheckoutSession(
     throw new CheckoutInProgressError(contract.reference);
   }
   const winner = await stripe.checkout.sessions.retrieve(current.stripeCheckoutSessionId);
-  if (winner.status !== "open" || !winner.url)
+  if (winner.status !== "open" || !winner.client_secret)
     throw new CheckoutInProgressError(contract.reference);
-  return winner.url;
+  return winner.client_secret;
 }
 
 async function sessionUsesPrice(

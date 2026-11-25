@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.7 y SDD v1.11 (ya incluyen las decisiones A1–A12 y A14–A26). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.7 y SDD v1.12 (ya incluyen las decisiones A1–A12 y A14–A27). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -147,8 +147,8 @@ anterior al cambiar el pendiente y crea el cliente de Stripe una sola vez. `POST
 body crudo, WebhookEvent con bloqueo de fila (entregas repetidas o simultáneas sin efectos, reintento tras un error),
 Payment + ServicePeriod + botón de entrega + contrato `active`/`scheduled` (pago tardío incluido), cobro adicional
 con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15 resuelta). Correos Purchase Confirmation, Welcome y
-Payment Received (compartidos con la transferencia). Páginas `/pago/exito` y `/pago/cancelado` que solo informan.
-En la landing se habilita "Pago único con tarjeta". Decisiones en DECISIONS A26. Pruebas: unitarias (importes en
+Payment Received (compartidos con la transferencia). El formulario de pago de Stripe va incrustado en la landing
+(Embedded Checkout) y regresa a `/pago/exito`, que solo informa. Decisiones en DECISIONS A26 y A27. Pruebas: unitarias (importes en
 centavos, Prices, plantillas, interfaz) y con PostgreSQL + un Stripe en memoria + firmas reales del SDK (checkout,
 reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncrono, pago tardío, adelantado, error y
 reintento). La prueba con la Stripe CLI contra la cuenta de prueba queda documentada en el README (necesita las

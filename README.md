@@ -96,14 +96,16 @@ funcionando. Para probarlo en local con tu cuenta de Stripe **en modo de prueba*
    stripe listen --forward-to localhost:3000/api/webhooks/stripe --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
    ```
 
-4. Haz una inscripción en la landing, elige "Pago único con tarjeta" y paga con la tarjeta de prueba
-   `4242 4242 4242 4242` (cualquier fecha futura y cualquier CVC). El webhook activa el contrato y en
+4. Haz una inscripción en la landing y elige "Pago único con tarjeta": el formulario de Stripe aparece
+   ahí mismo (Embedded Checkout). Paga con la tarjeta de prueba `4242 4242 4242 4242` (cualquier
+   fecha futura y cualquier CVC). El webhook activa el contrato y en
    la terminal aparecen los correos (Purchase Confirmation, Welcome y Payment Received con el botón
    de entrega).
 
 Pruebas útiles con la CLI: reenviar un evento (`stripe events resend evt_…`) debe responder
 `duplicate` sin duplicar nada, y un pago con la tarjeta `4000 0000 0000 0002` se rechaza en Checkout
-sin tocar el contrato. Para producción (Fase 8): un endpoint de webhook en el Dashboard apuntando a
+sin tocar el contrato. Las dos claves (`sk_…` y `pk_…`) deben ser del mismo modo; si no, el pago
+con tarjeta aparece como no disponible. Para producción (Fase 8): un endpoint de webhook en el Dashboard apuntando a
 `https://<dominio>/api/webhooks/stripe` con esos tres eventos (y los de suscripción en la Fase 6), y
 `npm run stripe:sync -- --live` con la clave live. Detalle en DECISIONS A26.
 

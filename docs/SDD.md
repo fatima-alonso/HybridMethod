@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.11 |
+| **Versión** | 1.12 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.7 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.12 | 2026-11-25 | Formulario de pago incrustado (DECISIONS A27): §6.1 y §7.4 Embedded Checkout (`client_secret` y clave publicable en la respuesta); se quita `/pago/cancelado`. |
 | 1.11 | 2026-11-25 | Fase 5, pago único con Stripe (DECISIONS A26): §4 `checkout`, `stripe-webhook`, `stripe-catalog` y `payment-notifications` services, script `stripe-sync` y páginas `/pago/exito` y `/pago/cancelado`; §6.1 productos y Prices por `lookup_key`; §7.4 body, reutilización de la sesión y respuestas; §7.5 bloqueo del evento, reintentos, cobro adicional y pago asíncrono fallido: el contrato sigue pendiente (B15, confirmado). |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
@@ -137,8 +138,7 @@ the-hybrid-method/
 │   │   │   └── entrega/[token]/
 │   │   ├── confirmation/
 │   │   ├── pago/
-│   │   │   ├── exito/            # regreso de Stripe Checkout (solo informa)
-│   │   │   └── cancelado/
+│   │   │   └── exito/            # regreso de Stripe Checkout (solo informa)
 │   │   └── api/
 │   │       ├── customers/
 │   │       ├── contracts/
@@ -491,7 +491,7 @@ Se actualiza con un único `INSERT … ON CONFLICT DO UPDATE` (atómico). Los co
 
 ### 6.1 Stripe
 Stripe procesa los pagos y administra las suscripciones. Se usarán:
-- Stripe Checkout en modo `payment` para pagos únicos (`stripePriceIdOneTime`).
+- Stripe Checkout en modo `payment` para pagos únicos (`stripePriceIdOneTime`), con el formulario incrustado en la landing (Embedded Checkout, DECISIONS A27).
 - Stripe Checkout en modo `subscription` para suscripciones mensuales (`stripePriceIdRecurring`).
 - Stripe Billing para los ciclos recurrentes.
 - Stripe Webhooks para sincronizar los eventos con la aplicación.
@@ -659,7 +659,8 @@ Response (201 al crear el contrato; 200 al reutilizar, retomar o cambiar el pend
 ```json
 {
   "success": true,
-  "checkoutUrl": "stripe_checkout_url",
+  "clientSecret": "cs_..._secret_...",
+  "publishableKey": "pk_...",
   "reference": "HM-2026-000001",
   "status": "pending_payment",
   "outcome": "created"
@@ -670,7 +671,7 @@ El backend valida el programa, su disponibilidad, el Price correspondiente y que
 - "Cambiar" invalida el enlace de transferencia o expira la sesión anterior en Stripe.
 - El cliente de Stripe se crea una sola vez y se guarda en `Customer.stripeCustomerId`.
 - Respuestas de error: `401` sin sesión; `400` datos inválidos; `409` reglas de §7.3 o `payment_in_progress`; `422 program_unavailable`; `503 payments_unavailable` (sin Stripe, Price ausente o distinto, o error de Stripe). Rate limit: 10 por IP por hora.
-- La sesión regresa a `/pago/exito` o `/pago/cancelado`, páginas que solo informan.
+- La sesión es de Embedded Checkout (`ui_mode: embedded_page`): el navegador monta el formulario de Stripe con `clientSecret` y `publishableKey` (del mismo modo que la clave secreta; si no, 503). Al pagar, Stripe regresa a `/pago/exito`, que solo informa (DECISIONS A27).
 
 ### 7.5 Webhooks de Stripe
 **`POST /api/webhooks/stripe`** — Recibe los eventos de Stripe.
@@ -829,7 +830,7 @@ Sesión verificada
 POST /api/checkout (mode=payment)
   |--> Contract (pending_payment)
   v
-Stripe Checkout (payment)
+Stripe Embedded Checkout (payment, en la landing)
   |
   v
 Cliente paga
