@@ -6,9 +6,14 @@ import type { CustomerDataInput } from "@/lib/validations";
 import { formatBusinessDateTime, formatPrice } from "@/utils/format";
 
 import { recordAudit } from "./audit.service";
-import { createContract } from "./contract.service";
+import {
+  resolveContractRequest,
+  type ContractRequestOutcome,
+  type PendingAction,
+} from "./contract-request.service";
 import { upsertVerifiedCustomer } from "./customer.service";
 import { sendTransferPendingEmail } from "./email.service";
+import { PendingNotTransferError } from "./errors";
 
 /**
  * Transferencias bancarias (RF-09, SDD §7.6, §8.4).
@@ -51,12 +56,12 @@ export async function createTransferApproval(
 export type TransferRequestInput = {
   /** Correo verificado, tomado de la sesión de verificación (nunca del body). */
   verifiedEmail: string;
-  /** Momento de la verificación: dentro de la misma sesión no se duplica la contratación. */
-  verifiedAt: Date;
   fullName: string;
   /** WhatsApp ya en E.164. */
   whatsapp: string;
   programSlug: string;
+  /** Respuesta a "¿continuar con tu registro pendiente o cambiarlo?" (DECISIONS A20). */
+  pendingAction?: PendingAction;
 };
 
 export type RequestContext = { ip?: string | null; userAgent?: string | null };
@@ -65,20 +70,37 @@ export type TransferRequestResult = {
   contract: Contract;
   program: Program;
   customer: Customer;
-  /** `false` si ya existía la misma contratación en esta sesión (doble envío). */
+  outcome: ContractRequestOutcome;
+  /** `true` si se creó un contrato nuevo. */
   created: boolean;
 };
 
+/** ¿El contrato tiene un enlace de aprobación que todavía sirve? */
+async function hasUsableApproval(contractId: string, db: Db, now: Date): Promise<boolean> {
+  const approval = await db.transferApproval.findFirst({
+    where: {
+      contractId,
+      usedAt: null,
+      invalidatedAt: null,
+      expiresAt: { gt: now },
+      pinAttempts: { lt: TRANSFER_APPROVAL_MAX_PIN_ATTEMPTS },
+    },
+    select: { id: true },
+  });
+  return approval !== null;
+}
+
 /**
- * Crea la contratación por transferencia (RF-09):
- * 1. En una transacción: crea o actualiza el cliente (DECISIONS A4), crea el contrato
- *    `pending_payment` con el importe del programa en la BD, el enlace de aprobación y la auditoría.
- * 2. Después, envía Transfer Pending a Ferro con el enlace. Si el correo falla, la contratación se
- *    conserva, se registra el fallo y Ferro puede regenerar el enlace.
+ * Contratación por transferencia (RF-09, SDD §7.6), con las reglas de SDD §7.3 (DECISIONS A20):
+ * 1. En una transacción con el candado del cliente: crea o actualiza el cliente (A4) y resuelve
+ *    la contratación (`resolveContractRequest`): contrato nuevo, pendiente reutilizado, retomado o
+ *    cambiado. Si hace falta, crea el enlace de aprobación y escribe la auditoría.
+ * 2. Después, si se generó un enlace, envía Transfer Pending a Ferro. Si el correo falla, la
+ *    contratación se conserva, se registra el fallo y Ferro puede regenerar el enlace.
  *
- * Si en la misma sesión de verificación ya se creó un contrato pendiente por transferencia para el
- * mismo cliente y programa (p. ej. un doble clic), se devuelve ese contrato sin crear otro ni
- * reenviar el correo (DECISIONS A16).
+ * Un pendiente reutilizado que todavía tiene un enlace vigente no genera otro ni reenvía el correo
+ * (así un doble envío no duplica nada, A16). Lanza `PendingContractExistsError`,
+ * `SubscriptionActiveError` o `PrepaidLimitError` según las reglas.
  *
  * Quien llama debe haber validado la sesión de verificación (RN-12).
  */
@@ -94,54 +116,71 @@ export async function requestTransfer(
     whatsapp: input.whatsapp,
   };
 
-  const outcome = await db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const customer = await upsertVerifiedCustomer(customerData, tx);
-    // Serializa las solicitudes del mismo cliente para que un doble envío no cree dos contratos.
+    // Serializa las solicitudes del mismo cliente (un solo pendiente, sin duplicados).
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${customer.id}, 0))`;
 
-    const existing = await tx.contract.findFirst({
-      where: {
+    const resolved = await resolveContractRequest(
+      {
         customerId: customer.id,
+        programSlug: input.programSlug,
         paymentType: "transfer",
-        status: "pending_payment",
-        program: { slug: input.programSlug },
-        createdAt: { gte: input.verifiedAt },
+        pendingAction: input.pendingAction,
       },
-      include: { program: true },
-      orderBy: { createdAt: "desc" },
-    });
-    if (existing) {
-      const { program, ...contract } = existing;
-      return { customer, contract, program, approval: null };
-    }
-
-    const contract = await createContract(
-      { customerId: customer.id, programSlug: input.programSlug, paymentType: "transfer" },
       tx,
       now,
+      context,
     );
-    const program = await tx.program.findUniqueOrThrow({ where: { id: contract.programId } });
-    const approval = await createTransferApproval(contract.id, tx, now);
-    await recordAudit(
-      {
-        action: "transfer.requested",
-        actor: `customer:${customer.id}`,
-        entityType: "Contract",
-        entityId: contract.id,
-        ip: context.ip,
-        userAgent: context.userAgent,
-        metadata: { reference: contract.reference, program: program.slug },
-      },
-      tx,
-    );
-    return { customer, contract, program, approval };
+    const { contract, program, outcome } = resolved;
+    if (contract.paymentType !== "transfer") {
+      // Retomó un pendiente de pago con tarjeta: no se puede pagar por transferencia (Fase 5).
+      throw new PendingNotTransferError(contract.reference);
+    }
+
+    let approval: { token: string; expiresAt: Date } | null = null;
+    if (
+      outcome === "created" ||
+      outcome === "changed" ||
+      !(await hasUsableApproval(contract.id, tx, now))
+    ) {
+      approval = await createTransferApproval(contract.id, tx, now);
+    }
+    if (outcome === "created") {
+      await recordAudit(
+        {
+          action: "transfer.requested",
+          actor: `customer:${customer.id}`,
+          entityType: "Contract",
+          entityId: contract.id,
+          ip: context.ip,
+          userAgent: context.userAgent,
+          metadata: { reference: contract.reference, program: program.slug },
+        },
+        tx,
+      );
+    } else if (approval) {
+      await recordAudit(
+        {
+          action: "transfer.link_regenerated",
+          actor: `customer:${customer.id}`,
+          entityType: "Contract",
+          entityId: contract.id,
+          ip: context.ip,
+          userAgent: context.userAgent,
+          metadata: { reference: contract.reference, reason: outcome },
+        },
+        tx,
+      );
+    }
+    return { customer, contract, program, outcome, approval };
   });
 
-  const { customer, contract, program, approval } = outcome;
+  const { customer, contract, program, outcome, approval } = result;
   if (approval) {
     await notifyFerro(customer, contract, program, approval, db);
   }
-  return { customer, contract, program, created: approval !== null };
+  return { customer, contract, program, outcome, created: outcome === "created" };
 }
 
 /** Importe del contrato formateado, sin pasar por `float`. */

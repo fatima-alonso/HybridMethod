@@ -4,18 +4,19 @@ import type {
   Customer,
   Payment,
   Program,
+  ServicePeriod,
   TransferApproval,
 } from "@/generated/prisma/client";
 import { ApprovalPinNotConfiguredError, verifyApprovalPin } from "@/lib/approval-pin";
 import { getConfig, getWhatsAppNumber } from "@/lib/config";
 import { hashToken } from "@/lib/crypto";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { formatBusinessDateTime } from "@/utils/format";
-import { oneMonthServicePeriod } from "@/utils/service-period";
+import { formatBusinessDate, formatBusinessDateTime } from "@/utils/format";
 import { buildWhatsAppLink } from "@/utils/whatsapp";
 
 import { recordAudit } from "./audit.service";
-import { activateContract, effectiveContractStatus } from "./contract.service";
+import { effectiveContractStatus, markContractPaid } from "./contract.service";
+import { createPlanDeliveryLink } from "./delivery-link";
 import {
   sendPaymentReceivedEmail,
   sendTransferConfirmedEmail,
@@ -25,11 +26,11 @@ import {
   ContractNotPendingError,
   InvalidApprovalPinError,
   NotFoundError,
-  ServiceError,
   TransferLinkUnavailableError,
   type TransferLinkProblem,
 } from "./errors";
 import { recordSucceededPayment } from "./payment.service";
+import { createServicePeriod, nextOneMonthPeriod } from "./service-period.service";
 import {
   createTransferApproval,
   formatContractAmount,
@@ -61,6 +62,16 @@ export function isWellFormedToken(token: string): boolean {
 }
 
 export const TRANSFER_METHOD_LABEL = "Transferencia bancaria";
+
+/**
+ * Estados en que una transferencia todavía se puede confirmar o regenerar: pendiente, o vencida
+ * (pago tardío: si llegó el dinero, se respeta, DECISIONS A20).
+ */
+const UNPAID: readonly ContractStatus[] = ["pending_payment", "expired"];
+
+function isUnpaid(status: ContractStatus): status is "pending_payment" | "expired" {
+  return UNPAID.includes(status);
+}
 
 type ApprovalWithContract = TransferApproval & {
   contract: Contract & { customer: Customer; program: Program };
@@ -149,10 +160,10 @@ export async function getTransferApprovalView(
     return {
       state,
       reference: contract.reference,
-      canRegenerate: contract.status === "pending_payment",
+      canRegenerate: isUnpaid(contract.status),
     };
   }
-  if (contract.status !== "pending_payment") {
+  if (!isUnpaid(contract.status)) {
     return {
       state: "contract_not_pending",
       reference: contract.reference,
@@ -168,7 +179,7 @@ export async function getTransferApprovalView(
       programName: contract.program.name,
       amount: formatContractAmount(contract),
       method: TRANSFER_METHOD_LABEL,
-      status: contract.status,
+      status: effectiveContractStatus(contract, now),
       createdAt: contract.createdAt,
     },
     expiresAt: approval.expiresAt,
@@ -183,8 +194,11 @@ export type ConfirmTransferInput = { token: string; pin: string };
 export type ConfirmTransferResult = {
   contract: Contract;
   payment: Payment;
+  servicePeriod: ServicePeriod;
   customer: Customer;
   program: Program;
+  /** `true` si el contrato ya había vencido (pago tardío, DECISIONS A20). */
+  paidAfterExpiry: boolean;
 };
 
 function pinHashOrThrow(pinHash: string | undefined): string {
@@ -225,13 +239,16 @@ async function reservePinAttempt(approvalId: string, db: Db, now: Date): Promise
 
 /**
  * Confirma una transferencia (RF-12, SDD §7.6):
- * 1. Valida el token (hash, sin usar, sin invalidar, vigente) y que el contrato siga pendiente.
+ * 1. Valida el token (hash, sin usar, sin invalidar, vigente) y que el contrato siga sin pagar:
+ *    pendiente o vencido (pago tardío, DECISIONS A20).
  * 2. Cuenta el intento y verifica el PIN. Si es incorrecto, lo registra en la auditoría; al quinto
  *    error invalida el enlace. El contrato sigue en `pending_payment` (RF-20).
  * 3. En una sola transacción: marca el enlace como usado (`approvedBy = "ferro"`), crea el Payment,
- *    activa el contrato con su periodo (DECISIONS A23) y escribe la auditoría con IP y user-agent.
- * 4. Después envía Transfer Confirmed y Welcome al cliente y Payment Received a Ferro. Un fallo de
- *    correo se registra y nunca revierte el pago (SDD §6.2).
+ *    el ServicePeriod (un mes desde la confirmación, o desde que termine el mes vigente si pagó por
+ *    adelantado) y su botón de entrega, pasa el contrato a `active` (o `scheduled`) y escribe la
+ *    auditoría con IP y user-agent (DECISIONS A19, A20, A23).
+ * 4. Después envía Transfer Confirmed y Welcome al cliente y Payment Received a Ferro, con el botón
+ *    "Registrar entrega del plan". Un fallo de correo se registra y nunca revierte el pago.
  */
 export async function confirmTransfer(
   input: ConfirmTransferInput,
@@ -247,7 +264,7 @@ export async function confirmTransfer(
   const { contract } = approval;
   const state = approvalLinkState(approval, now);
   if (state !== "valid") throw new TransferLinkUnavailableError(state, contract.reference);
-  if (contract.status !== "pending_payment") {
+  if (!isUnpaid(contract.status)) {
     throw new ContractNotPendingError(contract.reference, contract.status);
   }
 
@@ -285,26 +302,29 @@ export async function confirmTransfer(
 
   const result = await db.$transaction(async (tx) => {
     // Mismo orden de bloqueo que la regeneración (contrato → enlace) para no provocar un deadlock.
-    await tx.$queryRaw`SELECT 1 FROM "contracts" WHERE "id" = ${contract.id}::uuid FOR UPDATE`;
+    const locked = await tx.$queryRaw<Array<{ status: ContractStatus }>>`
+      SELECT "status" FROM "contracts" WHERE "id" = ${contract.id}::uuid FOR UPDATE`;
+    const lockedStatus = locked[0]?.status;
     const { count } = await tx.transferApproval.updateMany({
       where: { id: approval.id, usedAt: null, invalidatedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now, approvedBy: "ferro", pinAttempts: { decrement: 1 } },
     });
     if (count === 0) throw await unavailableError(approval.id, tx, now);
-
-    let activated: Contract;
-    try {
-      activated = await activateContract(contract.id, oneMonthServicePeriod(now), tx, {
-        from: "pending_payment",
-      });
-    } catch (error) {
-      if (error instanceof ServiceError && !(error instanceof NotFoundError)) {
-        const current = await tx.contract.findUniqueOrThrow({ where: { id: contract.id } });
-        throw new ContractNotPendingError(current.reference, current.status);
-      }
-      throw error;
+    if (!lockedStatus || !isUnpaid(lockedStatus)) {
+      throw new ContractNotPendingError(contract.reference, lockedStatus ?? "unknown");
     }
-    const payment = await recordSucceededPayment(activated, "transfer", tx, now);
+    // Vencido en la BD, o pendiente con 7 días sin actividad que el cron todavía no venció.
+    const paidAfterExpiry =
+      effectiveContractStatus({ ...contract, status: lockedStatus }, now) === "expired";
+
+    const period = await nextOneMonthPeriod(contract, now, tx);
+    const paid = await markContractPaid(contract.id, period, tx, now, { from: lockedStatus });
+    const payment = await recordSucceededPayment(paid, "transfer", tx, now);
+    const servicePeriod = await createServicePeriod(
+      { contract: paid, payment, paidAt: now, ...period },
+      tx,
+    );
+    const deliveryLink = await createPlanDeliveryLink(servicePeriod.id, tx, now);
     await recordAudit(
       {
         action: "transfer.approved",
@@ -317,28 +337,55 @@ export async function confirmTransfer(
           reference: contract.reference,
           approvalId: approval.id,
           paymentId: payment.id,
+          servicePeriodId: servicePeriod.id,
           amount: payment.amount.toFixed(2),
           currency: payment.currency,
-          serviceStartDate: activated.serviceStartDate!.toISOString(),
-          serviceEndDate: activated.serviceEndDate!.toISOString(),
+          status: paid.status,
+          serviceStartDate: period.serviceStartDate.toISOString(),
+          serviceEndDate: period.serviceEndDate.toISOString(),
         },
       },
       tx,
     );
-    return { contract: activated, payment };
+    if (paidAfterExpiry) {
+      await recordAudit(
+        {
+          action: "contract.paid_after_expiry",
+          actor: "ferro",
+          entityType: "Contract",
+          entityId: contract.id,
+          ip: context.ip,
+          userAgent: context.userAgent,
+          metadata: { reference: contract.reference, method: "transfer" },
+        },
+        tx,
+      );
+    }
+    return {
+      contract: paid,
+      payment,
+      servicePeriod,
+      paidAfterExpiry,
+      deliveryUrl: deliveryLink.url,
+    };
   });
 
-  const confirmed: ConfirmTransferResult = {
-    ...result,
+  const { deliveryUrl, ...confirmed } = result;
+  const full: ConfirmTransferResult = {
+    ...confirmed,
     customer: contract.customer,
     program: contract.program,
   };
-  await sendConfirmationEmails(confirmed, db);
-  return confirmed;
+  await sendConfirmationEmails(full, deliveryUrl, db);
+  return full;
 }
 
-async function sendConfirmationEmails(result: ConfirmTransferResult, db: Db): Promise<void> {
-  const { contract, customer, program } = result;
+async function sendConfirmationEmails(
+  result: ConfirmTransferResult,
+  deliveryUrl: string,
+  db: Db,
+): Promise<void> {
+  const { contract, customer, program, servicePeriod } = result;
   const serviceStart = formatBusinessDateTime(contract.serviceStartDate!);
   const serviceEnd = formatBusinessDateTime(contract.serviceEndDate!);
   const amount = formatContractAmount(contract);
@@ -386,8 +433,17 @@ async function sendConfirmationEmails(result: ConfirmTransferResult, db: Db): Pr
           programName: program.name,
           amount,
           method: `${TRANSFER_METHOD_LABEL} (confirmada por ti)`,
+          paidAt: formatBusinessDateTime(servicePeriod.paidAt),
           serviceStart,
           serviceEnd,
+          prepaid:
+            contract.status === "scheduled"
+              ? {
+                  from: formatBusinessDate(contract.serviceStartDate!),
+                  to: formatBusinessDate(contract.serviceEndDate!),
+                }
+              : null,
+          deliveryUrl,
         }),
     ],
   ];
@@ -426,8 +482,9 @@ export type RegenerateTransferLinkResult = {
 };
 
 /**
- * Genera un enlace nuevo para un contrato por transferencia que sigue en `pending_payment`
- * (RF-20, SDD §7.6). Exige el PIN de Ferro. Invalida los enlaces anteriores y envía el nuevo
+ * Genera un enlace nuevo para un contrato por transferencia que sigue sin pagar: pendiente, o
+ * vencido para un pago tardío (RF-20, SDD §7.6, DECISIONS A20). En un pendiente cuenta como
+ * actividad. Exige el PIN de Ferro. Invalida los enlaces anteriores y envía el nuevo
  * solo al correo de Ferro: el token nunca aparece en la respuesta.
  *
  * Con un PIN incorrecto la respuesta es la misma exista o no la referencia.
@@ -464,16 +521,20 @@ export async function regenerateTransferLink(
   if (!contract || contract.paymentType !== "transfer") {
     throw new NotFoundError("Contrato por transferencia", input.reference);
   }
-  if (contract.status !== "pending_payment") {
+  if (!isUnpaid(contract.status)) {
     throw new ContractNotPendingError(contract.reference, contract.status);
   }
 
   const approval = await db.$transaction(async (tx) => {
-    // Serializa con una confirmación simultánea: el contrato debe seguir pendiente al regenerar.
+    // Serializa con una confirmación simultánea: el contrato debe seguir sin pagar al regenerar.
     const locked = await tx.$queryRaw<Array<{ status: ContractStatus }>>`
       SELECT "status" FROM "contracts" WHERE "id" = ${contract.id}::uuid FOR UPDATE`;
-    if (locked[0]?.status !== "pending_payment") {
-      throw new ContractNotPendingError(contract.reference, locked[0]?.status ?? "unknown");
+    const lockedStatus = locked[0]?.status;
+    if (!lockedStatus || !isUnpaid(lockedStatus)) {
+      throw new ContractNotPendingError(contract.reference, lockedStatus ?? "unknown");
+    }
+    if (lockedStatus === "pending_payment") {
+      await tx.contract.update({ where: { id: contract.id }, data: { lastActivityAt: now } });
     }
     const created = await createTransferApproval(contract.id, tx, now);
     await recordAudit(

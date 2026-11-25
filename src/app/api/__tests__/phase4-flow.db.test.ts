@@ -72,7 +72,6 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 4 con PostgreSQL", () => {
     const { contract } = await requestTransfer(
       {
         verifiedEmail: "ana@example.com",
-        verifiedAt: new Date(Date.now() - 60_000),
         fullName: "Ana López",
         whatsapp: "+525512345678",
         programSlug: "hm-complete",

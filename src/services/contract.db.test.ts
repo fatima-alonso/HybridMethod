@@ -42,10 +42,22 @@ describe.skipIf(!testDatabaseUrl)("contract.service con PostgreSQL", () => {
   });
   afterAll(() => prisma.$disconnect());
 
-  const create = (
+  // Un cliente nuevo por contrato: cada cliente puede tener solo un pendiente (DECISIONS A20).
+  let customerCounter = 0;
+  const create = async (
     programSlug = "hm-complete",
     paymentType: "transfer" | "one_time" | "subscription" = "transfer",
-  ) => createContract({ customerId, programSlug, paymentType }, prisma);
+  ) => {
+    const customer = await upsertVerifiedCustomer(
+      {
+        fullName: "Cliente",
+        email: `cliente${++customerCounter}@example.com`,
+        whatsapp: "+525512345678",
+      },
+      prisma,
+    );
+    return createContract({ customerId: customer.id, programSlug, paymentType }, prisma);
+  };
 
   describe("creación", () => {
     it("crea el contrato pending_payment con el importe del programa en la BD", async () => {

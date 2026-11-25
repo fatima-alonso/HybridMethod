@@ -67,7 +67,6 @@ describe.skipIf(!testDatabaseUrl)(
       const result = await requestTransfer(
         {
           verifiedEmail: email,
-          verifiedAt: new Date(createdAt.getTime() - 60_000),
           fullName: "Ana López",
           whatsapp: "+525512345678",
           programSlug: "hm-run",
@@ -330,6 +329,89 @@ describe.skipIf(!testDatabaseUrl)(
       });
     });
 
+    describe("meses pagados y entrega del plan (DECISIONS A19, A20)", () => {
+      const day = 24 * 3600_000;
+
+      it("crea el ServicePeriod y el botón de entrega, y se lo manda a Ferro", async () => {
+        const { token, contract } = await pendingTransfer();
+        const result = await confirm(token, PIN);
+
+        const period = await prisma.servicePeriod.findFirstOrThrow({
+          include: { deliveryLinks: true },
+        });
+        expect(period).toMatchObject({
+          contractId: contract.id,
+          paymentId: result.payment.id,
+          programId: contract.programId,
+          sequence: 1,
+          paidAt: now,
+          startDate: now,
+          endDate: new Date("2026-12-25T16:30:00Z"),
+          planDeliveredOn: null,
+        });
+        expect(period.deliveryLinks).toHaveLength(1);
+        const email = sendPaymentReceivedEmail.mock.calls[0]?.[0] as {
+          deliveryUrl: string;
+          prepaid: unknown;
+        };
+        expect(email.prepaid).toBeNull();
+        const deliveryToken = email.deliveryUrl.split("/plan/entrega/")[1]!;
+        expect(period.deliveryLinks[0]!.tokenHash).toBe(hashToken(deliveryToken));
+      });
+
+      it("pago tardío: confirma un contrato vencido y lo audita", async () => {
+        const { token, contract } = await pendingTransfer();
+        await prisma.contract.update({ where: { id: contract.id }, data: { status: "expired" } });
+        const result = await confirm(token, PIN);
+        expect(result.paidAfterExpiry).toBe(true);
+        expect(result.contract.status).toBe("active");
+        expect(
+          await prisma.auditLog.count({ where: { action: "contract.paid_after_expiry" } }),
+        ).toBe(1);
+      });
+
+      it("un pendiente con 7 días sin actividad (aún no vencido en la BD) también cuenta como tardío", async () => {
+        const { token } = await pendingTransfer();
+        // Regenera el enlace a los 8 días: el contrato sigue en pending_payment en la BD.
+        const at = new Date(createdAt.getTime() + 8 * day);
+        await prisma.transferApproval.updateMany({
+          data: { expiresAt: new Date(at.getTime() + day) },
+        });
+        const result = await confirm(token, PIN, at);
+        expect(result.paidAfterExpiry).toBe(true);
+      });
+
+      it("pago por adelantado: el mes nuevo empieza cuando termina el vigente (scheduled)", async () => {
+        const first = await pendingTransfer();
+        await confirm(first.token, PIN);
+        // Al día siguiente contrata su siguiente mes y Ferro lo confirma.
+        const second = await requestTransfer(
+          {
+            verifiedEmail: "ana@example.com",
+            fullName: "Ana López",
+            whatsapp: "+525512345678",
+            programSlug: "hm-complete",
+          },
+          {},
+          prisma,
+          new Date(now.getTime() + day),
+        );
+        const result = await confirm(lastToken(), PIN, new Date(now.getTime() + day));
+        expect(second.outcome).toBe("created");
+        expect(result.contract).toMatchObject({
+          status: "scheduled",
+          serviceStartDate: new Date("2026-12-25T16:30:00Z"),
+          serviceEndDate: new Date("2027-01-25T16:30:00Z"),
+        });
+        expect(result.servicePeriod.paidAt).toEqual(new Date(now.getTime() + day));
+        const email = sendPaymentReceivedEmail.mock.calls.at(-1)?.[0] as { prepaid: unknown };
+        expect(email.prepaid).toEqual({
+          from: "25 de diciembre de 2026",
+          to: "25 de enero de 2027",
+        });
+      });
+    });
+
     describe("regeneración del enlace", () => {
       const regenerate = (reference: string, pin: string, at: Date = now) =>
         regenerateTransferLink({ reference, pin }, context, prisma, at, pinHash);
@@ -373,6 +455,24 @@ describe.skipIf(!testDatabaseUrl)(
         }
         expect(sendTransferPendingEmail).toHaveBeenCalledTimes(1);
         expect(await prisma.auditLog.count({ where: { action: "transfer.pin_failed" } })).toBe(2);
+      });
+
+      it("regenera el enlace de un contrato vencido para un pago tardío", async () => {
+        const { contract } = await pendingTransfer();
+        await prisma.contract.update({ where: { id: contract.id }, data: { status: "expired" } });
+        await expect(regenerate(contract.reference, PIN)).resolves.toMatchObject({ emailed: true });
+        await confirm(lastToken(), PIN);
+        expect(
+          (await prisma.contract.findUniqueOrThrow({ where: { id: contract.id } })).status,
+        ).toBe("active");
+      });
+
+      it("regenerar el enlace de un pendiente cuenta como actividad", async () => {
+        const { contract } = await pendingTransfer();
+        await regenerate(contract.reference, PIN);
+        expect(
+          (await prisma.contract.findUniqueOrThrow({ where: { id: contract.id } })).lastActivityAt,
+        ).toEqual(now);
       });
 
       it("no regenera un contrato inexistente ni uno que ya no está pendiente", async () => {

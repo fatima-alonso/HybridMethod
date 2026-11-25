@@ -12,10 +12,11 @@ import { ApplicationFormFromUrl } from "./ApplicationFormFromUrl";
 
 export function ApplicationSection({ programs }: { programs: readonly ProgramOption[] }) {
   // Solo se pasan al cliente los campos que usa el formulario.
-  const options = programs.map(({ slug, name, monthlyPrice, currency }) => ({
+  const options = programs.map(({ slug, name, monthlyPrice, subscriptionPrice, currency }) => ({
     slug,
     name,
     monthlyPrice,
+    subscriptionPrice,
     currency,
   }));
   const countries = getPhoneCountryOptions();

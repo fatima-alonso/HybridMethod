@@ -10,6 +10,8 @@ export type LandingProgram = {
   description: string;
   /** Precio mensual como decimal en texto, p. ej. "1200.00" (nunca float). */
   monthlyPrice: `${number}`;
+  /** Precio mensual con suscripción (−10 %, DECISIONS A18). */
+  subscriptionPrice: `${number}`;
   currency: string;
   /** Descripción corta del SRS §5 (editorial). */
   summary: string;
@@ -20,4 +22,7 @@ export type LandingProgram = {
 };
 
 /** Lo mínimo que necesita el formulario para listar los programas. */
-export type ProgramOption = Pick<LandingProgram, "slug" | "name" | "monthlyPrice" | "currency">;
+export type ProgramOption = Pick<
+  LandingProgram,
+  "slug" | "name" | "monthlyPrice" | "subscriptionPrice" | "currency"
+>;

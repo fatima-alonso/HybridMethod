@@ -49,6 +49,8 @@ export const CONFIRM_PAGE = {
   },
   statusLabels: {
     pending_payment: "Pendiente de confirmación",
+    expired: "Vencido sin pagar (puedes confirmar un pago tardío)",
+    scheduled: "Pagado · mes por adelantado",
     active: "Pagado · plan activo",
     completed: "Pagado · plan terminado",
     payment_failed: "Pago fallido",
@@ -67,6 +69,12 @@ export const CONFIRM_PAGE = {
   confirmedTitle: "Pago confirmado",
   confirmed: (reference: string) =>
     `El contrato ${reference} quedó activo. El cliente recibirá la confirmación y el correo de bienvenida.`,
+  /**
+   * Pago por adelantado (DECISIONS A20): el cliente ya tiene un mes pagado que termina en `start`,
+   * así que este pago cubre el mes siguiente.
+   */
+  confirmedScheduled: (reference: string, start: string, end: string) =>
+    `El contrato ${reference} quedó pagado por adelantado. Este cliente ya tiene un mes pagado hasta el ${start}, así que este pago cubre del ${start} al ${end}. El cliente recibirá la confirmación y el correo de bienvenida.`,
   period: (start: string, end: string) => `Periodo del plan: del ${start} al ${end}`,
   usedTitle: "Pago ya confirmado",
   usedAt: (date: string) => `Se confirmó el ${date}.`,

@@ -11,6 +11,11 @@ import { StepHeading } from "./StepHeading";
 
 export type PaymentMethodId = (typeof PAYMENT_STEP.methods)[number]["id"];
 
+/** Importe de cada modalidad: la suscripción tiene 10 % de descuento (DECISIONS A18). */
+export function methodPrice(program: ProgramOption, method: PaymentMethodId): `${number}` {
+  return method === "subscription" ? program.subscriptionPrice : program.monthlyPrice;
+}
+
 type Props = {
   program: ProgramOption;
   busy?: boolean;
@@ -42,11 +47,8 @@ export function PaymentMethodStep({
       <StepHeading title={PAYMENT_STEP.title} />
       <p className="text-bone/85">{PAYMENT_STEP.lead}</p>
 
-      <div className="flex items-baseline justify-between gap-4 border-2 border-bone/25 p-4">
+      <div className="border-2 border-bone/25 p-4">
         <span className="font-display text-2xl font-bold uppercase">{program.name}</span>
-        <span className="font-semibold">
-          {formatPrice(program.monthlyPrice, program.currency)} / mes
-        </span>
       </div>
 
       <form
@@ -81,8 +83,13 @@ export function PaymentMethodStep({
                     onChange={() => setMethod(option.id)}
                     className="mt-1 size-5 shrink-0 accent-volt"
                   />
-                  <span>
-                    <span className="block font-semibold">{option.name}</span>
+                  <span className="flex-1">
+                    <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="font-semibold">{option.name}</span>
+                      <span className="font-semibold whitespace-nowrap">
+                        {formatPrice(methodPrice(program, option.id), program.currency)} / mes
+                      </span>
+                    </span>
                     <span className="block text-sm text-bone/70">
                       {option.available ? option.description : PAYMENT_STEP.unavailable}
                     </span>

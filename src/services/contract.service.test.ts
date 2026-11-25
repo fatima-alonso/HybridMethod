@@ -13,6 +13,8 @@ import { InvalidContractTransitionError } from "./errors";
 
 const STATUSES: ContractStatus[] = [
   "pending_payment",
+  "expired",
+  "scheduled",
   "active",
   "completed",
   "payment_failed",
@@ -21,6 +23,11 @@ const STATUSES: ContractStatus[] = [
 
 const VALID: Array<[ContractStatus, ContractStatus]> = [
   ["pending_payment", "active"],
+  ["pending_payment", "scheduled"],
+  ["pending_payment", "expired"],
+  ["expired", "active"],
+  ["expired", "scheduled"],
+  ["scheduled", "active"],
   ["active", "completed"],
   ["active", "payment_failed"],
   ["payment_failed", "active"],
@@ -28,8 +35,8 @@ const VALID: Array<[ContractStatus, ContractStatus]> = [
   ["payment_failed", "cancelled"],
 ];
 
-describe("máquina de estados del contrato (DECISIONS A3)", () => {
-  it("cubre exactamente los cinco estados, sin `paid`", () => {
+describe("máquina de estados del contrato (DECISIONS A3, A20)", () => {
+  it("cubre exactamente los siete estados, sin `paid`", () => {
     expect(Object.keys(CONTRACT_TRANSITIONS).sort()).toEqual([...STATUSES].sort());
     expect(Object.keys(CONTRACT_TRANSITIONS)).not.toContain("paid");
   });
@@ -54,8 +61,13 @@ describe("máquina de estados del contrato (DECISIONS A3)", () => {
     expect(CONTRACT_TRANSITIONS.cancelled).toEqual([]);
   });
 
-  it("solo se activa desde pending_payment o payment_failed (RN-05)", () => {
-    expect(allowedSources("active").sort()).toEqual(["payment_failed", "pending_payment"]);
+  it("solo se activa tras un pago: pendiente, vencido (pago tardío), programado o reintento (RN-05)", () => {
+    expect(allowedSources("active").sort()).toEqual([
+      "expired",
+      "payment_failed",
+      "pending_payment",
+      "scheduled",
+    ]);
   });
 });
 
@@ -96,5 +108,44 @@ describe("estado efectivo al leer el contrato", () => {
         effectiveContractStatus({ status, paymentType: "one_time", serviceEndDate: past }, now),
       ).toBe(status);
     }
+  });
+});
+
+describe("estado efectivo de pendientes y meses por adelantado (DECISIONS A20)", () => {
+  const now = new Date("2026-12-15T12:00:00Z");
+  const day = 24 * 3600_000;
+
+  it("un pendiente con 7 días sin actividad cuenta como expired", () => {
+    const base = {
+      status: "pending_payment" as const,
+      paymentType: "transfer" as const,
+      serviceEndDate: null,
+    };
+    expect(
+      effectiveContractStatus(
+        { ...base, lastActivityAt: new Date(now.getTime() - 7 * day) },
+        now,
+        7,
+      ),
+    ).toBe("expired");
+    expect(
+      effectiveContractStatus(
+        { ...base, lastActivityAt: new Date(now.getTime() - 6 * day) },
+        now,
+        7,
+      ),
+    ).toBe("pending_payment");
+  });
+
+  it("un mes programado cuenta como active cuando empieza y completed cuando termina", () => {
+    const base = { status: "scheduled" as const, paymentType: "transfer" as const };
+    const at = (start: number, end: number) => ({
+      ...base,
+      serviceStartDate: new Date(now.getTime() + start * day),
+      serviceEndDate: new Date(now.getTime() + end * day),
+    });
+    expect(effectiveContractStatus(at(1, 31), now)).toBe("scheduled");
+    expect(effectiveContractStatus(at(-1, 29), now)).toBe("active");
+    expect(effectiveContractStatus(at(-31, -1), now)).toBe("completed");
   });
 });

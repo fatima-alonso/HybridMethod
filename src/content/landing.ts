@@ -115,8 +115,10 @@ export const HOW_IT_WORKS = {
 /** Modalidades de pago (RF-06) y reglas de precio (SRS §5, RN-13). */
 export const PRICING = {
   title: "Pricing",
-  lead: "El mismo precio mensual con cualquier modalidad de pago.",
+  lead: "Precio mensual. Con la suscripción mensual pagas 10 % menos.",
   perMonth: "/ mes",
+  /** Precio con suscripción, debajo del precio completo (DECISIONS A18). */
+  withSubscription: (price: string) => `${price} con suscripción`,
   methods: [
     {
       name: "Transferencia bancaria",
@@ -125,15 +127,14 @@ export const PRICING = {
     { name: "Pago único", body: "Pagas un mes con tarjeta, sin renovación automática." },
     {
       name: "Suscripción mensual",
-      body: "Se cobra automáticamente cada mes hasta que la canceles.",
+      body: "10 % de descuento. Se cobra automáticamente cada mes hasta que la canceles.",
     },
   ],
   notes: [
     "Precios en pesos mexicanos (MXN).",
+    // Precios finales de Ferro: lo que paga el cliente, sin cargos aparte (DECISIONS A18).
+    "Precios finales: no hay cargos adicionales.",
     "Sin comisión adicional por pagar con tarjeta.",
-    // PLACEHOLDER: pendiente confirmar el tratamiento fiscal (DECISIONS B2). Ajustar este texto
-    // para indicar el precio total con impuestos antes de publicar (SRS §5).
-    "[Pendiente] Confirmar si el precio incluye IVA.",
   ],
   cta: "Contratar",
 };
@@ -166,7 +167,7 @@ export const FAQ = {
     {
       question: "¿Qué métodos de pago aceptan?",
       answer:
-        "Transferencia bancaria, pago único con tarjeta y suscripción mensual con tarjeta. El precio es el mismo en las tres modalidades.",
+        "Transferencia bancaria, pago único con tarjeta y suscripción mensual con tarjeta. La transferencia y el pago único cuestan el precio completo; la suscripción mensual tiene 10 % de descuento.",
     },
     {
       question: "¿Cuándo empieza mi servicio?",

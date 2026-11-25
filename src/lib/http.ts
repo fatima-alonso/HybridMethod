@@ -27,6 +27,10 @@ export type ApiErrorCode =
   | "link_unavailable"
   | "contract_not_pending"
   | "not_found"
+  | "pending_contract_exists"
+  | "subscription_active"
+  | "prepaid_limit"
+  | "invalid_date"
   | "service_unavailable"
   | "internal_error";
 

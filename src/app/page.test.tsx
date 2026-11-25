@@ -16,6 +16,7 @@ const catalogPrograms: LandingProgram[] = PROGRAMS.map((p) => ({
   name: p.name,
   description: p.description,
   monthlyPrice: p.monthlyPrice,
+  subscriptionPrice: p.subscriptionPrice,
   currency: p.currency,
   summary: p.summary,
   highlights: p.highlights,
@@ -74,6 +75,21 @@ describe("Landing (RF-01, RF-02, RF-03, SRS §4.2)", () => {
     for (const value of ["15+", "2", "100%", "360°"]) {
       expect(within(about).getByText(value).tagName).toBe("DD");
     }
+  });
+
+  it("muestra el precio completo y el de suscripción, sin decir que es el mismo (DECISIONS A18)", async () => {
+    render(await Home());
+    const pricing = document.getElementById(SECTION_IDS.pricing)!;
+    for (const price of ["1,080", "1,350", "1,620"]) {
+      const matches = within(pricing).getAllByText(
+        (text) => text.includes(price) && text.includes("con suscripción"),
+      );
+      expect(matches.length).toBeGreaterThan(0);
+    }
+    const text = document.body.textContent ?? "";
+    expect(text).not.toContain("mismo precio");
+    expect(text).not.toContain("precio es el mismo");
+    expect(text).not.toContain("IVA");
   });
 
   it("tiene un solo h1", async () => {

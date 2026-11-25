@@ -14,6 +14,15 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "no-store" },
         ],
       },
+      {
+        // Botón "Registrar entrega del plan" (SDD §7.8): mismo trato que el enlace de confirmación.
+        source: "/plan/entrega/:token*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
     ];
   },
   partialPrefetching: true,

@@ -1,9 +1,9 @@
-// Esquema de datos de THE HYBRID METHOD (SDD §5, DECISIONS A1–A3, A7, A8, A14).
+// Esquema de datos de THE HYBRID METHOD (SDD §5, DECISIONS A1–A3, A7, A14, A18–A20).
 //
 // - Dinero siempre en Decimal(10, 2), nunca float.
 // - Los cambios de estado de Contract, Payment y Subscription solo ocurren en `src/services/`.
 // - Restricciones adicionales que Prisma no expresa (CHECK, secuencia de referencias) están en
-//   la migración inicial `prisma/migrations/*_init/migration.sql`.
+//   las migraciones `prisma/migrations/*/migration.sql`.
 
 generator client {
   provider = "prisma-client"
@@ -16,9 +16,11 @@ datasource db {
 
 // ─── Enums ──────────────────────────────────────────────────────────────────
 
-/// Estados del contrato (DECISIONS A3: no existe `paid`).
+/// Estados del contrato (DECISIONS A3: no existe `paid`; A20: `expired` y `scheduled`).
 enum ContractStatus {
   pending_payment
+  expired
+  scheduled
   active
   completed
   payment_failed
@@ -80,17 +82,20 @@ model Customer {
   @@map("customers")
 }
 
-/// Programa. Un único precio para todas las modalidades (DECISIONS A8).
+/// Programa. Precio completo y precio con suscripción (−10 %, DECISIONS A18).
 model Program {
   id                     String   @id @default(uuid()) @db.Uuid
   slug                   String   @unique
   name                   String
   description            String
+  /// Precio mensual completo (pago único y transferencia).
   monthlyPrice           Decimal  @db.Decimal(10, 2)
+  /// Precio mensual con suscripción: `monthlyPrice` − 10 %, ya redondeado (DECISIONS A18).
+  subscriptionPrice      Decimal  @db.Decimal(10, 2)
   currency               String   @default("MXN") @db.Char(3)
-  /// Price de Stripe `one_time` (Fase 5). Mismo importe que `monthlyPrice`.
+  /// Price de Stripe `one_time` (Fase 5). Vale `monthlyPrice`.
   stripePriceIdOneTime   String?  @unique
-  /// Price de Stripe `recurring` mensual (Fase 6). Mismo importe que `monthlyPrice`.
+  /// Price de Stripe `recurring` mensual (Fase 6). Vale `subscriptionPrice`.
   stripePriceIdRecurring String?  @unique
   active                 Boolean  @default(true)
   /// Orden en la landing (DECISIONS A14).
@@ -98,8 +103,9 @@ model Program {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  contracts     Contract[]
-  subscriptions Subscription[]
+  contracts      Contract[]
+  subscriptions  Subscription[]
+  servicePeriods ServicePeriod[]
 
   @@map("programs")
 }
@@ -113,18 +119,21 @@ model Contract {
   programId               String         @db.Uuid
   paymentType             PaymentType
   status                  ContractStatus @default(pending_payment)
-  /// Copiado de `Program.monthlyPrice` al crear el contrato.
+  /// Importe de la modalidad: `Program.monthlyPrice` o `subscriptionPrice` (DECISIONS A18).
   amount                  Decimal        @db.Decimal(10, 2)
   currency                String         @db.Char(3)
   stripeCheckoutSessionId String?        @unique
   serviceStartDate        DateTime?
   serviceEndDate          DateTime?
+  /// Última actividad mientras está pendiente; a los 7 días sin actividad vence (DECISIONS A20).
+  lastActivityAt          DateTime       @default(now())
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
 
   customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   program           Program            @relation(fields: [programId], references: [id], onDelete: Restrict)
   payments          Payment[]
+  servicePeriods    ServicePeriod[]
   subscription      Subscription?
   transferApprovals TransferApproval[]
 
@@ -148,12 +157,44 @@ model Payment {
   paidAt                DateTime?
   createdAt             DateTime      @default(now())
 
-  contract     Contract      @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  contract      Contract       @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  subscription  Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  servicePeriod ServicePeriod?
 
   @@index([contractId])
   @@index([subscriptionId])
   @@map("payments")
+}
+
+/// Un mes pagado (DECISIONS A19): fecha de pago, inicio y fin, y la fecha de entrega del plan, que
+/// es solo referencia y no cambia ningún estado.
+model ServicePeriod {
+  id                 String    @id @default(uuid()) @db.Uuid
+  contractId         String    @db.Uuid
+  paymentId          String    @unique @db.Uuid
+  /// Programa de ese mes (en suscripciones puede cambiar desde el portal).
+  programId          String    @db.Uuid
+  /// Número de mes dentro del contrato (1, 2, …).
+  sequence           Int
+  paidAt             DateTime
+  startDate          DateTime
+  endDate            DateTime
+  /// Día de entrega del plan, registrado por Ferro (solo referencia).
+  planDeliveredOn    DateTime? @db.Date
+  deliveryRecordedAt DateTime?
+  lastReminderAt     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  contract      Contract           @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  payment       Payment            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  program       Program            @relation(fields: [programId], references: [id], onDelete: Restrict)
+  deliveryLinks PlanDeliveryLink[]
+
+  @@unique([contractId, sequence])
+  @@index([programId])
+  @@index([planDeliveredOn, paidAt])
+  @@map("service_periods")
 }
 
 /// Copia local del estado de la suscripción en Stripe (sincronizada por webhooks).
@@ -198,6 +239,23 @@ model TransferApproval {
 
   @@index([contractId])
   @@map("transfer_approvals")
+}
+
+/// Botón "Registrar entrega del plan" (DECISIONS A19): uno en el correo de compra y uno por
+/// recordatorio. Válido si `expiresAt > now` y su mes no tiene `planDeliveredOn`. Sin PIN.
+model PlanDeliveryLink {
+  id              String    @id @default(uuid()) @db.Uuid
+  servicePeriodId String    @db.Uuid
+  /// SHA-256 del token; el token en claro nunca se guarda.
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  servicePeriod ServicePeriod @relation(fields: [servicePeriodId], references: [id], onDelete: Restrict)
+
+  @@index([servicePeriodId])
+  @@map("plan_delivery_links")
 }
 
 /// Código OTP de verificación de correo (DECISIONS A4). Solo se guarda el hash.

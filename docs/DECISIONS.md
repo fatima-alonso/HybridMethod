@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -461,6 +461,65 @@ estado de origen (`pending_payment` en las transferencias).
   generó con fondo transparente (el negro del JPG se convierte en transparencia conservando el antialias).
   Está pensado para fondo oscuro. El logo apilado del footer no cambia.
 
+### A25. Fase 4, parte 2: modelo, reglas de contratación, entrega del plan y cron (2026-11-25)
+Puntos que el SDD no definía y que se resolvieron así al implementar A18–A20. Todos son reversibles.
+
+**Migración.**
+- Va en dos archivos: el primero solo agrega `expired` y `scheduled` al enum, porque PostgreSQL no deja usar un
+  valor de enum en la misma transacción en que se crea (el segundo lo usa en un CHECK).
+- `subscriptionPrice` se llena con `round(monthlyPrice × 0.90, 2)` y el seed lo vuelve a escribir desde el
+  catálogo. CHECK `0 < subscriptionPrice ≤ monthlyPrice`.
+- Antes de crear el índice único de un pendiente por cliente, si una BD ya tenía varios pendientes del mismo
+  cliente (antes no había esta regla), se deja el más reciente y los demás pasan a `expired`.
+- A los contratos ya pagados (transferencias confirmadas en la parte 1) se les crea su ServicePeriod con el
+  periodo del contrato. `lastActivityAt` de los existentes = `createdAt`.
+- CHECK en ServicePeriod: `endDate > startDate`, `sequence ≥ 1` y entrega no anterior al día del pago (en la
+  zona del negocio).
+
+**Reglas de contratación (`contract-request.service`).**
+- Un pendiente del mismo programa y modalidad se reutiliza (200, `outcome: "reused"`); si su enlace de
+  transferencia ya no sirve, se genera otro y se avisa a Ferro (`transfer.link_regenerated`). Con un enlace
+  vigente no se reenvía nada: así un doble envío tampoco duplica correos (reemplaza la regla por sesión de A16).
+- Un pendiente de otro programa o modalidad responde `409 pending_contract_exists` con su resumen; la página
+  pregunta "¿continuar o cambiar?" y reenvía la elección (`pendingAction`). "Cambiar" conserva la referencia,
+  toma el importe de la BD, invalida el enlace anterior y manda uno nuevo a Ferro.
+- Si el cliente elige "continuar" con un pendiente de pago con tarjeta desde el flujo de transferencia, se
+  responde 409 y se le pide elegir "cambiar" (Fase 5 podrá retomarlo con Stripe).
+- Límite de pago por adelantado: si el cliente ya tiene un contrato `scheduled` que todavía no empieza,
+  `409 prepaid_limit`. Con una suscripción `incomplete`, `active`, `past_due` o `unpaid`,
+  `409 subscription_active`.
+- `POST /api/transfers` responde 201 al crear y 200 al reutilizar, retomar o cambiar, con `outcome`.
+
+**Pago de una transferencia.**
+- El mes empieza al confirmar, o al terminar el último mes pagado del cliente (pago único o transferencia,
+  `active` o `scheduled`) si aún no termina; en ese caso el contrato queda `scheduled`.
+- Es pago tardío (`contract.paid_after_expiry`) si el contrato está `expired` o si sigue `pending_payment` en la
+  BD pero ya lleva 7 días sin actividad. Regenerar el enlace cuenta como actividad de un pendiente.
+- Payment Received lleva cliente, correo, WhatsApp, programa, modalidad, importe, referencia, fecha de pago,
+  periodo y el botón "Registrar entrega del plan".
+
+**Entrega del plan.**
+- La fecha se elige entre el día del pago y hoy (zona del negocio); hoy por defecto. Si la entrega ya estaba
+  registrada, la página la muestra aunque el botón haya vencido, y el POST devuelve esa fecha sin cambiar nada.
+  Dos botones del mismo mes al mismo tiempo: gana el primero (compare-and-set). Rate limit 30 por IP cada 15 min.
+
+**Recordatorios y cron.**
+- **Festivos:** los días de descanso obligatorio de la Ley Federal del Trabajo (art. 74): 1 de enero, primer
+  lunes de febrero, tercer lunes de marzo, 1 de mayo, 16 de septiembre, tercer lunes de noviembre, 1 de
+  octubre cada seis años (2030, 2036…) y 25 de diciembre. No se incluyen las jornadas electorales. Están en
+  `src/utils/business-calendar.ts`; si Ferro descansa otros días, se agregan ahí.
+- `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` cuenta días hábiles completos después del día del pago (con 1, quien
+  paga el viernes recibe el primer recordatorio el lunes).
+- Antes de enviar se marca `lastReminderAt` con un compare-and-set: dos ejecuciones el mismo día no duplican
+  correos. Si el correo falla, se audita `plan.reminder_failed` y se reintenta el siguiente día hábil.
+- Los recordatorios siguen mientras el mes no tenga fecha de entrega, aunque el mes ya haya terminado.
+- `vercel.json` programa el cron a las 14:05 UTC (8:05 en Ciudad de México). `CRON_SECRET` es obligatorio en
+  producción y tiene al menos 16 caracteres; sin él, el endpoint responde 401 siempre.
+
+**Interfaz.** La sección Pricing y las tarjetas de los programas muestran "$1,080 MXN con suscripción" debajo del
+precio completo; el paso "Elige cómo pagar" muestra el importe de cada modalidad. Se quitaron los textos de
+"mismo precio" y la nota pendiente sobre el IVA.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -478,3 +537,4 @@ estado de origen (`pending_payment` en las transferencias).
 | 11 | Expiración del enlace de transferencia | — | Resuelto en A7: 7 días, regenerable |
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador en A22; faltan los datos del responsable y la revisión legal |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
+| 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |

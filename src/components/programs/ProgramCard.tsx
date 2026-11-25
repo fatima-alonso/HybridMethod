@@ -36,6 +36,9 @@ export function ProgramCard({ program }: { program: LandingProgram }) {
         </span>
         <span className="text-bone/65">{PRICING.perMonth}</span>
       </p>
+      <p className="mt-1 text-sm font-semibold text-volt">
+        {PRICING.withSubscription(formatPrice(program.subscriptionPrice, program.currency))}
+      </p>
       <Link
         href={applicationHref(program.slug)}
         className={`mt-6 ${program.featured ? buttonPrimary : buttonSecondary}`}

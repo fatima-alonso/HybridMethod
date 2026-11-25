@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   escapeHtml,
   paymentReceivedEmail,
+  planDeliveryReminderEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
@@ -106,10 +107,60 @@ describe("plantillas de correo (SDD §6.2)", () => {
       programName: "HM RUN",
       amount: "$1,200 MXN",
       method: "Transferencia bancaria (confirmada por ti)",
+      paidAt: "24 de noviembre de 2026, 10:00 a.m.",
       ...period,
+      prepaid: null,
+      deliveryUrl: "https://example.com/plan/entrega/abc",
     });
-    expect(email.text).toContain("ana@example.com");
-    expect(email.text).toContain("Transferencia bancaria (confirmada por ti)");
+    for (const part of [
+      "ana@example.com",
+      "+525512345678",
+      "HM RUN",
+      "Transferencia bancaria (confirmada por ti)",
+      "$1,200 MXN",
+      "HM-2026-000001",
+      "24 de noviembre de 2026, 10:00 a.m.",
+      period.serviceEnd,
+      "https://example.com/plan/entrega/abc",
+    ]) {
+      expect(email.text).toContain(part);
+    }
+    expect(email.html).toContain("Registrar entrega del plan");
+    expect(email.html).toContain('href="https://example.com/plan/entrega/abc"');
+    expect(email.html).not.toContain("<img");
+  });
+
+  it("Payment Received explica un pago por adelantado con las fechas del mes nuevo", () => {
+    const email = paymentReceivedEmail({
+      reference: "HM-2026-000010",
+      customerName: "Ana",
+      customerEmail: "ana@example.com",
+      customerWhatsapp: "+525512345678",
+      programName: "HM COMPLETE",
+      amount: "$1,800 MXN",
+      method: "Transferencia bancaria (confirmada por ti)",
+      paidAt: "24 de noviembre de 2026, 11:13 a.m.",
+      ...period,
+      prepaid: { from: "24 de diciembre de 2026", to: "24 de enero de 2027" },
+      deliveryUrl: "https://example.com/plan/entrega/abc",
+    });
+    const sentence =
+      "Este cliente ya tiene un mes pagado hasta el 24 de diciembre de 2026, así que este pago cubre del 24 de diciembre de 2026 al 24 de enero de 2027.";
+    expect(email.text).toContain(sentence);
+    expect(email.html).toContain(sentence);
+  });
+
+  it("Plan Delivery Reminder dice qué plan falta y trae su propio botón", () => {
+    const email = planDeliveryReminderEmail({
+      customerName: evil,
+      programName: "HM RUN",
+      reference: "HM-2026-000001",
+      paidAt: "24 de noviembre de 2026",
+      deliveryUrl: "https://example.com/plan/entrega/xyz",
+    });
+    expect(email.subject).toContain("Está pendiente el plan de");
+    expect(email.text).toContain("HM RUN · HM-2026-000001 · pagado el 24 de noviembre de 2026");
+    expect(email.html).toContain('href="https://example.com/plan/entrega/xyz"');
     expect(email.html).not.toContain("<img");
   });
 });

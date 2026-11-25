@@ -74,3 +74,58 @@ export class ContractNotPendingError extends ServiceError {
     );
   }
 }
+
+// ─── Reglas de contratación (DECISIONS A20) ─────────────────────────────────
+
+/** Resumen de un contrato pendiente que se le muestra a su dueño (correo verificado, RF-15). */
+export type PendingContractSummary = {
+  reference: string;
+  programSlug: string;
+  programName: string;
+  paymentType: string;
+  /** Decimal en texto, p. ej. "1200.00". */
+  amount: string;
+  currency: string;
+};
+
+export class PendingContractExistsError extends ServiceError {
+  constructor(public readonly pending: PendingContractSummary) {
+    super(
+      `El cliente ya tiene un contrato pendiente (${pending.reference}).`,
+      "pending_contract_exists",
+    );
+  }
+}
+
+export class SubscriptionActiveError extends ServiceError {
+  constructor() {
+    super("El cliente tiene una suscripción activa.", "subscription_active");
+  }
+}
+
+export class PrepaidLimitError extends ServiceError {
+  constructor() {
+    super("El cliente ya pagó su siguiente mes por adelantado.", "prepaid_limit");
+  }
+}
+
+/** El cliente retomó un pendiente de pago con tarjeta desde el flujo de transferencia. */
+export class PendingNotTransferError extends ServiceError {
+  constructor(public readonly reference: string) {
+    super(`El pendiente ${reference} no es por transferencia.`, "pending_not_transfer");
+  }
+}
+
+// ─── Entrega del plan (DECISIONS A19) ───────────────────────────────────────
+
+export class DeliveryLinkUnavailableError extends ServiceError {
+  constructor(public readonly reason: "not_found" | "expired") {
+    super(`El botón de entrega no se puede usar (${reason}).`, "delivery_link_unavailable");
+  }
+}
+
+export class InvalidDeliveryDateError extends ServiceError {
+  constructor(public readonly reason: "future" | "before_payment") {
+    super(`Fecha de entrega inválida (${reason}).`, "invalid_delivery_date");
+  }
+}

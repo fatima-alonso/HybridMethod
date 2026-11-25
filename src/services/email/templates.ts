@@ -216,36 +216,89 @@ export type PaymentReceivedEmailInput = {
   customerWhatsapp: string;
   programName: string;
   amount: string;
-  /** Método ya en texto (p. ej. "Transferencia bancaria (confirmada por ti)"). */
+  /** Modalidad y método ya en texto (p. ej. "Transferencia bancaria (confirmada por ti)"). */
   method: string;
+  /** Fecha de pago ya formateada. */
+  paidAt: string;
   serviceStart: string;
   serviceEnd: string;
+  /**
+   * Si es un mes pagado por adelantado (DECISIONS A20): fechas sin hora del mes nuevo. Empieza
+   * cuando termina el mes que el cliente ya tenía pagado.
+   */
+  prepaid: { from: string; to: string } | null;
+  /** Botón "Registrar entrega del plan" (DECISIONS A19). */
+  deliveryUrl: string;
 };
 
+const DELIVERY_BUTTON = "Registrar entrega del plan";
+
 export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailContent {
-  const subject = `Pago registrado · ${input.reference}`;
+  const subject = `Pago registrado · ${input.reference} · ${input.customerName}`;
   const details = [
-    ["Referencia", input.reference],
     ["Cliente", input.customerName],
     ["Correo", input.customerEmail],
     ["WhatsApp", input.customerWhatsapp],
     ["Programa", input.programName],
+    ["Modalidad", input.method],
     ["Importe", input.amount],
-    ["Método", input.method],
+    ["Referencia", input.reference],
+    ["Fecha de pago", input.paidAt],
     ["Periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
+  const lead = input.prepaid
+    ? `El contrato quedó pagado por adelantado. Este cliente ya tiene un mes pagado hasta el ${input.prepaid.from}, así que este pago cubre del ${input.prepaid.from} al ${input.prepaid.to}. Ya recibió su confirmación y el correo de bienvenida.`
+    : "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.";
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Pago registrado</h1>
-<p style="margin:0;">El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.</p>
-${rows(details)}`,
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}
+<p style="margin:0;">Cuando le entregues el plan, regístralo aquí (puedes cambiar la fecha si lo registras después):</p>
+${button(input.deliveryUrl, DELIVERY_BUTTON)}
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">Mientras no registres la entrega, te llegará un recordatorio cada día hábil con un botón nuevo.</p>`,
   );
   const text = [
     "Pago registrado",
     "",
-    "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.",
+    lead,
     "",
     ...details.map(([label, value]) => `${label}: ${value}`),
+    "",
+    `${DELIVERY_BUTTON}:`,
+    input.deliveryUrl,
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Plan Delivery Reminder (Ferro) ─────────────────────────────────────────
+
+export type PlanDeliveryReminderEmailInput = {
+  customerName: string;
+  programName: string;
+  reference: string;
+  /** Fecha de pago ya formateada. */
+  paidAt: string;
+  deliveryUrl: string;
+};
+
+export function planDeliveryReminderEmail(input: PlanDeliveryReminderEmailInput): EmailContent {
+  const summary = `${input.customerName} · ${input.programName} · ${input.reference} · pagado el ${input.paidAt}`;
+  const subject = `Está pendiente el plan de ${input.customerName}`;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Está pendiente el plan de ${escapeHtml(input.customerName)}</h1>
+<p style="margin:0;">${escapeHtml(summary)}</p>
+${button(input.deliveryUrl, DELIVERY_BUTTON)}
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">Este recordatorio llega cada día hábil hasta que registres la entrega. La fecha de entrega es solo de referencia: no cambia el periodo ni los cobros.</p>`,
+  );
+  const text = [
+    `Está pendiente el plan de ${input.customerName}`,
+    "",
+    summary,
+    "",
+    `${DELIVERY_BUTTON}:`,
+    input.deliveryUrl,
   ].join("\n");
   return { subject, html, text };
 }

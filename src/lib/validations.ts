@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { PROGRAM_SLUGS } from "@/content/programs";
 import { isE164, isPhoneCountry, toE164, type CountryCode } from "@/lib/phone";
+import { isValidDateString, type DateString } from "@/utils/business-calendar";
 
 /**
  * Esquemas Zod compartidos entre cliente y servidor (SDD §9.5).
@@ -107,7 +108,10 @@ export const verificationConfirmSchema = z.object({ email: emailSchema, code: ot
  * `POST /api/transfers`: el formulario completo salvo el correo, que se toma de la sesión de
  * verificación (SDD §7.2). Se vuelve a validar todo en el servidor (RF-05).
  */
-export const transferRequestSchema = applicationSchema.omit({ email: true });
+export const transferRequestSchema = applicationSchema.omit({ email: true }).extend({
+  /** Respuesta a "¿continuar con tu registro pendiente o cambiarlo?" (DECISIONS A20). */
+  pendingAction: z.enum(["continue", "change"]).optional(),
+});
 
 export type TransferRequestBody = z.input<typeof transferRequestSchema>;
 
@@ -138,4 +142,15 @@ export const transferRegenerateSchema = z.object({
     .toUpperCase()
     .regex(/^HM-\d{4}-\d{6,}$/, "La referencia tiene el formato HM-AAAA-NNNNNN."),
   pin: approvalPinSchema,
+});
+
+// ─── Entrega del plan (Fase 4, DECISIONS A19) ───────────────────────────────
+
+/** `POST /api/plan-delivery/confirm`. */
+export const planDeliveryConfirmSchema = z.object({
+  token: z.string({ error: "Falta el enlace." }).min(1, "Falta el enlace.").max(128),
+  deliveredOn: z
+    .string({ error: "Elige la fecha de entrega." })
+    .refine(isValidDateString, "Elige una fecha válida.")
+    .transform((value) => value as DateString),
 });

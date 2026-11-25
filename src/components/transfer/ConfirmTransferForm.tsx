@@ -8,7 +8,7 @@ import { useHydrated } from "@/components/shared/useHydrated";
 import { buttonPrimary, buttonSecondary } from "@/components/shared/styles";
 import { CONFIRM_PAGE } from "@/content/transfer-approval";
 import { approvalPinSchema } from "@/lib/validations";
-import { formatBusinessDateTime } from "@/utils/format";
+import { formatBusinessDate, formatBusinessDateTime } from "@/utils/format";
 
 import { RegenerateLinkForm } from "./RegenerateLinkForm";
 import { inputClass } from "./styles";
@@ -18,7 +18,12 @@ type Props = {
   reference: string;
 };
 
-type Confirmed = { reference: string; serviceStartDate: string; serviceEndDate: string };
+type Confirmed = {
+  reference: string;
+  status: string;
+  serviceStartDate: string;
+  serviceEndDate: string;
+};
 
 /**
  * PIN + "Sí, confirmar pago" / "No, regresar" (RF-11, DECISIONS A5, A7).
@@ -76,7 +81,15 @@ export function ConfirmTransferForm({ token, reference }: Props) {
         <h2 className="font-display text-3xl font-extrabold text-volt uppercase">
           {CONFIRM_PAGE.confirmedTitle}
         </h2>
-        <p>{CONFIRM_PAGE.confirmed(confirmed.reference)}</p>
+        <p>
+          {confirmed.status === "scheduled"
+            ? CONFIRM_PAGE.confirmedScheduled(
+                confirmed.reference,
+                formatBusinessDate(confirmed.serviceStartDate),
+                formatBusinessDate(confirmed.serviceEndDate),
+              )
+            : CONFIRM_PAGE.confirmed(confirmed.reference)}
+        </p>
         <p className="text-bone/85">
           {CONFIRM_PAGE.period(
             formatBusinessDateTime(confirmed.serviceStartDate),
