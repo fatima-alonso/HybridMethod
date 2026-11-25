@@ -145,7 +145,7 @@ export function transferConfirmedEmail(input: TransferConfirmedEmailInput): Emai
     ["Programa", input.programName],
     ["Importe", input.amount],
     ["Método", "Transferencia bancaria"],
-    ["Tu plan", `Del ${input.serviceStart} al ${input.serviceEnd}`],
+    ["Vigencia", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
   const html = layout(
     subject,

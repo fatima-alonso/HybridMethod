@@ -64,6 +64,8 @@ describe("plantillas de correo (SDD §6.2)", () => {
       expect(email.html).toContain(part);
       expect(email.text).toContain(part);
     }
+    expect(email.text).toContain(`Vigencia: Del ${period.serviceStart} al ${period.serviceEnd}`);
+    expect(email.html).toContain("Vigencia");
     expect(email.html).not.toContain("<img");
   });
 
