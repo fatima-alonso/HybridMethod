@@ -3,8 +3,7 @@ import { getConfig } from "@/lib/config";
 import { generateToken, hashToken } from "@/lib/crypto";
 import { getPrisma, type Db } from "@/lib/prisma";
 import type { CustomerDataInput } from "@/lib/validations";
-import { formatPrice } from "@/utils/format";
-import { BUSINESS_TIME_ZONE } from "@/utils/reference";
+import { formatBusinessDateTime, formatPrice } from "@/utils/format";
 
 import { recordAudit } from "./audit.service";
 import { createContract } from "./contract.service";
@@ -14,9 +13,9 @@ import { sendTransferPendingEmail } from "./email.service";
 /**
  * Transferencias bancarias (RF-09, SDD §7.6, §8.4).
  *
- * Fase 3: crear la contratación por transferencia (cliente + contrato `pending_payment` +
- * referencia + enlace privado para Ferro) y avisarle por correo. La pantalla del enlace, la
- * confirmación con PIN y la regeneración del enlace son de la Fase 4.
+ * Crear la contratación por transferencia (cliente + contrato `pending_payment` + referencia +
+ * enlace privado para Ferro) y avisarle por correo. La revisión del enlace, la confirmación con
+ * PIN y la regeneración del enlace están en `transfer-approval.service.ts` (Fase 4).
  */
 
 export const TRANSFER_APPROVAL_MAX_PIN_ATTEMPTS = 5;
@@ -75,7 +74,7 @@ export type TransferRequestResult = {
  * 1. En una transacción: crea o actualiza el cliente (DECISIONS A4), crea el contrato
  *    `pending_payment` con el importe del programa en la BD, el enlace de aprobación y la auditoría.
  * 2. Después, envía Transfer Pending a Ferro con el enlace. Si el correo falla, la contratación se
- *    conserva, se registra el fallo y Ferro puede regenerar el enlace (Fase 4).
+ *    conserva, se registra el fallo y Ferro puede regenerar el enlace.
  *
  * Si en la misma sesión de verificación ya se creó un contrato pendiente por transferencia para el
  * mismo cliente y programa (p. ej. un doble clic), se devuelve ese contrato sin crear otro ni
@@ -145,11 +144,32 @@ export async function requestTransfer(
   return { customer, contract, program, created: approval !== null };
 }
 
-const expiryFormatter = new Intl.DateTimeFormat("es-MX", {
-  timeZone: BUSINESS_TIME_ZONE,
-  dateStyle: "long",
-  timeStyle: "short",
-});
+/** Importe del contrato formateado, sin pasar por `float`. */
+export function formatContractAmount(contract: Pick<Contract, "amount" | "currency">): string {
+  return formatPrice(contract.amount.toFixed(2) as `${number}`, contract.currency);
+}
+
+/**
+ * Envía Transfer Pending a Ferro con el enlace privado. Lanza si el correo falla: quien llama
+ * decide si eso se registra (al crear la transferencia) o se informa (al regenerar el enlace).
+ */
+export async function sendTransferPendingNotification(
+  customer: Customer,
+  contract: Contract,
+  program: Program,
+  approval: { token: string; expiresAt: Date },
+): Promise<void> {
+  await sendTransferPendingEmail({
+    reference: contract.reference,
+    customerName: customer.fullName,
+    customerEmail: customer.email,
+    customerWhatsapp: customer.whatsapp,
+    programName: program.name,
+    amount: formatContractAmount(contract),
+    confirmUrl: transferConfirmUrl(approval.token),
+    expiresAt: `${formatBusinessDateTime(approval.expiresAt)} (hora del centro de México)`,
+  });
+}
 
 async function notifyFerro(
   customer: Customer,
@@ -159,16 +179,7 @@ async function notifyFerro(
   db: Db,
 ): Promise<void> {
   try {
-    await sendTransferPendingEmail({
-      reference: contract.reference,
-      customerName: customer.fullName,
-      customerEmail: customer.email,
-      customerWhatsapp: customer.whatsapp,
-      programName: program.name,
-      amount: formatPrice(contract.amount.toFixed(2) as `${number}`, contract.currency),
-      confirmUrl: transferConfirmUrl(approval.token),
-      expiresAt: `${expiryFormatter.format(approval.expiresAt)} (hora del centro de México)`,
-    });
+    await sendTransferPendingNotification(customer, contract, program, approval);
   } catch (error) {
     console.error(
       `[transfer] No se pudo enviar Transfer Pending para ${contract.reference}:`,

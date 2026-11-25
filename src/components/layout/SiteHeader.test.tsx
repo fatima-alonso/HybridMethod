@@ -23,7 +23,7 @@ describe("SiteHeader", () => {
   it("muestra el logo con texto alternativo y enlaza al inicio", () => {
     render(<SiteHeader />);
     const logo = screen.getByRole("img", { name: "THE HYBRID METHOD by Ferro Fits" });
-    expect(logo.getAttribute("src")).toContain("hm-logo-horizontal.png");
+    expect(logo.getAttribute("src")).toContain("hm-logo-horizontal-v2.png");
     expect(logo.closest("a")?.getAttribute("href")).toBe("/#home");
   });
 

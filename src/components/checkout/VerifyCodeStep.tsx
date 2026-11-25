@@ -85,7 +85,13 @@ export function VerifyCodeStep({ email, notice = null, onVerified, onBack, onRes
       <StepHeading title={VERIFY_STEP.title} />
       <p className="text-bone/85">{VERIFY_STEP.lead(email)}</p>
 
-      <form noValidate onSubmit={onSubmit} className="space-y-4" aria-label={VERIFY_STEP.title}>
+      <form
+        method="post"
+        noValidate
+        onSubmit={onSubmit}
+        className="space-y-4"
+        aria-label={VERIFY_STEP.title}
+      >
         <div>
           <label htmlFor={inputId} className="font-semibold">
             {VERIFY_STEP.codeLabel}

@@ -7,7 +7,7 @@ import Image from "next/image";
  * - `stacked`: footer (HM sobre THE HYBRID METHOD · BY FERRO FITS).
  */
 const VARIANTS = {
-  horizontal: { src: "/logos/hm-logo-horizontal.png", width: 1090, height: 128 },
+  horizontal: { src: "/logos/hm-logo-horizontal-v2.png", width: 1469, height: 161 },
   stacked: { src: "/logos/hm-logo.png", width: 1125, height: 300 },
 } as const;
 

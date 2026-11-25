@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.7 y SDD v1.8 (ya incluyen las decisiones A1–A12 y A14–A22). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.7 y SDD v1.9 (ya incluyen las decisiones A1–A12 y A14–A23). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -86,7 +86,7 @@ WhatsApp en celulares. Pruebas: unitarias, de BD (servicios, rate limit y rutas,
 SDD §12.3 que aplican: sin sesión, cookie falsificada, enumeración de correos, precio manipulado) y de interfaz
 del flujo.
 
-## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan ⬜ (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
+## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan 🟡 (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
 - **Migración (DECISIONS A18–A20, SDD §5.3):** `Program.subscriptionPrice`; entidades ServicePeriod y
   PlanDeliveryLink; estados `scheduled` y `expired` con sus transiciones; `Contract.lastActivityAt`; índice único
   parcial de un pendiente por cliente.
@@ -109,6 +109,20 @@ del flujo.
 - Manejo de enlace expirado, enlace usado y contrato ya pagado. Forma de regenerar el enlace, también para un
   contrato vencido (pago tardío, DECISIONS A20).
 - Pruebas de seguridad del SDD §12.3 relacionadas con tokens.
+
+**Avance (2026-11-24), PR de la confirmación de transferencias.** Hecho: `npm run hash-pin` (bcrypt, PIN de 6 a 12
+dígitos, hash escapado para `.env`); `GET /transfer/confirm/[token]` (solo lectura, `noindex`/`no-referrer`);
+`POST /api/transfers/confirm` (cada intento de PIN se cuenta antes de compararlo; al quinto error se invalida el
+enlace; en una transacción: enlace usado, Payment, contrato `active` con un mes desde la confirmación y auditoría
+con IP y user-agent; después Transfer Confirmed, Welcome y Payment Received); `POST /api/transfers/regenerate`,
+ofrecida en la misma página; Welcome con el aviso de entrega en 3 a 5 días hábiles; formulario de inscripción y de Ferro sin envío nativo (nada en la URL). Decisiones en
+DECISIONS A23. Pruebas unitarias, de servicio y de rutas (SDD §12.3).
+
+Pendiente de esta fase: la migración (A18–A20) y lo que depende de ella: `subscriptionPrice` y los dos precios en
+la landing; ServicePeriod y PlanDeliveryLink (hoy el periodo se guarda en `Contract.serviceStartDate/EndDate`);
+el botón "Registrar entrega del plan" en Payment Received, `delivery.service` y sus páginas; los estados
+`scheduled` y `expired`, un pendiente por cliente y el pago tardío (confirmar y regenerar contratos vencidos);
+y `GET /api/cron/daily`.
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD

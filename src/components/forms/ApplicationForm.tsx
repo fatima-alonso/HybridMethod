@@ -8,6 +8,7 @@ import type { ProgramSlug } from "@/content/programs";
 import { DEFAULT_PHONE_COUNTRY, type PhoneCountryOption } from "@/lib/phone";
 import { applicationSchema } from "@/lib/validations";
 import { buttonPrimary } from "@/components/shared/styles";
+import { useHydrated } from "@/components/shared/useHydrated";
 import type { ProgramOption } from "@/types/program";
 import { formatPrice } from "@/utils/format";
 
@@ -99,6 +100,8 @@ export function ApplicationForm({
 
   const formRef = useRef<HTMLFormElement>(null);
   const uid = useId();
+  // Hasta hidratar no existe el onSubmit de React: un envío nativo pondría los datos en la URL.
+  const hydrated = useHydrated();
   const ids = Object.fromEntries(FIELD_ORDER.map((f) => [f, `${uid}-${f}`])) as Record<
     FieldName,
     string
@@ -145,6 +148,7 @@ export function ApplicationForm({
   return (
     <form
       ref={formRef}
+      method="post"
       noValidate
       onSubmit={onSubmit}
       aria-label="Athlete Application"
@@ -298,7 +302,7 @@ export function ApplicationForm({
 
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || !hydrated}
         aria-busy={busy}
         className={`w-full sm:w-auto ${buttonPrimary}`}
       >

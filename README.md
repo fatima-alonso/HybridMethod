@@ -88,6 +88,7 @@ seed aplicados. Sin `RESEND_API_KEY`, el código de verificación aparece en la 
 | `npm run test:watch`   | Vitest en modo observación.                                |
 | `npm run format`       | Formatea el código con Prettier.                           |
 | `npm run format:check` | Comprueba el formato (lo ejecuta la CI).                   |
+| `npm run hash-pin`     | Genera `FERRO_APPROVAL_PIN_HASH` a partir del PIN de Ferro. |
 
 Antes de abrir un PR: `npm run lint`, `npm run typecheck` y `npm test` sin errores. La CI
 (`.github/workflows/ci.yml`) ejecuta además `format:check` y `build` en cada PR.
@@ -99,7 +100,7 @@ Sigue la sección 4 del SDD:
 ```
 prisma/              Esquema, seed y migraciones
 public/              images/, logos/, fonts/
-scripts/             Scripts de soporte (p. ej. hash-pin, Fase 4)
+scripts/             Scripts de soporte (hash-pin)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
 src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
 src/content/         Catálogo de programas (precios) y textos de la landing
@@ -124,6 +125,21 @@ src/utils/           Utilidades puras
   archivos (el componente es `src/components/shared/Logo.tsx`).
 - **WhatsApp:** el botón flotante y el contacto usan `FERRO_WHATSAPP_NUMBER`. Si no está definido,
   no se muestran. Como la landing es estática, cambiar el número requiere volver a desplegar.
+
+## Confirmación de transferencias (Ferro)
+
+Ferro confirma cada transferencia con el enlace privado que le llega por correo y su **PIN de
+aprobación** (DECISIONS A7, A23). Para configurar el PIN:
+
+1. Ejecuta `npm run hash-pin` y escribe el PIN (de 6 a 12 dígitos; se piden dos veces y no se
+   muestran). El PIN nunca se guarda.
+2. Copia la línea `FERRO_APPROVAL_PIN_HASH=\$2b\$12\$…` en `.env.local`. Los `$` van escapados con
+   `\` porque Next.js los expande en los archivos `.env`. En Vercel se pega el valor sin escapar,
+   tal como lo imprime el script.
+
+Si el enlace vence (7 días) o se desactiva tras 5 PIN incorrectos, la misma página permite generar uno
+nuevo con la referencia del contrato y el PIN. Sin `FERRO_APPROVAL_PIN_HASH`, la confirmación responde
+que no está configurada: no existe un PIN por defecto.
 
 ## Identidad visual
 

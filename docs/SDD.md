@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.8 |
+| **Versión** | 1.9 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.7 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -17,6 +17,7 @@
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
 | 1.7 | 2026-11-24 | Fase 3 (DECISIONS A16): §5.3 entidad RateLimitBucket y hash HMAC de los OTP; §7.1 límites concretos y nombre de la cookie; §7.6 body de `POST /api/transfers` (crea o asocia el cliente) y protección ante doble envío; §9.4 rate limit en PostgreSQL. |
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
+| 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
 ---
@@ -163,6 +164,7 @@ the-hybrid-method/
 │   │   ├── payment.service.ts
 │   │   ├── subscription.service.ts
 │   │   ├── transfer.service.ts
+│   │   ├── transfer-approval.service.ts
 │   │   ├── delivery.service.ts       # periodos de servicio, entrega del plan y recordatorios
 │   │   ├── verification.service.ts
 │   │   ├── program.service.ts
@@ -723,7 +725,11 @@ Comportamiento:
 
 Está protegido contra reenvíos y solicitudes duplicadas: un token usado o un contrato ya activo se rechazan sin efectos.
 
-**`POST /api/transfers/regenerate`** — Genera un enlace nuevo para un contrato que sigue en `pending_payment` o que venció (`expired`). Requiere el PIN de Ferro y la referencia del contrato. Invalida los enlaces anteriores y envía uno nuevo al correo de Ferro.
+Cada intento se cuenta (compare-and-set sobre `pinAttempts`) antes de comparar el PIN, así que con solicitudes simultáneas no se prueban más de 5 PIN por enlace; si el PIN es correcto, ese intento se descuenta al aprobar. Rate limit: 20 por IP cada 15 minutos (DECISIONS A23).
+
+Respuestas: `200` con `reference`, `status`, `serviceStartDate` y `serviceEndDate`; `400` datos inválidos (sin token o sin PIN); `403 invalid_pin` con `remainingAttempts`; `404 link_unavailable` (token inexistente); `410 link_unavailable` con `reason` `expired`, `used` o `invalidated` (también al quinto PIN incorrecto); `409 contract_not_pending`; `503` si falta `FERRO_APPROVAL_PIN_HASH`.
+
+**`POST /api/transfers/regenerate`** — Genera un enlace nuevo para un contrato que sigue en `pending_payment` o que venció (`expired`). Requiere el PIN de Ferro y la referencia del contrato (`{ reference, pin }`). Invalida los enlaces anteriores y envía uno nuevo al correo de Ferro; el token nunca viaja en la respuesta. Con un PIN incorrecto responde `403` igual exista o no la referencia. Rate limit: 10 por IP y 30 en total por hora (no hay un enlace que cuente los intentos). Respuestas: `200`, `403 invalid_pin`, `404 not_found`, `409 contract_not_pending`, `502 email_failed` (el enlace se generó pero el correo falló). Se ofrece en la página del enlace cuando está vencido, invalidado o no existe.
 
 ### 7.7 Suscripciones y Customer Portal
 **`POST /api/portal`**: requiere la sesión de verificación. Busca el `stripeCustomerId` del cliente de esa sesión y responde con la URL de una sesión del Stripe Customer Portal (`return_url` = la landing). Si el cliente no tiene una suscripción, responde lo mismo que si no existiera, sin revelar nada.
@@ -947,8 +953,8 @@ El token del enlace de transferencia (TransferApproval):
 - Es de un solo uso y se invalida al confirmar, al regenerar el enlace o tras 5 PIN incorrectos.
 
 El PIN de aprobación:
-- Lo conoce solo Ferro. Se guarda solo como hash (bcrypt o argon2) en `FERRO_APPROVAL_PIN_HASH`, generado con `npm run hash-pin`.
-- Se compara en tiempo constante (la función de verificación de bcrypt/argon2).
+- Lo conoce solo Ferro: de 6 a 12 dígitos, sin dígitos repetidos ni secuencias. Se guarda solo como hash bcrypt (costo 12) en `FERRO_APPROVAL_PIN_HASH`, generado con `npm run hash-pin` (en los archivos `.env` los `$` van escapados, DECISIONS A23).
+- Se compara en tiempo constante (la función de verificación de bcrypt).
 - Es un segundo factor: el enlace es lo que Ferro *tiene* (su correo) y el PIN lo que *sabe*. Un enlace reenviado, filtrado o abierto por un escáner de correo no basta para aprobar.
 
 Abrir el enlace es solo lectura; confirmar requiere un POST explícito con el PIN. Los escáneres automáticos de enlaces no pueden aprobar transferencias. Si el enlace expira, el contrato sigue pendiente y se puede regenerar.

@@ -69,7 +69,7 @@ export async function purgeRateLimitBuckets(
   return count;
 }
 
-/** Límites de la Fase 3 (DECISIONS A16). */
+/** Límites de las Fases 3 y 4 (DECISIONS A16, A23). */
 export const RATE_LIMITS = {
   /** Pedir código: por IP. */
   otpRequestIp: { scope: "otp-request:ip", limit: 20, windowMs: 60 * 60 * 1000 },
@@ -82,4 +82,13 @@ export const RATE_LIMITS = {
   otpConfirmEmail: { scope: "otp-confirm:email", limit: 15, windowMs: 15 * 60 * 1000 },
   /** Crear transferencias: por IP. */
   transferCreateIp: { scope: "transfer-create:ip", limit: 10, windowMs: 60 * 60 * 1000 },
+  /** Confirmar una transferencia: por IP (además de los 5 PIN por enlace). */
+  transferConfirmIp: { scope: "transfer-confirm:ip", limit: 20, windowMs: 15 * 60 * 1000 },
+  /** Regenerar un enlace: por IP y en total, porque no hay un enlace que cuente los PIN. */
+  transferRegenerateIp: { scope: "transfer-regenerate:ip", limit: 10, windowMs: 60 * 60 * 1000 },
+  transferRegenerateGlobal: {
+    scope: "transfer-regenerate:global",
+    limit: 30,
+    windowMs: 60 * 60 * 1000,
+  },
 } as const satisfies Record<string, RateLimitRule>;

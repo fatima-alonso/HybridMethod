@@ -161,15 +161,21 @@ function assertPeriod(period: ServicePeriod): void {
 /**
  * Activa el servicio tras un pago confirmado (RN-05): `pending_payment → active`, o
  * `payment_failed → active` cuando se paga el reintento. Las fechas del periodo las decide quien
- * confirma el pago (Stripe o la regla de DECISIONS B6, pendiente para la Fase 4).
+ * confirma el pago: el periodo de Stripe, o `oneMonthServicePeriod` para pago único y
+ * transferencia (DECISIONS A23).
+ *
+ * `options.from` restringe el estado de origen (p. ej. una transferencia solo se activa desde
+ * `pending_payment`).
  */
 export async function activateContract(
   contractId: string,
   period: ServicePeriod,
   db: Db = getPrisma(),
+  options: { from?: ContractStatus } = {},
 ): Promise<Contract> {
   assertPeriod(period);
-  return transition(db, contractId, "active", period);
+  if (options.from) assertTransition(options.from, "active");
+  return transition(db, contractId, "active", period, options.from ? { status: options.from } : {});
 }
 
 /** `active → payment_failed` (suscripción `past_due`/`unpaid` o pago asíncrono fallido). */

@@ -124,3 +124,128 @@ ${button(input.confirmUrl, "Revisar y confirmar pago")}
   ].join("\n");
   return { subject, html, text };
 }
+
+// ─── Transfer Confirmed (cliente) ───────────────────────────────────────────
+
+export type TransferConfirmedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Importe ya formateado. */
+  amount: string;
+  /** Fechas ya formateadas. */
+  serviceStart: string;
+  serviceEnd: string;
+};
+
+export function transferConfirmedEmail(input: TransferConfirmedEmailInput): EmailContent {
+  const subject = `Recibimos tu pago · ${input.reference}`;
+  const details = [
+    ["Referencia", input.reference],
+    ["Programa", input.programName],
+    ["Importe", input.amount],
+    ["Método", "Transferencia bancaria"],
+    ["Vigencia", `Del ${input.serviceStart} al ${input.serviceEnd}`],
+  ] as const;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Pago confirmado</h1>
+<p style="margin:0;">Hola ${escapeHtml(input.customerName)}, Ferro confirmó tu transferencia. Tu plan ya está activo.</p>
+${rows(details)}
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">Guarda este correo como comprobante de tu pago.</p>`,
+  );
+  const text = [
+    "Pago confirmado",
+    "",
+    `Hola ${input.customerName}, Ferro confirmó tu transferencia. Tu plan ya está activo.`,
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Guarda este correo como comprobante de tu pago.",
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Welcome (cliente) ──────────────────────────────────────────────────────
+
+/** Plazo de entrega del plan (RN-07, SDD §6.2, DECISIONS A19). */
+export const PLAN_DELIVERY_NOTICE = "Ferro te entregará tu plan en 3 a 5 días hábiles.";
+
+export type WelcomeEmailInput = {
+  customerName: string;
+  programName: string;
+  serviceStart: string;
+  serviceEnd: string;
+  /** Enlace `wa.me` con Ferro, o `null` si todavía no está configurado. */
+  whatsappUrl: string | null;
+};
+
+export function welcomeEmail(input: WelcomeEmailInput): EmailContent {
+  const subject = `Bienvenido a ${input.programName} · THE HYBRID METHOD`;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Bienvenido a THE HYBRID METHOD</h1>
+<p style="margin:0 0 16px;">Hola ${escapeHtml(input.customerName)}, ya eres parte de <strong>${escapeHtml(input.programName)}</strong>.</p>
+<p style="margin:0 0 16px;"><strong>Periodo de pago:</strong> del ${escapeHtml(input.serviceStart)} al ${escapeHtml(input.serviceEnd)}</p>
+<p style="margin:0 0 16px;"><strong>${PLAN_DELIVERY_NOTICE}</strong></p>
+<p style="margin:0;">Ferro te va a escribir por WhatsApp para conocer tus objetivos y arrancar con tu programa.${input.whatsappUrl ? " Si quieres adelantarte, escríbele tú:" : ""}</p>
+${input.whatsappUrl ? button(input.whatsappUrl, "Escribirle a Ferro") : ""}
+<p style="margin:16px 0 0;color:${COLORS.muted};font-size:14px;">Run. Lift. Hybrid.</p>`,
+  );
+  const text = [
+    "Bienvenido a THE HYBRID METHOD",
+    "",
+    `Hola ${input.customerName}, ya eres parte de ${input.programName}.`,
+    "",
+    `Periodo de pago: del ${input.serviceStart} al ${input.serviceEnd}`,
+    "",
+    PLAN_DELIVERY_NOTICE,
+    "",
+    "Ferro te va a escribir por WhatsApp para conocer tus objetivos y arrancar con tu programa.",
+    ...(input.whatsappUrl ? ["Si quieres adelantarte, escríbele tú:", input.whatsappUrl] : []),
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Payment Received (Ferro) ───────────────────────────────────────────────
+
+export type PaymentReceivedEmailInput = {
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  customerWhatsapp: string;
+  programName: string;
+  amount: string;
+  /** Método ya en texto (p. ej. "Transferencia bancaria (confirmada por ti)"). */
+  method: string;
+  serviceStart: string;
+  serviceEnd: string;
+};
+
+export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailContent {
+  const subject = `Pago registrado · ${input.reference}`;
+  const details = [
+    ["Referencia", input.reference],
+    ["Cliente", input.customerName],
+    ["Correo", input.customerEmail],
+    ["WhatsApp", input.customerWhatsapp],
+    ["Programa", input.programName],
+    ["Importe", input.amount],
+    ["Método", input.method],
+    ["Periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
+  ] as const;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Pago registrado</h1>
+<p style="margin:0;">El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.</p>
+${rows(details)}`,
+  );
+  const text = [
+    "Pago registrado",
+    "",
+    "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.",
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
+  ].join("\n");
+  return { subject, html, text };
+}

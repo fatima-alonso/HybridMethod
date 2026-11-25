@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -387,6 +387,79 @@ validada. Está marcado como borrador. Cubre: responsable, datos que se piden y 
 Resend, Vercel, Neon), derechos ARCO, contratación, precios, periodo de un mes desde el pago, entrega del plan, renovación
 y cancelación, pagos fallidos y reembolsos manuales. Antes del lanzamiento se completan los datos del
 responsable (nombre o razón social, domicilio, correo de contacto) y conviene que lo revise un abogado.
+
+### A23. Confirmación manual de transferencias (Fase 4, 2026-11-24)
+Puntos que el SDD no definía y que se resolvieron así al implementar la confirmación de transferencias de la
+Fase 4. Todos son reversibles. (Se registró primero como A17 en la rama de la Fase 4; se renumeró al fusionar
+`main`, que ya usaba A17–A22 para las respuestas de Ferro.)
+
+**Periodo de servicio (DECISIONS A19).** El mes empieza en el momento de la confirmación y termina el mismo
+día del mes siguiente a la misma hora de America/Mexico_City; si ese día no existe (31 de enero), el último
+día del mes siguiente. La regla vive en `src/utils/service-period.ts` (`addOneBusinessMonth`,
+`oneMonthServicePeriod`) para reutilizarla en el pago único y en los ServicePeriod. Por ahora el periodo se
+guarda en `Contract.serviceStartDate/serviceEndDate`; la entidad ServicePeriod (A19) llega con la migración
+de la Fase 4.
+
+**PIN.**
+- De 6 a 12 dígitos. `npm run hash-pin` pide el PIN dos veces sin mostrarlo (no como argumento, para
+  que no quede en el historial) y rechaza un dígito repetido o una secuencia (123456, 654321).
+- Solo **bcrypt** (`bcryptjs`, costo 12): la configuración ya no acepta hashes argon2, porque la app
+  no podría verificarlos. Sin `FERRO_APPROVAL_PIN_HASH` (solo posible en desarrollo) la confirmación
+  responde 503: no hay PIN por defecto.
+- Next.js expande `$` en los archivos `.env`, así que el script imprime el hash escapado (`\$2b\$…`)
+  para `.env.local` y sin escapar para Vercel.
+
+**Intentos de PIN sobre un enlace.** Cada intento se cuenta con un compare-and-set **antes** de comparar
+el PIN (igual que los OTP en A16), así que con solicitudes simultáneas nunca se prueban más de 5 PIN por
+enlace. Si el PIN es correcto, ese intento se descuenta al aprobar: `pinAttempts` sigue siendo el número
+de PIN incorrectos. Al quinto error se marca `invalidatedAt`.
+
+**Concurrencia.** La confirmación y la regeneración bloquean primero la fila del contrato
+(`SELECT … FOR UPDATE`) y después tocan los enlaces, en el mismo orden, para no provocar deadlocks. Dos
+confirmaciones simultáneas con el PIN correcto crean un solo Payment.
+
+**Regeneración (`POST /api/transfers/regenerate` con `{ reference, pin }`).**
+- Se ofrece en la propia página del enlace cuando está vencido o invalidado (con la referencia ya
+  puesta) y cuando el token no existe (Ferro escribe la referencia). No hay otra página.
+- Con un PIN incorrecto la respuesta es igual exista o no la referencia. Aquí no hay un enlace que
+  cuente los intentos, así que el rate limit es por IP (10 por hora) y además **global** (30 por hora):
+  limita la adivinación del PIN aunque venga de muchas IP, a costa de que un ataque pueda bloquear la
+  regeneración durante una hora (no afecta a la confirmación con un enlace vigente).
+- El enlace nuevo solo viaja en el correo de Ferro; si ese correo falla, la ruta responde 502.
+
+**Confirmación.** Rate limit de 20 por IP cada 15 minutos, además de los 5 PIN por enlace. Respuestas:
+403 `invalid_pin` con `remainingAttempts`; 404/410 `link_unavailable` con `reason`
+(`not_found`, `expired`, `used`, `invalidated`); 409 `contract_not_pending`.
+
+**Página del enlace.** Muestra los datos del cliente solo con un enlace válido; con uno vencido,
+invalidado o usado muestra solo la referencia. Además de los encabezados de `next.config.ts`
+(`Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`, `Cache-Control: no-store`), lleva
+las metaetiquetas `robots` y `referrer`. Los formularios usan `method="post"` y el botón se habilita al
+hidratar, para que un envío temprano nunca ponga el PIN en la URL. "No, regresar" solo navega
+(atrás o al inicio).
+Lo mismo se aplicó al formulario de inscripción de la landing (`ApplicationForm`, que también se
+renderiza en el servidor): antes, un envío previo a la hidratación ponía el nombre, el correo y el
+WhatsApp en la URL. Los pasos de código y de método de pago también usan `method="post"`.
+
+**Correos tras confirmar.** Transfer Confirmed y Welcome al cliente, y Payment Received a Ferro (RF-13
+pide avisarle de la confirmación manual; le sirve como comprobante). Un fallo se registra en la
+auditoría (`transfer.notification_failed`) y nunca revierte el pago.
+
+**Código.** `transfer-approval.service.ts` (vista, confirmación y regeneración) y `payment.service.ts`
+(`recordSucceededPayment`, que reutilizará la Fase 5). `activateContract` acepta `from` para exigir el
+estado de origen (`pending_payment` en las transferencias).
+
+### A24. About Me y logo del header (contenido de la marca, 2026-11-25)
+- **About Me** con el texto de Ferro (`ABOUT` en `src/content/landing.ts`). Por decisión de la marca, el
+  kicker ("Experience beyond the trend."), la firma ("Founder & Head Coach") y los títulos de los cuatro
+  indicadores de autoridad van en inglés, como el hero (A13). El resto del texto sigue en español.
+- **Indicadores de autoridad** debajo de la fotografía: 15+ Years of Experience, 2 Training Studios,
+  100% Individualized Approach y 360° Athletic Development, cada uno con su descripción. En celular van en
+  dos columnas y en escritorio en cuatro. Reemplazan las cifras de relleno.
+- **Logo del header**: nueva versión horizontal (H blanca y M naranja, "BY FERRO FITS" entre líneas). El
+  original está en `docs/brand/logo-original-horizontal-v2.jpg`; `public/logos/hm-logo-horizontal-v2.png` se
+  generó con fondo transparente (el negro del JPG se convierte en transparencia conservando el antialias).
+  Está pensado para fondo oscuro. El logo apilado del footer no cambia.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

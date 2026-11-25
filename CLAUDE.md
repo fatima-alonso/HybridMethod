@@ -5,9 +5,9 @@ servicio de entrenamiento personalizado de fuerza, running y rendimiento híbrid
 
 ## Documentos de referencia (fuente de verdad)
 - `docs/SRS.md` — requisitos (RF-xx), reglas de negocio (RN-xx), no funcionales (RNF-xx). SRS v1.7.
-- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.8.
+- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.9.
 - `docs/PLAN.md` — fases de desarrollo y su estado.
-- `docs/DECISIONS.md` — registro de decisiones (A1–A12 y A14–A22 ya están integradas en el SRS/SDD; A13 es de contenido) y pendientes.
+- `docs/DECISIONS.md` — registro de decisiones (A1–A12 y A14–A23 ya están integradas en el SRS/SDD; A13 es de contenido) y pendientes.
 
 Para el diseño técnico, el SDD es la referencia principal. Cuando se tome una decisión nueva,
 se registra en DECISIONS.md y se actualizan el SRS/SDD en el mismo PR.
@@ -48,7 +48,7 @@ API de WhatsApp (solo enlaces `wa.me`), reembolsos automáticos, panel admin en 
 Negro `#111111` (70%) · Off-white `#F5F3EE` (20%) · Volt Orange `#FF6A00` (10%).
 Estilo premium, deportivo y editorial; sans-serif con encabezados fuertes y condensados.
 Mobile-first. Textos de la interfaz en español salvo los nombres de sección definidos en el SRS 4.2
-y el titular y subtítulo del hero (DECISIONS A13).
+el titular y subtítulo del hero (DECISIONS A13) y los textos de marca de About Me (DECISIONS A24).
 
 ## Forma de trabajar
 - Trabaja una fase de `docs/PLAN.md` a la vez; al terminar, marca su estado en el plan.

@@ -38,10 +38,10 @@ const whatsappNumber = z
     "debe tener solo dígitos en formato internacional, sin + (ej. 5215512345678)",
   );
 
-/** Hash bcrypt ($2a$/$2b$/$2y$) o argon2 ($argon2id$...) generado con `npm run hash-pin`. */
+/** Hash bcrypt ($2a$/$2b$/$2y$) generado con `npm run hash-pin` (DECISIONS A23). */
 const pinHash = z
   .string()
-  .regex(/^(\$2[aby]\$\d{2}\$.{53}|\$argon2(id|i|d)\$.+)$/, "debe ser un hash bcrypt o argon2");
+  .regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/, "debe ser un hash bcrypt (npm run hash-pin)");
 
 const fields = {
   DATABASE_URL: postgresUrl,

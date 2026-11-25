@@ -125,12 +125,14 @@ describe("parseConfig en producción", () => {
     expect(issues[0]).toMatch(new RegExp(`^${key}:`));
   });
 
-  it("acepta un hash argon2 como FERRO_APPROVAL_PIN_HASH", () => {
-    const config = parseConfig({
-      ...validProductionEnv,
-      FERRO_APPROVAL_PIN_HASH: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA",
-    });
-    expect(config.FERRO_APPROVAL_PIN_HASH).toMatch(/^\$argon2id\$/);
+  it("rechaza un hash argon2 como FERRO_APPROVAL_PIN_HASH (solo se verifica bcrypt, A23)", () => {
+    const issues = issuesOf(() =>
+      parseConfig({
+        ...validProductionEnv,
+        FERRO_APPROVAL_PIN_HASH: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA",
+      }),
+    );
+    expect(issues).toEqual([expect.stringMatching(/^FERRO_APPROVAL_PIN_HASH:/)]);
   });
 
   it("nunca incluye valores secretos en el mensaje de error", () => {
