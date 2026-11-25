@@ -38,7 +38,7 @@ const whatsappNumber = z
     "debe tener solo dígitos en formato internacional, sin + (ej. 5215512345678)",
   );
 
-/** Hash bcrypt ($2a$/$2b$/$2y$) generado con `npm run hash-pin` (DECISIONS A17). */
+/** Hash bcrypt ($2a$/$2b$/$2y$) generado con `npm run hash-pin` (DECISIONS A23). */
 const pinHash = z
   .string()
   .regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/, "debe ser un hash bcrypt (npm run hash-pin)");

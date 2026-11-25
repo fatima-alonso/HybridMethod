@@ -162,7 +162,7 @@ function assertPeriod(period: ServicePeriod): void {
  * Activa el servicio tras un pago confirmado (RN-05): `pending_payment → active`, o
  * `payment_failed → active` cuando se paga el reintento. Las fechas del periodo las decide quien
  * confirma el pago: el periodo de Stripe, o `oneMonthServicePeriod` para pago único y
- * transferencia (DECISIONS A17).
+ * transferencia (DECISIONS A23).
  *
  * `options.from` restringe el estado de origen (p. ej. una transferencia solo se activa desde
  * `pending_payment`).

@@ -229,7 +229,7 @@ async function reservePinAttempt(approvalId: string, db: Db, now: Date): Promise
  * 2. Cuenta el intento y verifica el PIN. Si es incorrecto, lo registra en la auditoría; al quinto
  *    error invalida el enlace. El contrato sigue en `pending_payment` (RF-20).
  * 3. En una sola transacción: marca el enlace como usado (`approvedBy = "ferro"`), crea el Payment,
- *    activa el contrato con su periodo (DECISIONS A17) y escribe la auditoría con IP y user-agent.
+ *    activa el contrato con su periodo (DECISIONS A23) y escribe la auditoría con IP y user-agent.
  * 4. Después envía Transfer Confirmed y Welcome al cliente y Payment Received a Ferro. Un fallo de
  *    correo se registra y nunca revierte el pago (SDD §6.2).
  */

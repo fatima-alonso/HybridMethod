@@ -129,7 +129,7 @@ src/utils/           Utilidades puras
 ## Confirmación de transferencias (Ferro)
 
 Ferro confirma cada transferencia con el enlace privado que le llega por correo y su **PIN de
-aprobación** (DECISIONS A7, A17). Para configurar el PIN:
+aprobación** (DECISIONS A7, A23). Para configurar el PIN:
 
 1. Ejecuta `npm run hash-pin` y escribe el PIN (de 6 a 12 dígitos; se piden dos veces y no se
    muestran). El PIN nunca se guarda.

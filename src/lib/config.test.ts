@@ -125,7 +125,7 @@ describe("parseConfig en producción", () => {
     expect(issues[0]).toMatch(new RegExp(`^${key}:`));
   });
 
-  it("rechaza un hash argon2 como FERRO_APPROVAL_PIN_HASH (solo se verifica bcrypt, A17)", () => {
+  it("rechaza un hash argon2 como FERRO_APPROVAL_PIN_HASH (solo se verifica bcrypt, A23)", () => {
     const issues = issuesOf(() =>
       parseConfig({
         ...validProductionEnv,

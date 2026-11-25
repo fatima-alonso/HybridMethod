@@ -69,7 +69,7 @@ export async function purgeRateLimitBuckets(
   return count;
 }
 
-/** Límites de las Fases 3 y 4 (DECISIONS A16, A17). */
+/** Límites de las Fases 3 y 4 (DECISIONS A16, A23). */
 export const RATE_LIMITS = {
   /** Pedir código: por IP. */
   otpRequestIp: { scope: "otp-request:ip", limit: 20, windowMs: 60 * 60 * 1000 },

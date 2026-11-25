@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { addOneBusinessMonth, oneMonthServicePeriod } from "./service-period";
 
 /** México centro es UTC-6 todo el año desde 2022 (sin horario de verano). */
-describe("periodo de un mes (DECISIONS A17, B6)", () => {
+describe("periodo de un mes (DECISIONS A19, A23)", () => {
   it.each([
     // [confirmación UTC, fin esperado UTC]
     ["2026-11-24T16:30:00.000Z", "2026-12-24T16:30:00.000Z"],

@@ -1,5 +1,5 @@
 /**
- * `npm run hash-pin` — genera `FERRO_APPROVAL_PIN_HASH` (DECISIONS A7, A17).
+ * `npm run hash-pin` — genera `FERRO_APPROVAL_PIN_HASH` (DECISIONS A7, A23).
  *
  * Pide el PIN dos veces sin mostrarlo en pantalla (no se pasa como argumento para que no quede en
  * el historial de la terminal) e imprime su hash bcrypt. El PIN nunca se guarda.

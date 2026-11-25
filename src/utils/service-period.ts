@@ -1,14 +1,14 @@
 import { BUSINESS_TIME_ZONE } from "@/utils/reference";
 
 /**
- * Periodo de servicio de un mes para pago único y transferencia (DECISIONS B6, aplicada en A17).
+ * Periodo de servicio de un mes para pago único y transferencia (DECISIONS A19, A23).
  *
  * - Empieza en el momento en que se confirma el pago (RN-05).
  * - Termina el mismo día del mes siguiente, a la misma hora, en la zona horaria del negocio
  *   (America/Mexico_City). Si ese día no existe (31 de enero → febrero), se usa el último día
  *   del mes siguiente.
  *
- * Es el único lugar con esta regla: si Ferro decide otra, se cambia aquí.
+ * Es el único lugar con esta regla (la confirmó Ferro en A19).
  */
 
 type LocalParts = {

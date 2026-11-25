@@ -21,7 +21,7 @@ import { transferApprovalErrorResponse } from "../_lib/approval-errors";
  * viaja en la respuesta.
  *
  * Aquí no hay un enlace que cuente los PIN incorrectos, así que el límite es por IP y además
- * global (DECISIONS A17).
+ * global (DECISIONS A23).
  */
 export async function POST(request: NextRequest) {
   try {

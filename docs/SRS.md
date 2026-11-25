@@ -14,8 +14,8 @@
 | 1.3 | — | Borrador actualizado para desarrollo. |
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
-| 1.7 | 2026-11-24 | §13: periodo de un mes para pago único y transferencia (mismo día del mes siguiente), aplicado según la propuesta y pendiente de confirmar con Ferro (DECISIONS A17). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
+| 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); cobro mes con mes desde la fecha de pago y registro informativo de la fecha de entrega del plan, con recordatorios a Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
 
 ---
 
@@ -64,7 +64,8 @@ La comunicación posterior a la contratación y la entrega de los planes de entr
 12. Registro de clientes, contratos y pagos.
 13. Notificaciones por correo electrónico.
 14. Reconocimiento de clientes recurrentes mediante verificación de correo.
-15. Cancelación de suscripciones mediante un mecanismo por definir.
+15. Cancelación de suscripciones y cambio de programa en el Stripe Customer Portal, con acceso por OTP.
+17. Registro informativo de la fecha de entrega de cada plan por parte del entrenador, con recordatorios mientras esté pendiente.
 16. Acceso directo a WhatsApp para contactar al entrenador.
 
 ### 2.2 Funcionalidades fuera del alcance
@@ -107,7 +108,7 @@ Puede:
 - Completar el pago.
 - Recibir confirmaciones por correo.
 - Contactar al entrenador por WhatsApp.
-- Acceder al mecanismo de cancelación de su suscripción, una vez definido.
+- Administrar su suscripción (cancelar, cambiar de programa, actualizar su tarjeta) en el Stripe Customer Portal.
 
 ### 3.3 Entrenador (Ferro)
 Responsable de administrar las contrataciones y prestar el servicio.
@@ -120,6 +121,9 @@ Recibe notificaciones sobre:
 - Renovaciones exitosas.
 - Pagos fallidos.
 - Cancelaciones de suscripciones.
+- Entregas de plan pendientes de registrar.
+
+Registra en el sistema la fecha en que entrega cada plan con el botón del correo de compra (RF-23).
 
 En el caso de las transferencias, verifica manualmente que recibió el dinero y confirma el pago con el enlace privado que recibe por correo y su PIN personal.
 
@@ -160,19 +164,19 @@ La marca proporcionará o aprobará el contenido y las imágenes definitivas.
 ## 5. Programas y precios
 El sistema deberá presentar tres programas:
 
-| Programa | Descripción | Precio mensual proporcionado |
-|---|---|---|
-| HM RUN | Running performance, resistencia, ritmos y eficiencia. | $1,200 MXN |
-| HM STRENGTH | Fuerza, hipertrofia y composición corporal. | $1,500 MXN |
-| HM COMPLETE | Fuerza, running, HYROX y rendimiento híbrido. | $1,800 MXN |
+| Programa | Descripción | Pago único / transferencia | Suscripción mensual (−10 %) |
+|---|---|---|---|
+| HM RUN | Running performance, resistencia, ritmos y eficiencia. | $1,200 MXN | $1,080 MXN |
+| HM STRENGTH | Fuerza, hipertrofia y composición corporal. | $1,500 MXN | $1,350 MXN |
+| HM COMPLETE | Fuerza, running, HYROX y rendimiento híbrido. | $1,800 MXN | $1,620 MXN |
 
 Los programas están dirigidos a atletas principiantes, intermedios y avanzados.
 
-**Mismo precio en todas las modalidades:** el precio mensual de cada programa es el mismo con transferencia, pago único o suscripción mensual.
+**Descuento por suscripción:** la suscripción mensual tiene un 10 % de descuento en todos los programas. La transferencia y el pago único pagan el precio completo (DECISIONS A18).
 
-**Nota sobre precios e impuestos:** los importes anteriores son los precios que proporcionó inicialmente el entrenador. Antes de publicarlos hay que confirmar su tratamiento fiscal y si incluyen los impuestos aplicables. La página deberá mostrar al consumidor el precio total, incluidos los cargos obligatorios. No se deberá cobrar una comisión adicional por pagar con tarjeta.
+**Precios finales:** los importes anteriores son el precio total que paga el cliente (DECISIONS A18). La página deberá mostrar los dos precios de cada programa. No se deberá cobrar una comisión adicional por pagar con tarjeta.
 
-La configuración definitiva de los productos y precios en Stripe está pendiente de validación.
+En Stripe, cada programa tiene un Price `one_time` con el precio completo y un Price `recurring` mensual con el precio de suscripción.
 
 ---
 
@@ -222,18 +226,18 @@ El sistema deberá permitir que el cliente haga un pago único mediante Stripe C
 Una vez confirmado el pago, deberá:
 - Registrar la transacción.
 - Registrar el contrato.
-- Activar el periodo de servicio.
+- Activar el periodo de servicio: un mes desde la fecha de pago (RF-22).
 - Enviar un correo de confirmación al cliente.
-- Enviar un correo de notificación al entrenador.
+- Enviar al entrenador el correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
 
 ### RF-08. Suscripción mensual mediante Stripe
 El sistema deberá permitir contratar un programa mediante una suscripción mensual.
 
 La suscripción deberá:
 - Renovarse automáticamente cada mes.
-- Generar el cobro correspondiente al inicio de cada periodo.
+- Cobrar mes con mes desde la fecha del primer pago, sin depender de la fecha de entrega del plan (RF-22).
 - Registrar cada pago exitoso.
-- Mantener el servicio activo mientras la suscripción esté vigente y los pagos estén al corriente.
+- Prestar el servicio solo mientras los pagos estén al corriente.
 - Notificar al entrenador por correo cada vez que se complete una renovación.
 - Enviar al cliente los correos de contratación y renovación.
 
@@ -292,19 +296,19 @@ El contrato sigue en `pending_payment` mientras el entrenador no lo apruebe. No 
 Cuando el entrenador confirme una transferencia, el sistema deberá:
 - Validar que el enlace sea válido, esté vigente y no se haya usado.
 - Validar el PIN del entrenador.
-- Verificar que el contrato siga en `pending_payment`.
+- Verificar que el contrato siga pendiente de pago (`pending_payment`, o `expired` si venció sin pagarse: el pago se respeta, RF-21).
 - Registrar el pago como exitoso.
 - Registrar quién confirmó el pago y cuándo.
 - Invalidar el enlace usado.
-- Cambiar el contrato a `active` y activar el periodo de servicio.
+- Cambiar el contrato a `active` y activar el periodo de servicio: un mes desde la fecha de confirmación (RF-22).
 - Enviar al cliente un correo de confirmación y bienvenida.
+- Enviar al entrenador el correo de compra con el botón para registrar la entrega del plan (RF-23).
 
 ### RF-13. Notificaciones al entrenador
 El sistema deberá enviar un correo al entrenador cuando ocurra alguno de estos eventos:
 - Nueva contratación por transferencia (incluye el enlace privado de confirmación).
-- Pago único exitoso.
-- Nueva suscripción activa.
-- Renovación exitosa.
+- Cada pago confirmado (pago único, transferencia, primer pago y renovaciones de la suscripción): correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
+- Cada día hábil, mientras haya un plan sin fecha de entrega: un recordatorio por cliente (RF-23).
 - Pago fallido.
 - Cancelación de suscripción.
 - Confirmación manual de una transferencia.
@@ -315,7 +319,7 @@ La dirección de correo definitiva ya está disponible y deberá agregarse a la 
 El sistema deberá enviar:
 - El código de verificación de correo.
 - La confirmación de compra.
-- El correo de bienvenida.
+- El correo de bienvenida, con el aviso de que Ferro entregará el plan en 3 a 5 días hábiles.
 - La confirmación de pago.
 - La confirmación de cancelación de la suscripción.
 - Avisos sobre renovaciones y pagos fallidos.
@@ -338,16 +342,14 @@ El sistema deberá registrar cada renovación exitosa como un nuevo pago asociad
 Cada renovación exitosa deberá generar una notificación al entrenador.
 
 ### RF-18. Pagos fallidos
-El sistema deberá registrar los intentos de cobro fallidos y actualizar el estado de la suscripción según la política de reintentos y suspensión que se defina.
+El sistema deberá registrar los intentos de cobro fallidos y actualizar el estado de la suscripción.
 
-El número de intentos, sus intervalos y las condiciones de suspensión siguen pendientes.
+Stripe reintenta el cobro con Smart Retries (configuración por defecto). Mientras haya un pago vencido, el servicio queda suspendido. Si un reintento se paga, el servicio se reanuda. Si se agotan los reintentos, la suscripción se cancela (DECISIONS A19).
 
 ### RF-19. Cancelación de suscripciones
-El sistema deberá incluir un mecanismo para que el cliente pueda cancelar su suscripción, con acceso previa verificación de su correo.
+El cliente podrá cancelar su suscripción en el Stripe Customer Portal, al que entra después de verificar su correo con un código (DECISIONS A21).
 
-La cancelación deberá impedir futuras renovaciones según la configuración definida, sin quitar el acceso al servicio ya pagado.
-
-El mecanismo definitivo de cancelación está pendiente de decisión.
+La cancelación se aplica al final del periodo: impide las renovaciones futuras sin quitar el servicio ya pagado. En el mismo portal, el cliente puede cambiar de programa (el cambio aplica en la siguiente renovación) y actualizar su tarjeta.
 
 ### RF-20. Enlaces privados de confirmación
 Los enlaces para confirmar transferencias deberán:
@@ -361,10 +363,30 @@ Los enlaces para confirmar transferencias deberán:
 
 Si un enlace expira o se invalida, el contrato no se elimina ni se cancela: sigue en `pending_payment` y se puede generar un enlace nuevo.
 
-### RF-21. Contrataciones posteriores
-El sistema deberá incluir reglas para que un cliente pueda contratar otro programa cuando termine su periodo de servicio vigente.
+El botón de entrega del plan (RF-23) tiene sus propias reglas: token seguro guardado solo como hash, vence a los 7 días, no pide PIN y deja de servir en cuanto se registra la entrega.
 
-Las reglas para evitar periodos superpuestos, cobros dobles y cambios de programa están pendientes de definir.
+### RF-21. Contrataciones posteriores
+Reglas para un cliente que vuelve a contratar (DECISIONS A20):
+- **Un solo contrato pendiente por cliente.** Si ya tiene uno del mismo programa y modalidad, se reutiliza su referencia. Si es de otro programa o modalidad, la página le avisa que se encontró un registro pendiente y le pregunta si quiere continuar con él o cambiarlo. Si lo cambia, se actualiza el mismo contrato y conserva su referencia.
+- **Vencimiento.** Un contrato pendiente vence tras 7 días sin actividad (configurable). Un contrato vencido ya no se reutiliza. Si aun así llega un pago real (una transferencia que Ferro confirma o un pago de Stripe que se confirma tarde), se respeta y el contrato se activa.
+- **Pago por adelantado.** Con un contrato de pago único o transferencia vigente o por empezar, el cliente puede pagar su siguiente mes, del mismo programa o de otro. Ese mes empieza cuando termina el vigente. Se permite un solo mes por adelantado.
+- **Con suscripción activa** no se puede crear otra contratación: el cambio de programa se hace en el portal (RF-19).
+
+### RF-22. Periodos de servicio y fechas de pago
+Cada pago confirmado da un mes de servicio que **empieza en la fecha de pago** y termina el mismo día del mes siguiente (o el último día de ese mes si el día no existe). Así aplica a todos los métodos: con la suscripción, el siguiente cobro llega al cumplirse un mes del pago anterior; con pago único o transferencia, el siguiente mes se paga cuando se cumple un mes del pago (DECISIONS A19).
+
+Si el cliente pagó por adelantado con un periodo vigente (RF-21), el mes nuevo empieza cuando termina el vigente.
+
+La fecha de entrega del plan no cambia el periodo ni los cobros.
+
+### RF-23. Registro de la fecha de entrega del plan
+El entrenador entrega el plan de 3 a 5 días hábiles después del pago. El sistema guardará la fecha de entrega **solo como dato de referencia** (DECISIONS A19).
+
+- Después de cada pago confirmado, el entrenador recibe un correo de compra con todos los datos del cliente y de la compra, y un botón **"Registrar entrega del plan"**.
+- El botón abre una pantalla con los datos de ese plan, un campo de fecha (hoy por defecto, se puede cambiar) y un botón para confirmar. La fecha no puede ser futura ni anterior al día del pago. Al confirmar, el sistema guarda la fecha y muestra **"Fecha de entrega del plan confirmada"**. No hace nada más.
+- Se pide esa confirmación explícita porque algunos programas de correo abren los enlaces automáticamente. Si bastara con abrir el enlace, se registraría una fecha falsa en cuanto llega el correo.
+- La fecha se registra una sola vez. Si se abre un botón de ese plan después, muestra la fecha ya registrada.
+- Mientras no se registre la fecha, el sistema envía al entrenador **cada día hábil** (lunes a viernes) un recordatorio: "Está pendiente el plan de [cliente]", con su propio botón "Registrar entrega del plan". Los recordatorios se detienen en cuanto se registra la fecha con cualquiera de los botones.
 
 ---
 
@@ -372,7 +394,7 @@ Las reglas para evitar periodos superpuestos, cobros dobles y cambios de program
 
 **RN-01. Contratación directa.** El cliente podrá seleccionar un programa y contratarlo directamente, después de verificar su correo. No existirá un proceso de aprobación de clientes.
 
-**RN-02. Duración del servicio.** Cada contratación tendrá un periodo de servicio de un mes. La duración exacta en días y el manejo de las fechas de renovación y de los meses de distinta duración deberán corresponder a la configuración de facturación definitiva.
+**RN-02. Duración del servicio.** Cada mes pagado da un periodo de servicio de un mes calendario desde la fecha de pago (RF-22).
 
 **RN-03. Renovación automática.** Las suscripciones se renovarán automáticamente cada mes hasta que el cliente las cancele.
 
@@ -382,9 +404,9 @@ Las reglas para evitar periodos superpuestos, cobros dobles y cambios de program
 
 **RN-06. Comunicación deportiva.** Ferro recopilará la información deportiva del cliente por WhatsApp después de la contratación.
 
-**RN-07. Entrega del entrenamiento.** Ferro preparará y enviará los planes de entrenamiento directamente por WhatsApp.
+**RN-07. Entrega del entrenamiento.** Ferro preparará y enviará los planes de entrenamiento directamente por WhatsApp, de 3 a 5 días hábiles después del pago, y registrará en el sistema la fecha de entrega como dato de referencia (RF-23).
 
-**RN-08. Cambios de programa.** Los cambios de programa deberán respetar el periodo de servicio ya pagado. Las reglas exactas para nuevas contrataciones y cambios están pendientes.
+**RN-08. Cambios de programa.** Los cambios de programa respetan el periodo ya pagado: con pago único o transferencia, el siguiente mes se paga por adelantado con el nuevo programa; con suscripción, el cambio se hace en el portal y aplica en la siguiente renovación (RF-21).
 
 **RN-09. Reembolsos.** La primera versión no incluye un módulo automatizado de reembolsos. Si Ferro autoriza un reembolso, se gestionará manualmente y se cancelará la suscripción recurrente cuando corresponda. La política definitiva deberá cumplir con la normativa aplicable y no deberá interpretarse como una renuncia a los derechos legales del consumidor.
 
@@ -394,7 +416,11 @@ Las reglas para evitar periodos superpuestos, cobros dobles y cambios de program
 
 **RN-12. Verificación previa.** No se creará ningún contrato sin una verificación vigente del correo del cliente.
 
-**RN-13. Precio único por programa.** El importe de cada programa es el mismo con transferencia, pago único o suscripción mensual.
+**RN-13. Descuento por suscripción.** La suscripción mensual cuesta un 10 % menos que el precio del programa. La transferencia y el pago único pagan el precio completo. El servidor toma siempre los dos importes de la BD (DECISIONS A18).
+
+**RN-14. Suspensión por falta de pago.** Mientras una suscripción tenga un pago vencido, el servicio se suspende (RF-18).
+
+**RN-15. Contratos pendientes.** Un cliente tiene como máximo un contrato pendiente de pago, que vence tras 7 días sin actividad (RF-21).
 
 ---
 
@@ -446,9 +472,10 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 9. El cliente completa el pago en Stripe Checkout.
 10. Stripe notifica el resultado al backend mediante un webhook.
 11. El sistema verifica el evento y registra el pago.
-12. El sistema cambia el contrato a `active` y activa el periodo de servicio.
+12. El sistema cambia el contrato a `active`: un mes desde la fecha de pago.
 13. Se envía el correo de bienvenida al cliente.
-14. Se notifica al entrenador.
+14. El entrenador recibe el correo de compra con el botón para registrar la entrega del plan.
+15. Cuando entrega el plan, registra la fecha con ese botón. Mientras no lo haga, recibe un recordatorio cada día hábil.
 
 ### 9.2 Flujo de suscripción mensual
 1. El visitante selecciona un programa.
@@ -460,11 +487,12 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 7. El cliente completa el pago.
 8. Stripe notifica el resultado mediante un webhook.
 9. El sistema registra la suscripción y el primer pago.
-10. Se activa el servicio.
+10. Se activa el servicio: un mes desde la fecha de pago.
 11. El cliente recibe la confirmación y la bienvenida.
-12. El entrenador recibe una notificación.
-13. Cada mes, Stripe intenta hacer la renovación automática.
-14. Cada renovación exitosa se registra y se notifica al entrenador.
+12. El entrenador recibe el correo de compra con el botón para registrar la entrega del plan.
+13. Al cumplirse un mes del pago, Stripe hace la renovación automática.
+14. Cada renovación exitosa se registra y el entrenador recibe otro correo de compra con su botón de entrega.
+15. Si un cobro falla, el servicio se suspende hasta que se pague.
 
 ### 9.3 Flujo de transferencia bancaria
 1. El visitante selecciona un programa.
@@ -482,19 +510,17 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 13. Ferro abre el enlace privado.
 14. El sistema muestra la pantalla de confirmación.
 15. Ferro escribe su PIN y selecciona "Sí, confirmar pago". Si selecciona "No, regresar", no pasa nada y el contrato sigue pendiente.
-16. El sistema registra el pago, activa el servicio y envía los correos correspondientes.
+16. El sistema registra el pago, activa el servicio (un mes desde la confirmación) y envía los correos correspondientes, incluido el correo de compra a Ferro con el botón de entrega del plan.
 
 ### 9.4 Flujo de cancelación
-1. El cliente entra al mecanismo de cancelación.
+1. El cliente entra a "Administrar mi suscripción".
 2. Verifica su correo con un código.
-3. El sistema identifica y valida la suscripción.
-4. El cliente confirma la cancelación.
-5. Se pide a Stripe que detenga las renovaciones futuras según la política definida.
-6. El sistema actualiza el estado.
+3. El sistema identifica su suscripción y abre el Stripe Customer Portal.
+4. El cliente cancela en el portal.
+5. Stripe detiene las renovaciones al final del periodo vigente.
+6. El sistema actualiza el estado mediante webhooks.
 7. El cliente recibe una confirmación.
 8. El entrenador recibe una notificación.
-
-El mecanismo exacto y el momento en que la cancelación surte efecto quedan pendientes.
 
 ---
 
@@ -504,6 +530,7 @@ El sistema deberá guardar información de:
 - Programas.
 - Contratos.
 - Pagos.
+- Periodos de servicio (fecha de pago, inicio y fin de cada mes, y fecha de entrega del plan como referencia).
 - Suscripciones.
 - Confirmaciones manuales de transferencia.
 - Verificaciones de correo electrónico.
@@ -523,9 +550,9 @@ La estructura técnica y las relaciones se especifican en el SDD.
 | Stripe Webhooks | Notificación de eventos de pago |
 | Resend | Envío de correos electrónicos |
 | PostgreSQL | Persistencia de datos |
-| Neon | Proveedor propuesto para alojar PostgreSQL |
+| Neon | Proveedor de PostgreSQL |
 | Vercel | Hosting de la aplicación |
-| GoDaddy o Vercel | Posible proveedor de dominio |
+| GoDaddy | Proveedor del dominio |
 | WhatsApp | Comunicación directa entre cliente y entrenador |
 
 La comunicación por WhatsApp será mediante enlaces de contacto. El MVP no incluye integración con la API de WhatsApp.
@@ -545,10 +572,11 @@ La primera versión se considerará funcional cuando:
 9. Las transferencias se puedan registrar como pendientes.
 10. Ferro pueda confirmar transferencias con el enlace privado, su PIN y una acción explícita.
 11. Los clientes reciban los correos de confirmación y bienvenida.
-12. Ferro reciba notificaciones de nuevas contrataciones y renovaciones exitosas.
-13. Los datos se guarden correctamente.
-14. La interfaz funcione en celulares y computadoras.
-15. No haga falta crear una cuenta tradicional para contratar.
+12. Ferro pueda registrar la fecha de entrega de cada plan y reciba recordatorios mientras esté pendiente.
+13. Ferro reciba notificaciones de nuevas contrataciones y renovaciones exitosas.
+14. Los datos se guarden correctamente.
+15. La interfaz funcione en celulares y computadoras.
+16. No haga falta crear una cuenta tradicional para contratar.
 
 ---
 
@@ -563,7 +591,7 @@ La primera versión se considerará funcional cuando:
 | Estilos | Tailwind CSS |
 | Base de datos | PostgreSQL |
 | ORM | Prisma |
-| Proveedor de PostgreSQL | Neon (propuesto) |
+| Proveedor de PostgreSQL | Neon |
 | Pagos | Stripe Checkout y Billing |
 | Correos | Resend |
 | Hosting | Vercel |
@@ -572,24 +600,24 @@ La primera versión se considerará funcional cuando:
 
 | # | Decisión | Estado |
 |---|---|---|
-| 1 | Proveedor definitivo de PostgreSQL | Neon es la propuesta. Falta confirmar y configurar la cuenta. |
-| 2 | Configuración de Stripe y sus productos/precios | Ya hay una idea inicial. Se decidió usar el mismo importe para el pago único y la suscripción. Faltan los Price IDs, los importes finales y los impuestos antes de producción. |
-| 3 | Correo que recibirá las notificaciones de Ferro | La dirección ya está disponible. Falta agregarla a la configuración. |
-| 4 | Dominio definitivo | Probablemente GoDaddy o Vercel. Pendiente de compra y configuración. |
-| 5 | Remitente de Resend | Pendiente de definir y verificar el dominio/remitente. |
-| 6 | Duración de los periodos de servicio | Definido: un mes. Aplicada la propuesta (DECISIONS A17): en pago único y transferencia, del momento de la confirmación al mismo día del mes siguiente; en suscripciones, el periodo de Stripe. Falta que Ferro la confirme. |
-| 7 | Política de reintentos y suspensión por pagos fallidos | Pendiente de definir. |
-| 8 | Mecanismo definitivo de cancelación | Pendiente de definir. |
-| 9 | Reglas para nuevas contrataciones con un periodo vigente | Pendiente de definir. |
-| 10 | Número de WhatsApp oficial de Ferro | Pendiente de proporcionar y configurar. |
+| 1 | Proveedor de PostgreSQL | **Definido:** Neon. |
+| 2 | Productos, precios e impuestos | **Definido:** precios finales; suscripción con 10 % de descuento; un Price `one_time` y uno `recurring` por programa. Faltan los Price IDs de producción. |
+| 3 | Correo de notificaciones de Ferro | **Definido.** Se carga en las variables de entorno. |
+| 4 | Dominio definitivo | **Definido:** GoDaddy. Pendiente de compra y configuración (Fase 8). |
+| 5 | Remitente de Resend | **Definido.** Se verifica con el dominio (Fase 8). |
+| 6 | Fechas de los periodos de servicio | **Definido:** un mes desde la fecha de pago en todos los métodos; la entrega del plan es solo referencia (RF-22, RF-23). |
+| 7 | Reintentos y suspensión por pagos fallidos | **Definido:** Smart Retries; servicio suspendido mientras haya un pago vencido (RF-18). |
+| 8 | Mecanismo de cancelación | **Definido:** Stripe Customer Portal con OTP, al final del periodo (RF-19). |
+| 9 | Nuevas contrataciones con un periodo vigente | **Definido** en RF-21. |
+| 10 | Número de WhatsApp oficial de Ferro | **Definido.** Se carga en las variables de entorno. |
 | 11 | Expiración y regeneración de enlaces privados | **Definido:** 7 días (configurable), un solo uso, se invalidan tras 5 PIN incorrectos y se pueden regenerar si el contrato sigue pendiente. |
-| 12 | Política de privacidad y condiciones de contratación | Ya hay una idea o documento inicial. Falta validar la versión final y agregarla al sitio. |
+| 12 | Política de privacidad y condiciones de contratación | Hay un borrador publicado. Faltan los datos del responsable y la revisión legal. |
 
 ### 13.3 Otras decisiones y consideraciones
 - **Renovación automática:** confirmada. Las suscripciones se renuevan cada mes hasta que se cancelan.
 - **Verificación de correo:** obligatoria antes de cualquier contratación, sea el correo nuevo o ya registrado.
 - **Confirmación de transferencias:** con el enlace privado enviado al correo de Ferro más su PIN personal. No existe la acción de rechazo; el contrato sigue pendiente hasta que se apruebe.
-- **Impuestos y precio final:** antes de publicar los precios, hay que confirmar con el contador el tratamiento fiscal del servicio. La landing mostrará el precio total que paga el consumidor.
+- **Precio final:** los precios publicados son el total que paga el cliente (DECISIONS A18).
 - **Reembolsos:** el MVP no tendrá un flujo automatizado. Los reembolsos que Ferro autorice se gestionarán manualmente y se registrarán internamente.
 - **Cuentas de servicios externos:** crear las cuentas necesarias no bloquea el proyecto.
 
@@ -606,6 +634,8 @@ La primera versión se considerará funcional cuando:
 | Suscripción | Contratación recurrente con renovación automática. |
 | Pago único | Transacción que se hace una sola vez. |
 | Transferencia pendiente | Pago que espera la confirmación manual. |
+| Entrega del plan | Día en que Ferro entrega el plan de entrenamiento. Se guarda como referencia. |
+| Periodo de servicio | Un mes pagado, desde la fecha de pago hasta el mismo día del mes siguiente. |
 | Webhook | Notificación que un servicio externo envía a nuestro backend. |
 | OTP | Código temporal para verificar la identidad mediante el correo electrónico. |
 | PIN de aprobación | Código secreto que solo conoce Ferro y que se necesita para confirmar transferencias. |
@@ -614,4 +644,4 @@ La primera versión se considerará funcional cuando:
 
 ---
 
-*Fin del documento — SRS v1.4*
+*Fin del documento — SRS v1.7*
