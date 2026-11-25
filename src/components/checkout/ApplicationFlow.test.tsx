@@ -115,6 +115,41 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 
+  it("con un pendiente de otro programa pregunta y reenvía la elección (DECISIONS A20)", async () => {
+    await reachPaymentStep();
+    reply("/api/transfers", 409, {
+      success: false,
+      error: "pending_contract_exists",
+      message: "Encontramos un registro pendiente a tu nombre.",
+      pending: {
+        reference: "HM-2026-000007",
+        programSlug: "hm-strength",
+        programName: "HM STRENGTH",
+        paymentType: "transfer",
+        amount: "1500.00",
+        currency: "MXN",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Tienes un registro pendiente" });
+    expect(
+      screen.getByText(/HM STRENGTH · Transferencia · .*1,500.* · HM-2026-000007/),
+    ).toBeTruthy();
+
+    reply("/api/transfers", 200, { ...transfer, outcome: "changed" });
+    fireEvent.click(screen.getByRole("button", { name: "Cambiar a HM RUN · Transferencia" }));
+    await screen.findByRole("heading", { name: "Transferencia pendiente" });
+    expect(calls.at(-1)?.body).toMatchObject({ program: "hm-run", pendingAction: "change" });
+  });
+
+  it("el paso de pago muestra el precio de cada modalidad (10 % menos con suscripción)", async () => {
+    await reachPaymentStep();
+    const labels = screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent);
+    expect(labels[0]).toMatch(/Transferencia bancaria.*\$1,200.*\/ mes/);
+    expect(labels[1]).toMatch(/Pago único.*\$1,200/);
+    expect(labels[2]).toMatch(/Suscripción mensual.*\$1,080/);
+  });
+
   it("el encabezado de cada paso recibe el foco", async () => {
     await reachPaymentStep();
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Elige cómo pagar" }));

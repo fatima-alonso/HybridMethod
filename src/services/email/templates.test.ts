@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   escapeHtml,
   paymentReceivedEmail,
+  planDeliveryReminderEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
@@ -106,10 +107,40 @@ describe("plantillas de correo (SDD §6.2)", () => {
       programName: "HM RUN",
       amount: "$1,200 MXN",
       method: "Transferencia bancaria (confirmada por ti)",
+      paidAt: "24 de noviembre de 2026, 10:00 a.m.",
       ...period,
+      scheduled: false,
+      deliveryUrl: "https://example.com/plan/entrega/abc",
     });
-    expect(email.text).toContain("ana@example.com");
-    expect(email.text).toContain("Transferencia bancaria (confirmada por ti)");
+    for (const part of [
+      "ana@example.com",
+      "+525512345678",
+      "HM RUN",
+      "Transferencia bancaria (confirmada por ti)",
+      "$1,200 MXN",
+      "HM-2026-000001",
+      "24 de noviembre de 2026, 10:00 a.m.",
+      period.serviceEnd,
+      "https://example.com/plan/entrega/abc",
+    ]) {
+      expect(email.text).toContain(part);
+    }
+    expect(email.html).toContain("Registrar entrega del plan");
+    expect(email.html).toContain('href="https://example.com/plan/entrega/abc"');
+    expect(email.html).not.toContain("<img");
+  });
+
+  it("Plan Delivery Reminder dice qué plan falta y trae su propio botón", () => {
+    const email = planDeliveryReminderEmail({
+      customerName: evil,
+      programName: "HM RUN",
+      reference: "HM-2026-000001",
+      paidAt: "24 de noviembre de 2026",
+      deliveryUrl: "https://example.com/plan/entrega/xyz",
+    });
+    expect(email.subject).toContain("Está pendiente el plan de");
+    expect(email.text).toContain("HM RUN · HM-2026-000001 · pagado el 24 de noviembre de 2026");
+    expect(email.html).toContain('href="https://example.com/plan/entrega/xyz"');
     expect(email.html).not.toContain("<img");
   });
 });

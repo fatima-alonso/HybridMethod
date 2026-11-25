@@ -5,7 +5,12 @@ import { hashToken } from "@/lib/crypto";
 import { createTestPrisma, testDatabaseUrl, truncateAll } from "@/test/db";
 import { isContractReference } from "@/utils/reference";
 
-import { ProgramUnavailableError } from "./errors";
+import {
+  PendingContractExistsError,
+  PrepaidLimitError,
+  ProgramUnavailableError,
+  SubscriptionActiveError,
+} from "./errors";
 import { syncProgramCatalog } from "./program.service";
 
 const sendTransferPendingEmail = vi.fn();
@@ -22,7 +27,6 @@ describe.skipIf(!testDatabaseUrl)("transfer.service con PostgreSQL (RF-09)", () 
   const now = new Date("2026-11-24T10:00:00Z");
   const input = {
     verifiedEmail: "ana@example.com",
-    verifiedAt: new Date(Date.now() - 60_000),
     fullName: "Ana López",
     whatsapp: "+525512345678",
     programSlug: "hm-run",
@@ -95,10 +99,10 @@ describe.skipIf(!testDatabaseUrl)("transfer.service con PostgreSQL (RF-09)", () 
     const second = await requestTransfer(
       {
         ...input,
-        verifiedAt: new Date(),
         fullName: "Ana María López",
         whatsapp: "+34612345678",
         programSlug: "hm-complete",
+        pendingAction: "change",
       },
       {},
       prisma,
@@ -110,7 +114,6 @@ describe.skipIf(!testDatabaseUrl)("transfer.service con PostgreSQL (RF-09)", () 
       whatsapp: "+34612345678",
     });
     expect(await prisma.customer.count()).toBe(1);
-    expect(await prisma.contract.count()).toBe(2);
   });
 
   it("un doble envío en la misma sesión no duplica el contrato ni el correo", async () => {
@@ -150,5 +153,157 @@ describe.skipIf(!testDatabaseUrl)("transfer.service con PostgreSQL (RF-09)", () 
     const approvals = await prisma.transferApproval.findMany({ orderBy: { createdAt: "asc" } });
     expect(approvals).toHaveLength(2);
     expect(approvals.filter((a) => a.invalidatedAt === null)).toHaveLength(1);
+  });
+
+  describe("un solo pendiente por cliente (DECISIONS A20)", () => {
+    const day = 24 * 3600_000;
+    const later = (days: number) => new Date(now.getTime() + days * day);
+
+    it("con otro programa pendiente pregunta antes de hacer nada", async () => {
+      const { contract } = await requestTransfer(input, {}, prisma, now);
+      const error = await requestTransfer(
+        { ...input, programSlug: "hm-complete" },
+        {},
+        prisma,
+        now,
+      ).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PendingContractExistsError);
+      expect((error as PendingContractExistsError).pending).toEqual({
+        reference: contract.reference,
+        programSlug: "hm-run",
+        programName: "HM RUN",
+        paymentType: "transfer",
+        amount: "1200.00",
+        currency: "MXN",
+      });
+      expect(await prisma.contract.count()).toBe(1);
+      expect(sendTransferPendingEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("«continuar» retoma el pendiente tal cual, sin otro correo", async () => {
+      const first = await requestTransfer(input, {}, prisma, now);
+      const again = await requestTransfer(
+        { ...input, programSlug: "hm-complete", pendingAction: "continue" },
+        {},
+        prisma,
+        later(1),
+      );
+      expect(again.outcome).toBe("continued");
+      expect(again.contract).toMatchObject({ id: first.contract.id, lastActivityAt: later(1) });
+      expect(again.program.slug).toBe("hm-run");
+      expect(sendTransferPendingEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("«cambiar» actualiza el mismo contrato, invalida su enlace y avisa a Ferro", async () => {
+      const first = await requestTransfer(input, {}, prisma, now);
+      const oldToken = sentToken();
+      const changed = await requestTransfer(
+        { ...input, programSlug: "hm-complete", pendingAction: "change" },
+        { ip: "1.2.3.4" },
+        prisma,
+        later(1),
+      );
+      expect(changed.outcome).toBe("changed");
+      expect(changed.contract.id).toBe(first.contract.id);
+      expect(changed.contract.reference).toBe(first.contract.reference);
+      expect(changed.contract.amount.toFixed(2)).toBe("1800.00");
+      expect(changed.program.slug).toBe("hm-complete");
+      expect(sendTransferPendingEmail).toHaveBeenCalledTimes(2);
+      const old = await prisma.transferApproval.findUniqueOrThrow({
+        where: { tokenHash: hashToken(oldToken) },
+      });
+      expect(old.invalidatedAt).toEqual(later(1));
+      const audit = await prisma.auditLog.findFirstOrThrow({
+        where: { action: "contract.pending_changed" },
+      });
+      expect(audit.metadata).toMatchObject({
+        from: { program: "hm-run", paymentType: "transfer" },
+        to: { program: "hm-complete", paymentType: "transfer" },
+      });
+    });
+
+    it("mismo programa: reutiliza el pendiente; si su enlace ya no sirve, genera otro", async () => {
+      const first = await requestTransfer(input, {}, prisma, now);
+      const reused = await requestTransfer(input, {}, prisma, later(1));
+      expect(reused.outcome).toBe("reused");
+      expect(reused.contract.id).toBe(first.contract.id);
+      expect(sendTransferPendingEmail).toHaveBeenCalledTimes(1);
+
+      // El enlace vence a los 7 días, pero el contrato sigue vivo por la actividad del día 1.
+      const again = await requestTransfer(input, {}, prisma, later(7.5));
+      expect(again.contract.id).toBe(first.contract.id);
+      expect(sendTransferPendingEmail).toHaveBeenCalledTimes(2);
+      expect(await prisma.auditLog.count({ where: { action: "transfer.link_regenerated" } })).toBe(
+        1,
+      );
+    });
+
+    it("un pendiente con 7 días sin actividad vence y se crea otro contrato", async () => {
+      const first = await requestTransfer(input, {}, prisma, now);
+      const second = await requestTransfer(
+        { ...input, programSlug: "hm-complete" },
+        {},
+        prisma,
+        later(7),
+      );
+      expect(second.outcome).toBe("created");
+      expect(second.contract.id).not.toBe(first.contract.id);
+      expect(
+        (await prisma.contract.findUniqueOrThrow({ where: { id: first.contract.id } })).status,
+      ).toBe("expired");
+    });
+
+    it("la BD impide dos pendientes del mismo cliente", async () => {
+      const { contract } = await requestTransfer(input, {}, prisma, now);
+      await expect(
+        prisma.contract.create({
+          data: {
+            reference: "HM-2026-999999",
+            customerId: contract.customerId,
+            programId: contract.programId,
+            paymentType: "transfer",
+            amount: contract.amount,
+            currency: "MXN",
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("con una suscripción activa no se crea otra contratación", async () => {
+      const { contract, customer, program } = await requestTransfer(input, {}, prisma, now);
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: {
+          status: "active",
+          paymentType: "subscription",
+          serviceStartDate: now,
+          serviceEndDate: later(30),
+        },
+      });
+      await prisma.subscription.create({
+        data: {
+          customerId: customer.id,
+          programId: program.id,
+          contractId: contract.id,
+          stripeSubscriptionId: "sub_test",
+          status: "past_due",
+        },
+      });
+      await expect(requestTransfer(input, {}, prisma, later(1))).rejects.toBeInstanceOf(
+        SubscriptionActiveError,
+      );
+    });
+
+    it("permite un solo mes por adelantado", async () => {
+      const { contract } = await requestTransfer(input, {}, prisma, now);
+      // Ya pagó su siguiente mes, que empieza más adelante.
+      await prisma.contract.update({
+        where: { id: contract.id },
+        data: { status: "scheduled", serviceStartDate: later(10), serviceEndDate: later(40) },
+      });
+      await expect(requestTransfer(input, {}, prisma, later(1))).rejects.toBeInstanceOf(
+        PrepaidLimitError,
+      );
+    });
   });
 });

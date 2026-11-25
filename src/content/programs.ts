@@ -6,9 +6,9 @@
  *   slug, nombre, descripción, precio, moneda, `active` y orden a la tabla `programs`. La landing y
  *   el servidor leen esos datos de la BD; de aquí solo salen los textos editoriales (`summary`,
  *   `highlights`, `featured`). Para cambiar un precio: editarlo aquí y volver a ejecutar el seed.
- * - El precio es el mismo con transferencia, pago único o suscripción (RN-13, DECISIONS A8).
- * - Precios iniciales proporcionados por Ferro. Su tratamiento fiscal (IVA) está pendiente
- *   (DECISIONS B2): confirmar antes de publicar.
+ * - Precios finales de Ferro, sin cargos adicionales (DECISIONS A18). La suscripción mensual tiene
+ *   10 % de descuento: `subscriptionPrice` = `monthlyPrice` × 0.90, guardado ya redondeado a
+ *   centavos (una prueba lo exige). El pago único y la transferencia pagan `monthlyPrice`.
  */
 
 export const PROGRAM_SLUGS = ["hm-run", "hm-strength", "hm-complete"] as const;
@@ -24,8 +24,10 @@ export type Program = {
   description: string;
   /** PLACEHOLDER: puntos clave que la marca debe reemplazar o aprobar. */
   highlights: readonly string[];
-  /** Precio mensual como decimal en texto, p. ej. "1200.00". */
+  /** Precio mensual completo (pago único y transferencia), decimal en texto, p. ej. "1200.00". */
   monthlyPrice: `${number}`;
+  /** Precio mensual con suscripción (−10 %, DECISIONS A18), decimal en texto. */
+  subscriptionPrice: `${number}`;
   currency: "MXN";
   /** Programa destacado visualmente en la landing. */
   featured: boolean;
@@ -46,6 +48,7 @@ export const PROGRAMS: readonly Program[] = [
       "Ajustes según tu progreso",
     ],
     monthlyPrice: "1200.00",
+    subscriptionPrice: "1080.00",
     currency: "MXN",
     featured: false,
     active: true,
@@ -62,6 +65,7 @@ export const PROGRAMS: readonly Program[] = [
       "Enfoque en composición corporal",
     ],
     monthlyPrice: "1500.00",
+    subscriptionPrice: "1350.00",
     currency: "MXN",
     featured: false,
     active: true,
@@ -78,6 +82,7 @@ export const PROGRAMS: readonly Program[] = [
       "Rendimiento híbrido de principio a fin",
     ],
     monthlyPrice: "1800.00",
+    subscriptionPrice: "1620.00",
     currency: "MXN",
     featured: true,
     active: true,

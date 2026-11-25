@@ -12,6 +12,8 @@ export type ApiFailure = {
   message: string;
   remainingAttempts?: number;
   retryAfterSeconds?: number;
+  /** Cuerpo completo de la respuesta (p. ej. `pending` en un 409 pending_contract_exists). */
+  body?: Record<string, unknown>;
 };
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
@@ -45,7 +47,26 @@ export async function postJson<T>(url: string, body: unknown): Promise<ApiResult
       typeof data.remainingAttempts === "number" ? data.remainingAttempts : undefined,
     retryAfterSeconds:
       typeof data.retryAfterSeconds === "number" ? data.retryAfterSeconds : undefined,
+    body: data,
   };
+}
+
+/** Resumen del pendiente del cliente (409 pending_contract_exists, DECISIONS A20). */
+export type PendingSummary = {
+  reference: string;
+  programSlug: string;
+  programName: string;
+  paymentType: string;
+  amount: `${number}`;
+  currency: string;
+};
+
+export function isPendingSummary(value: unknown): value is PendingSummary {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return ["reference", "programSlug", "programName", "paymentType", "amount", "currency"].every(
+    (key) => typeof v[key] === "string",
+  );
 }
 
 export type TransferCreated = {

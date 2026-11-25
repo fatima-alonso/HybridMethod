@@ -2,15 +2,22 @@
 
 import { useState } from "react";
 
-import { FLOW_ERRORS } from "@/content/checkout";
+import { FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
 import type { ProgramSlug } from "@/content/programs";
 import { ApplicationForm, type ApplicationFormValues } from "@/components/forms/ApplicationForm";
 import type { PhoneCountryOption } from "@/lib/phone";
 import type { TransferRequestBody } from "@/lib/validations";
 import type { ProgramOption } from "@/types/program";
 
-import { postJson, type ApiFailure, type TransferCreated } from "./api";
+import {
+  isPendingSummary,
+  postJson,
+  type ApiFailure,
+  type PendingSummary,
+  type TransferCreated,
+} from "./api";
 import { PaymentMethodStep } from "./PaymentMethodStep";
+import { PendingChoiceStep } from "./PendingChoiceStep";
 import { TransferPendingStep } from "./TransferPendingStep";
 import { VerifyCodeStep } from "./VerifyCodeStep";
 
@@ -18,6 +25,7 @@ type Step =
   | { name: "form" }
   | { name: "verify"; notice: string | null }
   | { name: "payment" }
+  | { name: "pendingChoice"; pending: PendingSummary }
   | { name: "pending"; transfer: TransferCreated };
 
 type Props = {
@@ -72,7 +80,7 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     setStep({ name: "form" });
   }
 
-  async function onConfirmPayment() {
+  async function onConfirmPayment(pendingAction?: "continue" | "change") {
     if (!values || values.program === "") return;
     setBusy(true);
     setError(null);
@@ -81,11 +89,18 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       whatsapp: { country: values.whatsappCountry, number: values.whatsapp },
       program: values.program,
       privacyAccepted: values.privacyAccepted as true,
+      ...(pendingAction ? { pendingAction } : {}),
     };
     const result = await postJson<TransferCreated>("/api/transfers", body);
     if (result.ok) {
       setBusy(false);
       setStep({ name: "pending", transfer: result.data });
+      return;
+    }
+    if (result.error === "pending_contract_exists" && isPendingSummary(result.body?.pending)) {
+      // Ya tiene un registro pendiente de otro programa o modalidad: se le pregunta (A20).
+      setBusy(false);
+      setStep({ name: "pendingChoice", pending: result.body.pending });
       return;
     }
     if (result.error === "verification_required") {
@@ -137,8 +152,24 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
           program={program}
           busy={busy}
           error={error}
-          onConfirm={onConfirmPayment}
+          onConfirm={() => onConfirmPayment()}
           onBack={backToForm}
+        />
+      );
+    }
+    case "pendingChoice": {
+      const program = programs.find((p) => p.slug === values?.program);
+      return (
+        <PendingChoiceStep
+          pending={step.pending}
+          requested={`${program?.name ?? ""} · ${PAYMENT_TYPE_LABELS.transfer}`}
+          busy={busy}
+          error={error}
+          onChoose={(action) => onConfirmPayment(action)}
+          onBack={() => {
+            setError(null);
+            setStep({ name: "payment" });
+          }}
         />
       );
     }

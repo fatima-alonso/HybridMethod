@@ -58,12 +58,32 @@ const fields = {
   APP_URL: z.url({ protocol: /^https?$/ }).transform((url) => url.replace(/\/+$/, "")),
   FERRO_APPROVAL_PIN_HASH: pinHash,
   OTP_SESSION_SECRET: z.string().min(32, "debe tener al menos 32 caracteres"),
+  /** Secreto que Vercel Cron envía como `Authorization: Bearer …` (SDD §7.8). */
+  CRON_SECRET: z.string().min(16, "debe tener al menos 16 caracteres"),
 };
 
 const transferLinkTtlDays = z.preprocess(
   emptyToUndefined,
   z.coerce.number().int().min(1).max(30).default(7),
 );
+
+/** Días sin actividad tras los que vence un contrato pendiente (DECISIONS A20). */
+const pendingContractTtlDays = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().int().min(1).max(60).default(7),
+);
+
+/** Días hábiles después del pago en que empiezan los recordatorios de entrega (DECISIONS A19). */
+const planDeliveryReminderBusinessDays = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().int().min(0).max(30).default(1),
+);
+
+const defaults = {
+  TRANSFER_LINK_TTL_DAYS: transferLinkTtlDays,
+  PENDING_CONTRACT_TTL_DAYS: pendingContractTtlDays,
+  PLAN_DELIVERY_REMINDER_BUSINESS_DAYS: planDeliveryReminderBusinessDays,
+};
 
 const productionSchema = z.object({
   DATABASE_URL: required(fields.DATABASE_URL),
@@ -77,7 +97,8 @@ const productionSchema = z.object({
   APP_URL: required(fields.APP_URL),
   FERRO_APPROVAL_PIN_HASH: required(fields.FERRO_APPROVAL_PIN_HASH),
   OTP_SESSION_SECRET: required(fields.OTP_SESSION_SECRET),
-  TRANSFER_LINK_TTL_DAYS: transferLinkTtlDays,
+  CRON_SECRET: required(fields.CRON_SECRET),
+  ...defaults,
 });
 
 const developmentSchema = z.object({
@@ -95,7 +116,8 @@ const developmentSchema = z.object({
   ),
   FERRO_APPROVAL_PIN_HASH: optional(fields.FERRO_APPROVAL_PIN_HASH),
   OTP_SESSION_SECRET: optional(fields.OTP_SESSION_SECRET),
-  TRANSFER_LINK_TTL_DAYS: transferLinkTtlDays,
+  CRON_SECRET: optional(fields.CRON_SECRET),
+  ...defaults,
 });
 
 type DevelopmentConfig = z.infer<typeof developmentSchema>;

@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.7 y SDD v1.9 (ya incluyen las decisiones A1–A12 y A14–A23). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.7 y SDD v1.10 (ya incluyen las decisiones A1–A12 y A14–A25). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -86,7 +86,7 @@ WhatsApp en celulares. Pruebas: unitarias, de BD (servicios, rate limit y rutas,
 SDD §12.3 que aplican: sin sesión, cookie falsificada, enumeración de correos, precio manipulado) y de interfaz
 del flujo.
 
-## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan 🟡 (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
+## Fase 4 — Ajustes de modelo, confirmación de transferencias y entrega del plan ✅ (RF-11, RF-12, RF-20, RF-22, RF-23, RN-02, RN-04, RN-05, RN-07, RN-13)
 - **Migración (DECISIONS A18–A20, SDD §5.3):** `Program.subscriptionPrice`; entidades ServicePeriod y
   PlanDeliveryLink; estados `scheduled` y `expired` con sus transiciones; `Contract.lastActivityAt`; índice único
   parcial de un pendiente por cliente.
@@ -118,11 +118,17 @@ con IP y user-agent; después Transfer Confirmed, Welcome y Payment Received); `
 ofrecida en la misma página; Welcome con el aviso de entrega en 3 a 5 días hábiles; formulario de inscripción y de Ferro sin envío nativo (nada en la URL). Decisiones en
 DECISIONS A23. Pruebas unitarias, de servicio y de rutas (SDD §12.3).
 
-Pendiente de esta fase: la migración (A18–A20) y lo que depende de ella: `subscriptionPrice` y los dos precios en
-la landing; ServicePeriod y PlanDeliveryLink (hoy el periodo se guarda en `Contract.serviceStartDate/EndDate`);
-el botón "Registrar entrega del plan" en Payment Received, `delivery.service` y sus páginas; los estados
-`scheduled` y `expired`, un pendiente por cliente y el pago tardío (confirmar y regenerar contratos vencidos);
-y `GET /api/cron/daily`.
+**Resultado parte 2 (2026-11-25).** Migración (dos archivos) con `subscriptionPrice`, ServicePeriod, PlanDeliveryLink,
+estados `scheduled` y `expired`, `lastActivityAt` e índice único de un pendiente por cliente; catálogo y seed con el
+precio de suscripción (prueba de −10 %). Reglas de contratación en `contract-request.service` (vencer pendientes,
+suscripción activa, reutilizar / "¿continuar o cambiar?", un mes por adelantado) y `GET /api/contracts/pending`.
+La confirmación de transferencias crea el ServicePeriod y su botón de entrega, acepta pagos tardíos y deja
+`scheduled` los meses pagados por adelantado. Entrega del plan: `GET /plan/entrega/[token]` (solo lectura) y
+`POST /api/plan-delivery/confirm`. `GET /api/cron/daily` con `CRON_SECRET` y `vercel.json`: vencimientos,
+`scheduled → active`, `active → completed`, recordatorios en días hábiles (sin festivos de la LFT) y purga del rate
+limit. La landing y el paso de pago muestran el precio con suscripción. Decisiones en DECISIONS A25. Pruebas
+unitarias (calendario, estados, catálogo, correos, interfaz) y con PostgreSQL (reglas A20, periodos, entrega,
+recordatorios, cron y rutas).
 
 ## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD

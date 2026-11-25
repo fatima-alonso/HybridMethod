@@ -58,7 +58,27 @@ describe.skipIf(!testDatabaseUrl)("esquema y seed con PostgreSQL (SDD §5, RNF-0
     it("rechaza precios no positivos", async () => {
       await expect(
         prisma.program.create({
-          data: { slug: "x", name: "X", description: "", monthlyPrice: new Prisma.Decimal("0") },
+          data: {
+            slug: "x",
+            name: "X",
+            description: "",
+            monthlyPrice: new Prisma.Decimal("0"),
+            subscriptionPrice: new Prisma.Decimal("0"),
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("el precio con suscripción no puede ser mayor que el precio completo (A18)", async () => {
+      await expect(
+        prisma.program.create({
+          data: {
+            slug: "x",
+            name: "X",
+            description: "",
+            monthlyPrice: new Prisma.Decimal("100"),
+            subscriptionPrice: new Prisma.Decimal("101"),
+          },
         }),
       ).rejects.toThrow();
     });

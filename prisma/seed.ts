@@ -13,7 +13,7 @@ async function main() {
     const programs = await syncProgramCatalog(prisma);
     for (const p of programs) {
       console.log(
-        `✔ ${p.slug.padEnd(12)} ${p.monthlyPrice.toFixed(2)} ${p.currency}${p.active ? "" : " (inactivo)"}`,
+        `✔ ${p.slug.padEnd(12)} ${p.monthlyPrice.toFixed(2)} · suscripción ${p.subscriptionPrice.toFixed(2)} ${p.currency}${p.active ? "" : " (inactivo)"}`,
       );
     }
   } finally {

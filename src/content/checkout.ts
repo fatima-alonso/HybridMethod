@@ -11,6 +11,34 @@ export function transferWhatsAppMessage(programName: string, reference: string):
   return `Hola Ferro, acabo de solicitar mi inscripción a ${programName}. Mi referencia es ${reference}. Quería avisarte sobre mi transferencia.`;
 }
 
+/** Respuestas de las reglas de contratación (SDD §7.3, DECISIONS A20). */
+export const CONTRACT_RULE_MESSAGES = {
+  pendingExists: "Encontramos un registro pendiente a tu nombre.",
+  subscriptionActive:
+    "Ya tienes una suscripción activa. Para cambiar de programa, hazlo desde la administración de tu suscripción.",
+  prepaidLimit:
+    "Ya pagaste tu siguiente mes por adelantado. Podrás contratar otro cuando empiece ese mes.",
+  pendingNotTransfer:
+    "Tu registro pendiente es de pago con tarjeta. Para pagarlo por transferencia, elige «Cambiar».",
+} as const;
+
+/** Nombre de cada modalidad para el aviso del pendiente. */
+export const PAYMENT_TYPE_LABELS: Record<string, string> = {
+  transfer: "Transferencia",
+  one_time: "Pago único",
+  subscription: "Suscripción mensual",
+};
+
+/** Paso "¿continuar o cambiar?" cuando el cliente ya tiene un pendiente (DECISIONS A20). */
+export const PENDING_STEP = {
+  title: "Tienes un registro pendiente",
+  found: (summary: string) => `Encontramos un registro pendiente: ${summary}.`,
+  question: (requested: string) => `¿Quieres continuar con él o cambiarlo a ${requested}?`,
+  continue: "Continuar con el pendiente",
+  change: (requested: string) => `Cambiar a ${requested}`,
+  back: "Volver",
+};
+
 export const VERIFY_STEP = {
   title: "Verifica tu correo",
   lead: (email: string) =>
@@ -25,7 +53,7 @@ export const VERIFY_STEP = {
 
 export const PAYMENT_STEP = {
   title: "Elige cómo pagar",
-  lead: "Tu correo está verificado. El precio es el mismo en las tres modalidades.",
+  lead: "Tu correo está verificado. La suscripción mensual tiene 10 % de descuento.",
   submit: "Continuar",
   back: "Cambiar mis datos",
   methods: [

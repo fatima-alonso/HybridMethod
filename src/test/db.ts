@@ -13,7 +13,7 @@ export function createTestPrisma(): PrismaClient {
 export async function truncateAll(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE "audit_logs", "webhook_events", "otp_verifications", "transfer_approvals",
-      "payments", "subscriptions", "contracts", "programs", "customers",
+      "plan_delivery_links", "service_periods", "payments", "subscriptions", "contracts", "programs", "customers",
       "rate_limit_buckets" RESTART IDENTITY CASCADE`,
   );
 }

@@ -3,12 +3,14 @@ import { getResendClient, RESEND_DEV_FROM } from "@/lib/resend";
 
 import {
   paymentReceivedEmail,
+  planDeliveryReminderEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
   welcomeEmail,
   type EmailContent,
   type PaymentReceivedEmailInput,
+  type PlanDeliveryReminderEmailInput,
   type TransferConfirmedEmailInput,
   type TransferPendingEmailInput,
   type WelcomeEmailInput,
@@ -99,4 +101,11 @@ export function sendWelcomeEmail(input: WelcomeEmailInput & { to: string }): Pro
 /** Payment Received (Ferro): pago registrado, incluida una transferencia confirmada (RF-13). */
 export function sendPaymentReceivedEmail(input: PaymentReceivedEmailInput): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...paymentReceivedEmail(input) });
+}
+
+/** Plan Delivery Reminder (Ferro): un correo por cliente con entrega pendiente (DECISIONS A19). */
+export function sendPlanDeliveryReminderEmail(
+  input: PlanDeliveryReminderEmailInput,
+): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...planDeliveryReminderEmail(input) });
 }

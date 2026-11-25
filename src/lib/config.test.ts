@@ -16,6 +16,7 @@ const validProductionEnv = {
   FERRO_APPROVAL_PIN_HASH: "$2b$12$" + "a".repeat(53),
   OTP_SESSION_SECRET: "x".repeat(32),
   TRANSFER_LINK_TTL_DAYS: "7",
+  CRON_SECRET: "c".repeat(32),
 };
 
 function issuesOf(fn: () => unknown): string[] {
@@ -36,6 +37,9 @@ describe("parseConfig en desarrollo", () => {
     expect(config.isProduction).toBe(false);
     expect(config.APP_URL).toBe("http://localhost:3000");
     expect(config.TRANSFER_LINK_TTL_DAYS).toBe(7);
+    expect(config.PENDING_CONTRACT_TTL_DAYS).toBe(7);
+    expect(config.PLAN_DELIVERY_REMINDER_BUSINESS_DAYS).toBe(1);
+    expect(config.CRON_SECRET).toBeUndefined();
     expect(config.RESEND_API_KEY).toBeUndefined();
     expect(config.STRIPE_SECRET_KEY).toBeUndefined();
   });

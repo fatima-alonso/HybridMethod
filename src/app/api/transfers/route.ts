@@ -13,9 +13,15 @@ import {
 } from "@/lib/http";
 import { consumeRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { transferRequestSchema } from "@/lib/validations";
-import { ProgramUnavailableError } from "@/services/errors";
+import {
+  PendingContractExistsError,
+  PendingNotTransferError,
+  PrepaidLimitError,
+  ProgramUnavailableError,
+  SubscriptionActiveError,
+} from "@/services/errors";
 import { requestTransfer } from "@/services/transfer.service";
-import { transferWhatsAppMessage } from "@/content/checkout";
+import { CONTRACT_RULE_MESSAGES, transferWhatsAppMessage } from "@/content/checkout";
 import { buildWhatsAppLink } from "@/utils/whatsapp";
 
 /**
@@ -40,13 +46,13 @@ export async function POST(request: NextRequest) {
     const body = await parseJsonBody(request, transferRequestSchema);
     if (!body.ok) return body.response;
 
-    const { contract, program } = await requestTransfer(
+    const { contract, program, outcome } = await requestTransfer(
       {
         verifiedEmail: session.email,
-        verifiedAt: new Date(session.issuedAt),
         fullName: body.data.fullName,
         whatsapp: body.data.whatsapp,
         programSlug: body.data.program,
+        pendingAction: body.data.pendingAction,
       },
       { ip, userAgent: getUserAgent(request) },
     );
@@ -56,6 +62,7 @@ export async function POST(request: NextRequest) {
       {
         reference: contract.reference,
         status: contract.status,
+        outcome,
         program: { slug: program.slug, name: program.name },
         amount: contract.amount.toFixed(2),
         currency: contract.currency,
@@ -66,11 +73,25 @@ export async function POST(request: NextRequest) {
             )
           : null,
       },
-      201,
+      outcome === "created" ? 201 : 200,
     );
   } catch (error) {
     if (error instanceof ProgramUnavailableError) {
       return jsonError(422, "program_unavailable", "Ese programa no está disponible por ahora.");
+    }
+    if (error instanceof PendingContractExistsError) {
+      return jsonError(409, "pending_contract_exists", CONTRACT_RULE_MESSAGES.pendingExists, {
+        pending: error.pending,
+      });
+    }
+    if (error instanceof SubscriptionActiveError) {
+      return jsonError(409, "subscription_active", CONTRACT_RULE_MESSAGES.subscriptionActive);
+    }
+    if (error instanceof PrepaidLimitError) {
+      return jsonError(409, "prepaid_limit", CONTRACT_RULE_MESSAGES.prepaidLimit);
+    }
+    if (error instanceof PendingNotTransferError) {
+      return jsonError(409, "pending_contract_exists", CONTRACT_RULE_MESSAGES.pendingNotTransfer);
     }
     return unexpectedError("transfers.create", error);
   }

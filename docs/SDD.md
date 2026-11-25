@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.9 |
+| **Versión** | 1.10 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.7 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -17,6 +17,7 @@
 | 1.5 | 2026-11-23 | §4: carpeta `src/content/` para el catálogo de programas y los textos de la landing; §6.4: lectura del número de WhatsApp en la landing prerenderizada (DECISIONS A12). |
 | 1.7 | 2026-11-24 | Fase 3 (DECISIONS A16): §5.3 entidad RateLimitBucket y hash HMAC de los OTP; §7.1 límites concretos y nombre de la cookie; §7.6 body de `POST /api/transfers` (crea o asocia el cliente) y protección ante doble envío; §9.4 rate limit en PostgreSQL. |
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
+| 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
 
@@ -165,6 +166,10 @@ the-hybrid-method/
 │   │   ├── subscription.service.ts
 │   │   ├── transfer.service.ts
 │   │   ├── transfer-approval.service.ts
+│   │   ├── contract-request.service.ts
+│   │   ├── service-period.service.ts
+│   │   ├── delivery.service.ts
+│   │   ├── cron.service.ts
 │   │   ├── delivery.service.ts       # periodos de servicio, entrega del plan y recordatorios
 │   │   ├── verification.service.ts
 │   │   ├── program.service.ts
@@ -621,6 +626,8 @@ El servidor determina el importe a partir del programa guardado y de la modalida
    - Con `change`: actualizar ese contrato (programa, modalidad, importe de la BD), invalidar su enlace de transferencia o expirar su Checkout en Stripe, y escribir `contract.pending_changed` en AuditLog.
 4. Si tiene un mes pagado sin terminar (`scheduled` o `active`, de pago único o transferencia), se permite **un** contrato más por adelantado. Si ya tiene uno, responder `409 prepaid_limit`.
 
+`POST /api/transfers` (y en la Fase 5 `/api/checkout`) responde 201 al crear un contrato y 200 al reutilizar, retomar o cambiar el pendiente, con `outcome` (`created`, `reused`, `continued`, `changed`). Implementado en `contract-request.service` (DECISIONS A25).
+
 **`GET /api/contracts/pending`**: requiere la sesión de verificación. Devuelve el resumen del pendiente del cliente de esa sesión, si existe. Nunca recibe un correo ni una referencia como parámetro.
 
 ### 7.4 Checkout
@@ -765,6 +772,8 @@ No cambia estados, periodos ni cobros, y no envía correos. Si la entrega ya est
 - Persistir `scheduled → active` y `active → completed`.
 - De lunes a viernes: por cada ServicePeriod sin `planDeliveredOn` que tenga `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` días hábiles o más desde `paidAt` (1 por defecto) y no tenga recordatorio hoy, crear un PlanDeliveryLink nuevo, enviar Plan Delivery Reminder con su botón y actualizar `lastReminderAt`.
 - Purgar `rate_limit_buckets`.
+
+Los días hábiles excluyen sábados, domingos y los días de descanso obligatorio de la LFT (art. 74), en `src/utils/business-calendar.ts`. `lastReminderAt` se marca con compare-and-set antes de enviar; si el correo falla, se audita `plan.reminder_failed` y se reintenta el siguiente día hábil. `vercel.json` lo programa a las 14:05 UTC (8:05 en Ciudad de México) (DECISIONS A25).
 
 ---
 

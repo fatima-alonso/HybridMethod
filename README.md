@@ -141,6 +141,19 @@ Si el enlace vence (7 días) o se desactiva tras 5 PIN incorrectos, la misma pá
 nuevo con la referencia del contrato y el PIN. Sin `FERRO_APPROVAL_PIN_HASH`, la confirmación responde
 que no está configurada: no existe un PIN por defecto.
 
+## Entrega del plan y cron diario
+
+Cada pago confirmado abre un mes (ServicePeriod) y el correo "Pago registrado" a Ferro trae el botón
+**Registrar entrega del plan**. La fecha es solo de referencia (DECISIONS A19, A25).
+
+`GET /api/cron/daily` vence pendientes, inicia y termina meses, envía los recordatorios de entrega (días
+hábiles, sin festivos) y purga el rate limit. En Vercel lo llama Vercel Cron (`vercel.json`). En local, con
+`CRON_SECRET` en `.env.local`:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/daily
+```
+
 ## Identidad visual
 
 Definida como tokens de Tailwind en [`src/app/globals.css`](src/app/globals.css):

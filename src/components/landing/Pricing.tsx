@@ -26,12 +26,19 @@ export function Pricing({ programs }: { programs: readonly LandingProgram[] }) {
                 <p className="font-display text-3xl font-bold uppercase">{program.name}</p>
                 <p className="text-bone/70">{program.summary}</p>
               </div>
-              <p className="text-right">
-                <span className="font-display text-3xl font-extrabold sm:text-4xl">
-                  {formatPrice(program.monthlyPrice, program.currency)}
-                </span>{" "}
-                <span className="text-bone/65">{PRICING.perMonth}</span>
-              </p>
+              <div className="text-right">
+                <p>
+                  <span className="font-display text-3xl font-extrabold sm:text-4xl">
+                    {formatPrice(program.monthlyPrice, program.currency)}
+                  </span>{" "}
+                  <span className="text-bone/65">{PRICING.perMonth}</span>
+                </p>
+                <p className="text-sm font-semibold text-volt">
+                  {PRICING.withSubscription(
+                    formatPrice(program.subscriptionPrice, program.currency),
+                  )}
+                </p>
+              </div>
               <Link
                 href={applicationHref(program.slug)}
                 aria-label={`${PRICING.cta} ${program.name}`}

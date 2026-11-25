@@ -86,6 +86,8 @@ export const RATE_LIMITS = {
   transferConfirmIp: { scope: "transfer-confirm:ip", limit: 20, windowMs: 15 * 60 * 1000 },
   /** Regenerar un enlace: por IP y en total, porque no hay un enlace que cuente los PIN. */
   transferRegenerateIp: { scope: "transfer-regenerate:ip", limit: 10, windowMs: 60 * 60 * 1000 },
+  /** Registrar la entrega del plan: por IP (SDD §7.8). */
+  planDeliveryIp: { scope: "plan-delivery:ip", limit: 30, windowMs: 15 * 60 * 1000 },
   transferRegenerateGlobal: {
     scope: "transfer-regenerate:global",
     limit: 30,
