@@ -449,6 +449,18 @@ auditoría (`transfer.notification_failed`) y nunca revierte el pago.
 (`recordSucceededPayment`, que reutilizará la Fase 5). `activateContract` acepta `from` para exigir el
 estado de origen (`pending_payment` en las transferencias).
 
+### A24. About Me y logo del header (contenido de la marca, 2026-11-25)
+- **About Me** con el texto de Ferro (`ABOUT` en `src/content/landing.ts`). Por decisión de la marca, el
+  kicker ("Experience beyond the trend."), la firma ("Founder & Head Coach") y los títulos de los cuatro
+  indicadores de autoridad van en inglés, como el hero (A13). El resto del texto sigue en español.
+- **Indicadores de autoridad** debajo de la fotografía: 15+ Years of Experience, 2 Training Studios,
+  100% Individualized Approach y 360° Athletic Development, cada uno con su descripción. En celular van en
+  dos columnas y en escritorio en cuatro. Reemplazan las cifras de relleno.
+- **Logo del header**: nueva versión horizontal (H blanca y M naranja, "BY FERRO FITS" entre líneas). El
+  original está en `docs/brand/logo-original-horizontal-v2.jpg`; `public/logos/hm-logo-horizontal-v2.png` se
+  generó con fondo transparente (el negro del JPG se convierte en transparencia conservando el antialias).
+  Está pensado para fondo oscuro. El logo apilado del footer no cambia.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |

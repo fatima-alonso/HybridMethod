@@ -38,19 +38,42 @@ export const HERO = {
   imageLabel: "Foto principal: atleta entrenando fuerza y running",
 };
 
+/**
+ * About Me: texto de Ferro (2026-11-25). El kicker y los indicadores de autoridad van en inglés por
+ * decisión de la marca (DECISIONS A24), como el hero (A13).
+ */
 export const ABOUT = {
   title: "About Me",
-  // PLACEHOLDER: biografía de Ferro pendiente. Reemplazar con su historia, experiencia y logros.
-  placeholder: true,
-  kicker: "Hola, soy Ferro",
+  kicker: "Experience beyond the trend.",
   paragraphs: [
-    "[Texto de relleno] Entrenador especializado en fuerza, running y rendimiento híbrido.",
+    "Soy Ferro, dueño de Bunker Studio, gimnasio boutique de Functional Bodybuilding, y Momentum Wellness, especializado en HYROX y Barre. Cuento con más de 15 años de experiencia en la industria del fitness y la programación de entrenamiento.",
+    "El entrenamiento híbrido no es nuevo; HYROX y el running simplemente han impulsado su popularidad.",
+    "The Hybrid Method integra fuerza, resistencia y rendimiento deportivo mediante programaciones personalizadas, fundamentadas en la ciencia del ejercicio y la periodización.",
   ],
-  // PLACEHOLDER: cifras de ejemplo, reemplazar por datos reales o eliminar.
+  closing: "Una metodología que nace de la experiencia, no de una tendencia.",
+  signature: { name: "Ferro", role: "Founder & Head Coach" },
+  /** Indicadores de autoridad, debajo de la fotografía. */
   stats: [
-    { value: "+X", label: "años entrenando" },
-    { value: "2", label: "estudios" },
-    { value: "X", label: "carreras / competencias" },
+    {
+      value: "15+",
+      label: "Years of Experience",
+      detail: "Experiencia en la industria del fitness.",
+    },
+    {
+      value: "2",
+      label: "Training Studios",
+      detail: "Founder of Bunker · Partner at Momentum.",
+    },
+    {
+      value: "100%",
+      label: "Individualized Approach",
+      detail: "Programación adaptada a cada atleta.",
+    },
+    {
+      value: "360°",
+      label: "Athletic Development",
+      detail: "Strength · Endurance · Performance.",
+    },
   ],
   imageLabel: "Retrato de Ferro",
 };

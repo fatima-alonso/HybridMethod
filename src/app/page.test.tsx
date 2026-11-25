@@ -56,6 +56,26 @@ describe("Landing (RF-01, RF-02, RF-03, SRS §4.2)", () => {
     }
   });
 
+  it("About Me muestra el texto de Ferro y los cuatro indicadores de autoridad", async () => {
+    render(await Home());
+    const about = document.getElementById(SECTION_IDS.about)!;
+    expect(about.textContent).toContain("Experience beyond the trend.");
+    expect(about.textContent).toContain("Founder & Head Coach");
+    expect(about.textContent).not.toContain("[Texto de relleno]");
+    const terms = within(about)
+      .getAllByRole("term")
+      .map((dt) => dt.textContent);
+    expect(terms).toEqual([
+      "Years of Experience",
+      "Training Studios",
+      "Individualized Approach",
+      "Athletic Development",
+    ]);
+    for (const value of ["15+", "2", "100%", "360°"]) {
+      expect(within(about).getByText(value).tagName).toBe("DD");
+    }
+  });
+
   it("tiene un solo h1", async () => {
     render(await Home());
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);

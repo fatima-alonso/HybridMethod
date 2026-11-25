@@ -48,7 +48,7 @@ API de WhatsApp (solo enlaces `wa.me`), reembolsos automáticos, panel admin en 
 Negro `#111111` (70%) · Off-white `#F5F3EE` (20%) · Volt Orange `#FF6A00` (10%).
 Estilo premium, deportivo y editorial; sans-serif con encabezados fuertes y condensados.
 Mobile-first. Textos de la interfaz en español salvo los nombres de sección definidos en el SRS 4.2
-y el titular y subtítulo del hero (DECISIONS A13).
+el titular y subtítulo del hero (DECISIONS A13) y los textos de marca de About Me (DECISIONS A24).
 
 ## Forma de trabajar
 - Trabaja una fase de `docs/PLAN.md` a la vez; al terminar, marca su estado en el plan.
