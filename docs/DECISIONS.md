@@ -568,7 +568,8 @@ responde 200 (reintentarlo no ayudaría). Los eventos que no son de A6 se marcan
 significa "servicio suspendido", que no aplica a un contrato que nunca se activó. Se implementó así: se registra el
 Payment `failed`, el contrato **sigue `pending_payment`** (vence a los 7 días como cualquier pendiente), se suelta su
 sesión para que el siguiente intento abra otra, se audita `stripe.async_payment_failed` y el cliente recibe "Tu pago
-no se completó" con un botón para intentarlo de nuevo. Pendiente de confirmar (B15).
+no se completó" con un botón para intentarlo de nuevo. Confirmado el 2026-11-25 (B15): no se usa `payment_failed`
+para contratos que nunca se activaron; ese estado queda solo para suscripciones con un cobro vencido.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
@@ -588,4 +589,4 @@ no se completó" con un botón para intentarlo de nuevo. Pendiente de confirmar 
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador en A22; faltan los datos del responsable y la revisión legal |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
-| 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` (SDD §7.5) o sigue pendiente? | — | Pendiente de confirmar. Hoy sigue `pending_payment` y el cliente puede reintentar (A26): §5.3 no permite `pending_payment → payment_failed`. Cambiarlo es agregar esa transición y usarla en `failAsyncCheckout` |
+| 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` o sigue pendiente? | — | Resuelto en A26 (2026-11-25): sigue `pending_payment`, el cliente recibe un aviso y puede reintentar con la misma referencia; vence a los 7 días sin actividad |

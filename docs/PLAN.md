@@ -146,7 +146,7 @@ Price contra Stripe antes de crear el contrato, aplica las reglas de A20, reutil
 anterior al cambiar el pendiente y crea el cliente de Stripe una sola vez. `POST /api/webhooks/stripe`: firma con el
 body crudo, WebhookEvent con bloqueo de fila (entregas repetidas o simultáneas sin efectos, reintento tras un error),
 Payment + ServicePeriod + botón de entrega + contrato `active`/`scheduled` (pago tardío incluido), cobro adicional
-con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15). Correos Purchase Confirmation, Welcome y
+con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15 resuelta). Correos Purchase Confirmation, Welcome y
 Payment Received (compartidos con la transferencia). Páginas `/pago/exito` y `/pago/cancelado` que solo informan.
 En la landing se habilita "Pago único con tarjeta". Decisiones en DECISIONS A26. Pruebas: unitarias (importes en
 centavos, Prices, plantillas, interfaz) y con PostgreSQL + un Stripe en memoria + firmas reales del SDK (checkout,
