@@ -19,12 +19,12 @@
     "db:studio": "prisma studio",
     "test:db": "vitest run --project db",
     "hash-pin": "tsx scripts/hash-pin.ts",
-    "stripe:sync": "tsx scripts/stripe-sync.ts"
+    "stripe:sync": "tsx scripts/stripe-sync.ts",
+    "stripe:listen": "tsx scripts/stripe-listen.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "@stripe/react-stripe-js": "7.0.1",
     "@stripe/stripe-js": "10.2.1",
     "bcryptjs": "^3.0.3",
     "libphonenumber-js": "1.13.15",

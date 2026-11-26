@@ -82,6 +82,8 @@ export type TransferCreated = {
 export type CheckoutCreated = {
   clientSecret: string;
   publishableKey: string;
+  /** Página de "¡Gracias!" a la que lleva el formulario al terminar de pagar. */
+  returnUrl: string;
   reference: string;
   status: string;
   outcome: string;

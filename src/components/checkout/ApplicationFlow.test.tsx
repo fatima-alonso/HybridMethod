@@ -7,21 +7,39 @@ import { getPhoneCountryOptions } from "@/lib/phone";
 
 import { ApplicationFlow } from "./ApplicationFlow";
 
-// Stripe.js carga un script de js.stripe.com: en las pruebas se sustituye el formulario incrustado.
-const stripeMounts: Array<{ clientSecret?: string | null }> = [];
-vi.mock("@stripe/stripe-js", () => ({ loadStripe: vi.fn(async () => null) }));
-vi.mock("@stripe/react-stripe-js", () => ({
-  EmbeddedCheckoutProvider: ({
-    options,
-    children,
-  }: {
-    options: { clientSecret?: string | null };
-    children: React.ReactNode;
-  }) => {
-    stripeMounts.push(options);
-    return <div data-testid="embedded-provider">{children}</div>;
-  },
-  EmbeddedCheckout: () => <div>Formulario de Stripe</div>,
+// Stripe.js carga un script de js.stripe.com: en las pruebas se sustituye por un Stripe.js falso
+// que monta un formulario de mentira y deja disparar su evento "confirm".
+type Handler = (event: unknown) => unknown;
+const stripeJs = vi.hoisted(() => ({
+  sdkOptions: [] as Array<Record<string, unknown>>,
+  handlers: {} as Record<string, Handler>,
+  confirm: vi.fn(),
+  destroyed: 0,
+}));
+vi.mock("@stripe/stripe-js", () => ({
+  loadStripe: vi.fn(async () => ({
+    initCheckoutFormSdk: (options: Record<string, unknown>) => {
+      stripeJs.sdkOptions.push(options);
+      return {
+        createForm: () => ({
+          on: (name: string, handler: Handler) => {
+            stripeJs.handlers[name] = handler;
+          },
+          mount: (container: HTMLElement) => {
+            container.textContent = "Formulario de Stripe";
+            stripeJs.handlers.ready?.({ elementType: "checkoutForm" });
+          },
+          destroy: () => {
+            stripeJs.destroyed += 1;
+          },
+        }),
+        loadActions: async () => ({
+          type: "success",
+          actions: { confirm: stripeJs.confirm },
+        }),
+      };
+    },
+  })),
 }));
 
 const COUNTRIES = getPhoneCountryOptions();
@@ -78,6 +96,7 @@ function checkoutCreated(overrides: Record<string, unknown> = {}) {
     success: true,
     clientSecret: "cs_test_1_secret_x",
     publishableKey: "pk_test_123",
+    returnUrl: "http://localhost:3000/pago/exito",
     reference: "HM-2026-000050",
     status: "pending_payment",
     outcome: "created",
@@ -199,16 +218,34 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     );
   });
 
-  it("pago único: pide el Checkout al servidor y muestra el formulario de Stripe (DECISIONS A27)", async () => {
-    stripeMounts.length = 0;
+  it("pago único: pide el Checkout al servidor y monta el formulario de Stripe (DECISIONS A29)", async () => {
+    stripeJs.sdkOptions.length = 0;
+    stripeJs.confirm
+      .mockReset()
+      .mockResolvedValue({ type: "error", error: { message: "Tu tarjeta fue rechazada." } });
     await reachPaymentStep();
     reply("/api/checkout", 201, checkoutCreated());
     fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     await screen.findByRole("heading", { name: "Paga con tarjeta" });
-    expect(screen.getByText("Formulario de Stripe")).toBeTruthy();
+    await screen.findByText("Formulario de Stripe");
     expect(screen.getByText("HM-2026-000050")).toBeTruthy();
-    expect(stripeMounts.at(-1)).toEqual({ clientSecret: "cs_test_1_secret_x" });
+    // Tema oscuro con los colores de la marca.
+    expect(stripeJs.sdkOptions.at(-1)).toMatchObject({
+      clientSecret: "cs_test_1_secret_x",
+      appearance: { theme: "night", variables: { colorPrimary: "#FF6A00" } },
+    });
+
+    // Al pagar se confirma con la página de "¡Gracias!"; si Stripe rechaza, se muestra el motivo.
+    const event = { source: "checkout-form-pay-button", paymentMethodType: "card" };
+    await act(async () => {
+      await stripeJs.handlers.confirm?.(event);
+    });
+    expect(stripeJs.confirm).toHaveBeenCalledWith({
+      formConfirmEvent: event,
+      returnUrl: "http://localhost:3000/pago/exito",
+    });
+    expect(await screen.findByText("Tu tarjeta fue rechazada.")).toBeTruthy();
 
     // Solo programa y modalidad: el importe y el Price los decide el servidor (SDD §9.2).
     expect(calls.at(-1)).toEqual({

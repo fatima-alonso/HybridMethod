@@ -3,6 +3,8 @@ import Stripe from "stripe";
 import { Prisma } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 
+export { isLiveKey, STRIPE_WEBHOOK_EVENTS } from "./stripe-constants";
+
 /**
  * Cliente de Stripe (SDD §6.1, §9.2). Solo para código de servidor.
  *
@@ -35,11 +37,6 @@ export function getStripe(): Stripe | null {
 
 /** Verificación de firmas de webhooks (no necesita la clave secreta). */
 export const stripeWebhooks = Stripe.webhooks;
-
-/** `true` si la clave es de modo live (`sk_live_…` o `rk_live_…`). */
-export function isLiveKey(key: string): boolean {
-  return /^(sk|rk)_live_/.test(key);
-}
 
 /**
  * Importe decimal → unidades mínimas de Stripe (centavos). Exacto: `Decimal`, nunca `float`.

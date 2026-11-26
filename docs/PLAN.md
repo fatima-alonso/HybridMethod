@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.8 y SDD v1.13 (ya incluyen las decisiones A1–A12 y A14–A28). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.8 y SDD v1.15 (ya incluyen las decisiones A1–A12 y A14–A30). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -149,7 +149,8 @@ Payment + ServicePeriod + botón de entrega + contrato `active`/`scheduled` (pag
 con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15 resuelta). Correos Purchase Confirmation, Welcome y
 Payment Received (compartidos con la transferencia). El formulario de pago de Stripe va incrustado en la landing
 (Embedded Checkout) y regresa a `/pago/exito`, que solo informa. Por decisión de Ferro se cobra mes con mes: con un mes
-vigente no se puede contratar otro (`409 active_period`). Decisiones en DECISIONS A26, A27 y A28. Pruebas: unitarias (importes en
+vigente no se puede contratar otro (`409 active_period`). Después del PR se cambió al formulario de Checkout Studio
+(`ui_mode: form`, tema oscuro, sin pedir el nombre, tarjeta guardada en Stripe). Decisiones en DECISIONS A26–A29. Pruebas: unitarias (importes en
 centavos, Prices, plantillas, interfaz) y con PostgreSQL + un Stripe en memoria + firmas reales del SDK (checkout,
 reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncrono, pago tardío, mes vigente, error y
 reintento). La prueba con la Stripe CLI contra la cuenta de prueba queda documentada en el README (necesita las

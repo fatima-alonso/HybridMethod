@@ -50,21 +50,23 @@ export async function POST(request: NextRequest) {
     const body = await parseJsonBody(request, checkoutRequestSchema);
     if (!body.ok) return body.response;
 
-    const { contract, program, outcome, clientSecret, publishableKey } = await requestCheckout(
-      {
-        verifiedEmail: session.email,
-        fullName: body.data.fullName,
-        whatsapp: body.data.whatsapp,
-        programSlug: body.data.program,
-        pendingAction: body.data.pendingAction,
-      },
-      { ip, userAgent: getUserAgent(request) },
-    );
+    const { contract, program, outcome, clientSecret, publishableKey, returnUrl } =
+      await requestCheckout(
+        {
+          verifiedEmail: session.email,
+          fullName: body.data.fullName,
+          whatsapp: body.data.whatsapp,
+          programSlug: body.data.program,
+          pendingAction: body.data.pendingAction,
+        },
+        { ip, userAgent: getUserAgent(request) },
+      );
 
     return jsonOk(
       {
         clientSecret,
         publishableKey,
+        returnUrl,
         reference: contract.reference,
         status: contract.status,
         outcome,

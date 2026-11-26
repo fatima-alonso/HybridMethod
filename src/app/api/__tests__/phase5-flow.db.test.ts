@@ -216,6 +216,7 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       });
       expect(body.clientSecret).toMatch(/_secret_test$/);
       expect(body.publishableKey).toBe("pk_test_phase5");
+      expect(body.returnUrl).toBe("http://localhost:3000/pago/exito");
 
       const contract = await prisma.contract.findUniqueOrThrow({
         where: { reference: body.reference },
@@ -228,9 +229,13 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
         line_items: [{ price: contract.program.stripePriceIdOneTime, quantity: 1 }],
         client_reference_id: contract.id,
         metadata: { contractId: contract.id, reference: contract.reference },
-        ui_mode: "embedded_page",
-        return_url: "http://localhost:3000/pago/exito",
+        ui_mode: "form",
+        integration_identifier: "custom_embedded_web_0002",
+        billing_address_collection: "auto",
+        saved_payment_method_options: { payment_method_save: "enabled" },
       });
+      // El nombre ya está en el registro: el formulario de pago no lo vuelve a pedir.
+      expect(session.params).not.toHaveProperty("name_collection");
       expect(session.amount_total).toBe(150000);
       // El cliente de Stripe se crea una vez y se guarda.
       expect(contract.customer.stripeCustomerId).toBe(session.customer);
@@ -246,6 +251,15 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       expect(body.clientSecret).toBe(first.body.clientSecret);
       expect(fake.calls.sessionCreate).toBe(1);
       expect(fake.calls.customerCreate).toBe(1);
+    });
+
+    it("no reutiliza una sesión abierta del formulario anterior (embedded_page)", async () => {
+      const first = await openCheckout();
+      fake.sessions.get(first.sessionId)!.ui_mode = "embedded_page";
+      const again = await (await checkout()).json();
+      expect(again.reference).toBe(first.body.reference);
+      expect(again.clientSecret).not.toBe(first.body.clientSecret);
+      expect(fake.sessions.get(first.sessionId)?.status).toBe("expired");
     });
 
     it("si la sesión anterior venció, abre otra con la misma referencia", async () => {

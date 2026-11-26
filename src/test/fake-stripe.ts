@@ -15,6 +15,7 @@ type FakeSession = {
   id: string;
   object: "checkout.session";
   mode: Stripe.Checkout.Session.Mode;
+  ui_mode: string;
   status: Stripe.Checkout.Session.Status;
   payment_status: Stripe.Checkout.Session.PaymentStatus;
   url: string | null;
@@ -112,11 +113,11 @@ export class FakeStripe {
           id,
           object: "checkout.session",
           mode: params.mode!,
+          ui_mode: params.ui_mode ?? "hosted_page",
           status: "open",
           payment_status: "unpaid",
-          url:
-            params.ui_mode === "embedded_page" ? null : `https://checkout.stripe.test/c/pay/${id}`,
-          client_secret: params.ui_mode === "embedded_page" ? `${id}_secret_test` : null,
+          url: params.ui_mode === "form" ? null : `https://checkout.stripe.test/c/pay/${id}`,
+          client_secret: params.ui_mode === "form" ? `${id}_secret_test` : null,
           customer: (params.customer as string | undefined) ?? null,
           client_reference_id: params.client_reference_id ?? null,
           metadata: { ...(params.metadata as Record<string, string>) },

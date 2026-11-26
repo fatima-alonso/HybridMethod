@@ -9,7 +9,7 @@ import type {
 } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { fromMinorUnits, normalizeCurrency } from "@/lib/stripe";
+import { fromMinorUnits, normalizeCurrency, STRIPE_WEBHOOK_EVENTS } from "@/lib/stripe";
 import { applicationHref } from "@/content/landing";
 import { formatPrice } from "@/utils/format";
 
@@ -56,11 +56,7 @@ type Handled = {
   after?: (db: Db) => Promise<void>;
 };
 
-export const HANDLED_EVENT_TYPES = [
-  "checkout.session.completed",
-  "checkout.session.async_payment_succeeded",
-  "checkout.session.async_payment_failed",
-] as const;
+export const HANDLED_EVENT_TYPES = STRIPE_WEBHOOK_EVENTS;
 
 /** Estados en que un contrato todavía se puede pagar (pago tardío incluido, DECISIONS A20). */
 const UNPAID: readonly ContractStatus[] = ["pending_payment", "expired"];
