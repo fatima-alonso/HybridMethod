@@ -639,6 +639,63 @@ orden correcto. Para evitarlo:
 - En desarrollo `getConfig()` ya no guarda la configuración en memoria: `next dev` recarga `.env.local` solo y el
   secreto nuevo aplica sin reiniciar. En producción y pruebas se sigue guardando.
 
+### A31. Fase 6: suscripciones y renovaciones (2026-11-26)
+Puntos que el SDD no definía y que se resolvieron así al implementar la suscripción mensual. Todos son reversibles.
+
+**Checkout en modo `subscription`.** `POST /api/checkout` acepta `mode: "subscription"`: contrato `subscription` por
+`subscriptionPrice`, Price `recurring` comprobado contra Stripe (mensual, MXN, del programa, por el importe de la BD) y las
+mismas reglas de contratación de A20/A25/A28. La sesión usa el mismo formulario incrustado (A29) y pone
+`metadata.contractId` también en la suscripción (`subscription_data.metadata`): Stripe la copia a cada factura, así que
+`invoice.paid` encuentra el contrato aunque llegue antes que `checkout.session.completed`. No lleva
+`payment_intent_data` ni `saved_payment_method_options` (son del modo `payment`): la tarjeta queda en la suscripción, en
+Stripe. Una sesión abierta se reutiliza solo si es del mismo modo y Price. La respuesta incluye `mode`, y el paso de
+pago dice "Suscríbete con tarjeta", "$1,080 MXN / mes" y que el siguiente cobro es en la misma fecha cada mes.
+
+**Estado de la suscripción leído de Stripe.** Cada evento de suscripción (`checkout.session.completed` en modo
+subscription, `customer.subscription.*`, `invoice.*`) bloquea el contrato y **vuelve a leer la suscripción en Stripe**
+(`subscriptions.retrieve`) para copiar su estado, periodo, `cancelAtPeriodEnd` (también con `cancel_at`) y programa. Así
+una entrega repetida o fuera de orden (p. ej. `created` con `incomplete` después de `updated` con `active`, que pueden
+llevar el mismo segundo) nunca deja un estado viejo. Si Stripe no responde, el evento falla con 500 y Stripe lo
+reintenta. Estados de Stripe sin equivalente: `trialing` → `active`; `paused` → `unpaid`; `incomplete_expired` →
+`canceled`.
+
+**`invoice.paid` (única fuente de pagos).**
+- El periodo del mes es el de la **línea** de la suscripción en la factura (el encabezado de la factura de alta trae
+  inicio = fin). El programa del mes es el del Price cobrado (o el de su Product, que tiene el slug como id, si el Price
+  ya se archivó con `stripe:sync`).
+- Primer pago (`pending_payment` o `expired`): Payment `stripe_subscription` con factura, Payment Intent y suscripción,
+  ServicePeriod + botón de entrega y contrato `active` con el periodo de la factura. Si el contrato estaba vencido se
+  audita `contract.paid_after_expiry`. Si mientras pagaba el cliente cambió el pendiente a otra modalidad, el pago real
+  manda: el contrato vuelve a ser de suscripción, se invalida el enlace de transferencia y se audita
+  `stripe.payment_type_changed`. A diferencia del pago único, el mes **no** se recorre si el cliente tiene otro mes
+  vigente: en la suscripción el periodo lo decide Stripe (A19).
+- Renovación (`active`): Payment y ServicePeriod nuevos (secuencia 2, 3, …) y el contrato toma el periodo nuevo (si la
+  factura es de un periodo anterior, no lo retrocede). Desde `payment_failed`, vuelve a `active`. Correos: al cliente,
+  "Tu suscripción se renovó" (RF-08 pide correos de renovación al cliente; Stripe además manda su recibo) y a Ferro,
+  Renewal Successful con los datos y su botón de entrega. Los recordatorios de entrega funcionan igual para cada mes.
+- Importe 0: no abre un mes. Importe distinto del `subscriptionPrice` del programa cobrado: se respeta y se audita.
+- Una segunda suscripción del mismo contrato (dos pestañas pagadas) no se guarda (Subscription es 1:1 con el contrato):
+  su cobro se registra sin abrir un mes y Ferro recibe "Revisa un pago adicional" con el ID de la suscripción duplicada
+  para cancelarla en Stripe. Un cobro para un contrato `cancelled` se trata igual.
+
+**`invoice.payment_failed`.** Cada intento fallido es un Payment `failed` (RF-18). Por eso la unicidad de
+`stripeInvoiceId` y `stripePaymentIntentId` aplica **solo a los pagos `succeeded`** (índices únicos parciales): Smart
+Retries reintenta la misma factura con el mismo Payment Intent. En una renovación de un contrato `active`, el primer
+fallo lo pasa a `payment_failed` (servicio suspendido, RN-14) y avisa una vez al cliente (con el enlace de Stripe para
+pagar la factura con otra tarjeta) y a Ferro; los reintentos siguientes solo se registran y auditan. Un aviso de fallo
+que llega después de que la factura ya se pagó no suspende nada. Si falla el **primer** pago, el contrato sigue
+pendiente (como en B15) y no se manda correo: el formulario de Stripe ya muestra el error. Si Stripe da la suscripción
+por terminada (`incomplete_expired`), se suelta la sesión del contrato para que el cliente pueda reintentar.
+
+**Cancelación.** Cuando Stripe cancela la suscripción (al agotarse Smart Retries, configurado en el Dashboard, o al
+final del periodo desde el portal), el contrato `active` o `payment_failed` pasa a `cancelled` y se audita
+`subscription.cancelled`, sin recortar el periodo pagado. Los correos Subscription Cancelled y el portal son de la
+Fase 7.
+
+**Pruebas.** Sin claves de Stripe aquí, las renovaciones, fallos y cancelaciones se prueban con un Stripe en memoria
+que funciona como test clock (crea la suscripción, factura mes a mes, reintenta y cancela) y con firmas reales del SDK.
+La prueba con test clocks reales en la cuenta de prueba queda documentada en el README.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |

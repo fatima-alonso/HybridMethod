@@ -116,13 +116,15 @@ export const transferRequestSchema = applicationSchema.omit({ email: true }).ext
 export type TransferRequestBody = z.input<typeof transferRequestSchema>;
 
 /**
- * `POST /api/checkout` (Fase 5, DECISIONS A26): lo mismo que una transferencia más `mode`. El
- * Price y el importe los decide el servidor con el programa de la BD (SDD §9.2). Por ahora solo
- * `payment` (pago único); `subscription` llega en la Fase 6.
+ * `POST /api/checkout` (DECISIONS A26, A31): lo mismo que una transferencia más `mode`:
+ * `payment` (pago único, Fase 5) o `subscription` (suscripción mensual, Fase 6). El Price y el
+ * importe los decide el servidor con el programa de la BD (SDD §9.2).
  */
 export const checkoutRequestSchema = transferRequestSchema.extend({
-  mode: z.enum(["payment"], { error: "Modalidad de pago no disponible." }),
+  mode: z.enum(["payment", "subscription"], { error: "Modalidad de pago no disponible." }),
 });
+
+export type CheckoutMode = z.infer<typeof checkoutRequestSchema>["mode"];
 
 export type CheckoutRequestBody = z.input<typeof checkoutRequestSchema>;
 

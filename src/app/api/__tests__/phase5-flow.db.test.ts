@@ -320,9 +320,9 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       expect(await prisma.contract.count({ where: { status: "pending_payment" } })).toBe(1);
     });
 
-    it("rechaza la suscripción (Fase 6) y modalidades desconocidas", async () => {
-      expect((await checkout("hm-run", { mode: "subscription" })).status).toBe(400);
+    it("rechaza modalidades desconocidas", async () => {
       expect((await checkout("hm-run", { mode: "gratis" })).status).toBe(400);
+      expect((await checkout("hm-run", { mode: "setup" })).status).toBe(400);
     });
 
     it("con un pendiente por transferencia pregunta, y al cambiarlo invalida el enlace de Ferro", async () => {
@@ -623,16 +623,26 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       const { contract, sessionId } = await openCheckout();
       const event = stripeEvent("checkout.session.completed", paid(sessionId));
 
-      // Un Payment con el mismo Payment Intent en otro estado provoca un error de UNIQUE.
-      const intent = fake.sessions.get(sessionId)!.payment_intent!;
-      const blocker = await prisma.payment.create({
+      // Un mes con el número de secuencia que le tocaría al pago provoca un error de UNIQUE.
+      const other = await prisma.payment.create({
         data: {
           contractId: contract.id,
           method: "stripe_one_time",
-          stripePaymentIntentId: intent,
           amount: "1200.00",
           currency: "MXN",
-          status: "pending",
+          status: "failed",
+        },
+      });
+      const blocker = await prisma.servicePeriod.create({
+        data: {
+          contractId: contract.id,
+          paymentId: other.id,
+          programId: contract.programId,
+          // Con un mes ya registrado, al pago le toca el 2: choca con este.
+          sequence: 2,
+          paidAt: new Date(),
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 86_400_000),
         },
       });
       const failed = await webhook(event);
@@ -642,26 +652,14 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
         "pending_payment",
       );
 
-      await prisma.payment.delete({ where: { id: blocker.id } });
+      await prisma.servicePeriod.delete({ where: { id: blocker.id } });
+      await prisma.payment.delete({ where: { id: other.id } });
       const retried = await webhook(event);
       expect(retried.status).toBe(200);
       expect((await prisma.contract.findUniqueOrThrow({ where: { id: contract.id } })).status).toBe(
         "active",
       );
       expect(await prisma.webhookEvent.findFirst()).toMatchObject({ status: "processed" });
-    });
-
-    it("una suscripción (Fase 6) se ignora por ahora", async () => {
-      const res = await webhook(
-        stripeEvent("checkout.session.completed", {
-          id: "cs_test_sub",
-          object: "checkout.session",
-          mode: "subscription",
-          payment_status: "paid",
-          metadata: {},
-        }),
-      );
-      expect(await res.json()).toMatchObject({ status: "ignored" });
     });
   });
 });

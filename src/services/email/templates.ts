@@ -233,8 +233,11 @@ export type PaymentReceivedEmailInput = {
 
 const DELIVERY_BUTTON = "Registrar entrega del plan";
 
-export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailContent {
-  const subject = `Pago registrado · ${input.reference} · ${input.customerName}`;
+/** Correo de Ferro con los datos del cliente y del pago, y el botón de entrega (A19). */
+function paidWithDeliveryButton(
+  input: Omit<PaymentReceivedEmailInput, "prepaid">,
+  copy: { subject: string; title: string; lead: string },
+): EmailContent {
   const details = [
     ["Cliente", input.customerName],
     ["Correo", input.customerEmail],
@@ -246,27 +249,179 @@ export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailCon
     ["Fecha de pago", input.paidAt],
     ["Periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
-  const lead = input.prepaid
-    ? `El contrato quedó pagado por adelantado. Este cliente ya tiene un mes pagado hasta el ${input.prepaid.from}, así que este pago cubre del ${input.prepaid.from} al ${input.prepaid.to}. Ya recibió su confirmación y el correo de bienvenida.`
-    : "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.";
   const html = layout(
-    subject,
-    `<h1 style="margin:0 0 12px;font-size:22px;">Pago registrado</h1>
-<p style="margin:0;">${escapeHtml(lead)}</p>
+    copy.subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">${escapeHtml(copy.title)}</h1>
+<p style="margin:0;">${escapeHtml(copy.lead)}</p>
 ${rows(details)}
 <p style="margin:0;">Cuando le entregues el plan, regístralo aquí (puedes cambiar la fecha si lo registras después):</p>
 ${button(input.deliveryUrl, DELIVERY_BUTTON)}
 <p style="margin:0;color:${COLORS.muted};font-size:14px;">Mientras no registres la entrega, te llegará un recordatorio cada día hábil con un botón nuevo.</p>`,
   );
   const text = [
-    "Pago registrado",
+    copy.title,
     "",
-    lead,
+    copy.lead,
     "",
     ...details.map(([label, value]) => `${label}: ${value}`),
     "",
     `${DELIVERY_BUTTON}:`,
     input.deliveryUrl,
+  ].join("\n");
+  return { subject: copy.subject, html, text };
+}
+
+export function paymentReceivedEmail(input: PaymentReceivedEmailInput): EmailContent {
+  const lead = input.prepaid
+    ? `El contrato quedó pagado por adelantado. Este cliente ya tiene un mes pagado hasta el ${input.prepaid.from}, así que este pago cubre del ${input.prepaid.from} al ${input.prepaid.to}. Ya recibió su confirmación y el correo de bienvenida.`
+    : "El contrato quedó activo y el cliente recibió su confirmación y el correo de bienvenida.";
+  return paidWithDeliveryButton(input, {
+    subject: `Pago registrado · ${input.reference} · ${input.customerName}`,
+    title: "Pago registrado",
+    lead,
+  });
+}
+
+// ─── Renewal Successful (Ferro) ─────────────────────────────────────────────
+
+export type RenewalSuccessfulEmailInput = Omit<PaymentReceivedEmailInput, "prepaid"> & {
+  /** Número de mes de la suscripción (2, 3, …). */
+  monthNumber: number;
+};
+
+/** Renovación cobrada por Stripe (RF-08, RF-17): los mismos datos y su propio botón de entrega. */
+export function renewalSuccessfulEmail(input: RenewalSuccessfulEmailInput): EmailContent {
+  return paidWithDeliveryButton(input, {
+    subject: `Renovación registrada · ${input.reference} · ${input.customerName}`,
+    title: "Renovación registrada",
+    lead: `La suscripción se renovó: es el mes ${input.monthNumber} de este cliente. Su servicio sigue activo y ya recibió la confirmación de su renovación.`,
+  });
+}
+
+// ─── Subscription Renewed (cliente) ─────────────────────────────────────────
+
+export type SubscriptionRenewedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Importe ya formateado. */
+  amount: string;
+  /** Fechas ya formateadas. */
+  serviceStart: string;
+  serviceEnd: string;
+};
+
+/** El cliente recibe la confirmación de cada renovación (RF-08). */
+export function subscriptionRenewedEmail(input: SubscriptionRenewedEmailInput): EmailContent {
+  const subject = `Tu suscripción se renovó · ${input.reference}`;
+  const details = [
+    ["Referencia", input.reference],
+    ["Programa", input.programName],
+    ["Importe", input.amount],
+    ["Método", "Suscripción mensual con tarjeta"],
+    ["Nuevo periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
+  ] as const;
+  const lead = `Hola ${input.customerName}, cobramos tu mes de ${input.programName}. Tu plan sigue activo.`;
+  const note =
+    "Tu suscripción se renueva cada mes hasta que la canceles. Ferro te entregará el plan de este mes por WhatsApp.";
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Suscripción renovada</h1>
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">${escapeHtml(note)} Stripe también te envía su recibo.</p>`,
+  );
+  const text = [
+    "Suscripción renovada",
+    "",
+    lead,
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
+    "",
+    `${note} Stripe también te envía su recibo.`,
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Payment Failed (cliente y Ferro) ───────────────────────────────────────
+
+export type PaymentFailedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Importe del cobro que falló, ya formateado. */
+  amount: string;
+  /** Página de Stripe para pagar la factura con otra tarjeta, si Stripe la dio. */
+  payUrl: string | null;
+};
+
+/** Cobro de la renovación rechazado: el servicio queda suspendido (RF-18, RN-14). */
+export function paymentFailedEmail(input: PaymentFailedEmailInput): EmailContent {
+  const subject = `No pudimos cobrar tu suscripción · ${input.reference}`;
+  const lead = `Hola ${input.customerName}, el cobro de ${input.amount} de tu suscripción a ${input.programName} no se completó.`;
+  const paused =
+    "Mientras el pago esté pendiente, tu servicio queda en pausa. Stripe volverá a intentar el cobro en los próximos días; en cuanto se pague, tu plan se reactiva solo. Si los intentos no se completan, la suscripción se cancela.";
+  const action = input.payUrl
+    ? "Si tu tarjeta cambió o no tiene fondos, puedes pagar ahora con otra tarjeta:"
+    : "Si tu tarjeta cambió o no tiene fondos, escríbele a Ferro por WhatsApp.";
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">No pudimos cobrar tu suscripción</h1>
+<p style="margin:0 0 16px;">${escapeHtml(lead)}</p>
+<p style="margin:0 0 16px;">${escapeHtml(paused)}</p>
+<p style="margin:0;">${escapeHtml(action)}</p>
+${input.payUrl ? button(input.payUrl, "Pagar ahora") : ""}`,
+  );
+  const text = [
+    "No pudimos cobrar tu suscripción",
+    "",
+    lead,
+    "",
+    paused,
+    "",
+    action,
+    ...(input.payUrl ? [input.payUrl] : []),
+  ].join("\n");
+  return { subject, html, text };
+}
+
+export type PaymentFailedAlertEmailInput = {
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  customerWhatsapp: string;
+  programName: string;
+  amount: string;
+  /** Intento de cobro según Stripe (1, 2, …). */
+  attempt: number;
+};
+
+/** Aviso a Ferro: una renovación falló y el servicio de ese cliente está suspendido. */
+export function paymentFailedAlertEmail(input: PaymentFailedAlertEmailInput): EmailContent {
+  const subject = `Pago fallido · ${input.reference} · ${input.customerName}`;
+  const details = [
+    ["Cliente", input.customerName],
+    ["Correo", input.customerEmail],
+    ["WhatsApp", input.customerWhatsapp],
+    ["Programa", input.programName],
+    ["Importe", input.amount],
+    ["Referencia", input.reference],
+    ["Intento", String(input.attempt)],
+  ] as const;
+  const lead =
+    "Stripe no pudo cobrar la renovación de esta suscripción. El servicio queda suspendido hasta que se pague; Stripe reintenta el cobro solo y, si los intentos se agotan, cancela la suscripción. Ya le avisamos al cliente.";
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Pago fallido</h1>
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}`,
+  );
+  const text = [
+    "Pago fallido",
+    "",
+    lead,
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
   ].join("\n");
   return { subject, html, text };
 }
@@ -318,6 +473,8 @@ export type PurchaseConfirmationEmailInput = {
   serviceEnd: string;
   /** `true` si es un mes pagado por adelantado que empieza después (DECISIONS A20). */
   startsLater: boolean;
+  /** `true` si es el primer pago de una suscripción (se renueva cada mes, RF-08). */
+  renewsMonthly?: boolean;
 };
 
 export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput): EmailContent {
@@ -332,11 +489,15 @@ export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput)
   const lead = input.startsLater
     ? `Hola ${input.customerName}, recibimos tu pago. Este mes empieza el ${input.serviceStart}, cuando termina el que ya tenías pagado.`
     : `Hola ${input.customerName}, recibimos tu pago. Tu plan ya está activo.`;
+  const renews = input.renewsMonthly
+    ? "Tu suscripción se renueva sola cada mes, en la misma fecha, hasta que la canceles."
+    : null;
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Compra confirmada</h1>
 <p style="margin:0;">${escapeHtml(lead)}</p>
 ${rows(details)}
+${renews ? `<p style="margin:0 0 16px;">${escapeHtml(renews)}</p>` : ""}
 <p style="margin:0;color:${COLORS.muted};font-size:14px;">Guarda este correo como comprobante. Stripe también te envía su recibo.</p>`,
   );
   const text = [
@@ -346,6 +507,7 @@ ${rows(details)}
     "",
     ...details.map(([label, value]) => `${label}: ${value}`),
     "",
+    ...(renews ? [renews, ""] : []),
     "Guarda este correo como comprobante. Stripe también te envía su recibo.",
   ].join("\n");
   return { subject, html, text };
@@ -385,8 +547,13 @@ export type ExtraPaymentAlertEmailInput = {
   customerEmail: string;
   /** Importe cobrado por Stripe, ya formateado. */
   amount: string;
-  /** ID del Payment Intent, para buscarlo en el Dashboard de Stripe. */
+  /** ID del Payment Intent (o de la factura), para buscarlo en el Dashboard de Stripe. */
   stripePaymentIntentId: string;
+  /**
+   * Si el cobro es de una segunda suscripción del mismo contrato (p. ej. dos pestañas de Checkout):
+   * su ID, para cancelarla en Stripe y que no se vuelva a cobrar (DECISIONS A31).
+   */
+  duplicateSubscriptionId?: string | null;
 };
 
 /**
@@ -401,9 +568,13 @@ export function extraPaymentAlertEmail(input: ExtraPaymentAlertEmailInput): Emai
     ["Referencia", input.reference],
     ["Importe", input.amount],
     ["Pago en Stripe", input.stripePaymentIntentId],
+    ...(input.duplicateSubscriptionId
+      ? ([["Suscripción duplicada", input.duplicateSubscriptionId]] as const)
+      : []),
   ] as const;
-  const lead =
-    "Stripe cobró un pago para un contrato que ya estaba pagado. No se abrió otro mes. Revísalo en el Dashboard de Stripe y, si corresponde, reembólsalo desde ahí.";
+  const lead = input.duplicateSubscriptionId
+    ? "Stripe cobró una segunda suscripción para un contrato que ya tiene la suya. No se abrió otro mes. Cancela esa suscripción en el Dashboard de Stripe para que no se vuelva a cobrar y, si corresponde, reembolsa el pago."
+    : "Stripe cobró un pago para un contrato que ya estaba pagado. No se abrió otro mes. Revísalo en el Dashboard de Stripe y, si corresponde, reembólsalo desde ahí.";
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Revisa un pago adicional</h1>

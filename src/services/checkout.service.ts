@@ -4,7 +4,7 @@ import type { Contract, Customer, Program } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 import { getPrisma, type Db } from "@/lib/prisma";
 import { getStripe, isLiveKey } from "@/lib/stripe";
-import type { CustomerDataInput } from "@/lib/validations";
+import type { CheckoutMode, CustomerDataInput } from "@/lib/validations";
 
 import { recordAudit } from "./audit.service";
 import { attachCheckoutSession, detachCheckoutSession } from "./contract.service";
@@ -24,14 +24,22 @@ import { verifyProgramPrice } from "./stripe-catalog.service";
 import type { RequestContext } from "./transfer.service";
 
 /**
- * Pago único con Stripe Checkout (RF-07, SDD §7.4, §8.2, DECISIONS A26).
+ * Pago con tarjeta con Stripe Checkout: pago único (RF-07, SDD §8.2, DECISIONS A26) y suscripción
+ * mensual (RF-08, SDD §8.3, DECISIONS A31).
  *
  * `requestCheckout` resuelve la contratación con las mismas reglas que la transferencia (SDD §7.3)
  * y devuelve el `client_secret` de una sesión de Checkout con formulario incrustado (`ui_mode: form`,
- * DECISIONS A29) en modo `payment`. El Price sale del programa en la
- * BD y se comprueba contra Stripe antes de cobrar (SDD §6.1, §9.2). Aquí **no** se confirma ningún
- * pago: eso solo lo hace el webhook (`stripe-webhook.service`).
+ * DECISIONS A29) en modo `payment` (Price `one_time`, `monthlyPrice`) o `subscription` (Price
+ * `recurring`, `subscriptionPrice`). El Price sale del programa en la BD y se comprueba contra Stripe
+ * antes de cobrar (SDD §6.1, §9.2). Aquí **no** se confirma ningún pago: eso solo lo hace el webhook
+ * (`stripe-webhook.service`).
  */
+
+/** Modalidad del contrato y tipo de Price de cada modo de Checkout. */
+export const CHECKOUT_MODES = {
+  payment: { paymentType: "one_time", priceKind: "one_time" },
+  subscription: { paymentType: "subscription", priceKind: "recurring" },
+} as const satisfies Record<CheckoutMode, { paymentType: string; priceKind: string }>;
 
 /**
  * Página a la que el formulario incrustado lleva al cliente al terminar el pago. Solo informa
@@ -49,6 +57,8 @@ export type CheckoutRequestInput = {
   /** WhatsApp ya en E.164. */
   whatsapp: string;
   programSlug: string;
+  /** `payment` (pago único) o `subscription` (suscripción mensual). Por defecto, `payment`. */
+  mode?: CheckoutMode;
   pendingAction?: PendingAction;
 };
 
@@ -97,8 +107,9 @@ function checkoutPublishableKey(): string {
 }
 
 /**
- * Pago único con tarjeta (SDD §7.4):
- * 1. Comprueba que el programa pedido esté activo y que su Price de Stripe valga `monthlyPrice`.
+ * Pago con tarjeta (SDD §7.4):
+ * 1. Comprueba que el programa pedido esté activo y que su Price de Stripe valga `monthlyPrice`
+ *    (pago único) o `subscriptionPrice` (suscripción).
  * 2. En una transacción con el candado del cliente: crea o actualiza el cliente y resuelve la
  *    contratación (nuevo, reutilizado, retomado o cambiado; SDD §7.3). Si el pendiente cambió de
  *    una transferencia, invalida su enlace; si tenía otra sesión de Checkout, la suelta.
@@ -116,11 +127,13 @@ export async function requestCheckout(
 ): Promise<CheckoutRequestResult> {
   if (!stripe) throw new PaymentsUnavailableError("not_configured");
   const publishableKey = checkoutPublishableKey();
+  const mode = input.mode ?? "payment";
+  const { paymentType, priceKind } = CHECKOUT_MODES[mode];
 
   const requested = await db.program.findUnique({ where: { slug: input.programSlug } });
   if (!requested || !requested.active) throw new ProgramUnavailableError(input.programSlug);
   const verifiedPrices = new Map<string, string>([
-    [requested.id, await verifyProgramPrice(stripe, requested, "one_time")],
+    [requested.id, await verifyProgramPrice(stripe, requested, priceKind)],
   ]);
 
   const customerData: CustomerDataInput = {
@@ -137,7 +150,7 @@ export async function requestCheckout(
       {
         customerId: customer.id,
         programSlug: input.programSlug,
-        paymentType: "one_time",
+        paymentType,
         pendingAction: input.pendingAction,
       },
       tx,
@@ -145,8 +158,8 @@ export async function requestCheckout(
       context,
     );
     let { contract } = result;
-    if (contract.paymentType !== "one_time") {
-      // Retomó un pendiente de transferencia (o de suscripción): se le pide elegir "cambiar".
+    if (contract.paymentType !== paymentType) {
+      // Retomó un pendiente de otra modalidad: se le pide elegir "cambiar".
       throw new PendingNotCardError(contract.reference, contract.paymentType);
     }
 
@@ -175,7 +188,7 @@ export async function requestCheckout(
           entityId: contract.id,
           ip: context.ip,
           userAgent: context.userAgent,
-          metadata: { reference: contract.reference, program: result.program.slug },
+          metadata: { reference: contract.reference, program: result.program.slug, mode },
         },
         tx,
       );
@@ -191,12 +204,12 @@ export async function requestCheckout(
 
   // Si retomó un pendiente de otro programa, también se comprueba ese Price.
   const priceId =
-    verifiedPrices.get(program.id) ?? (await verifyProgramPrice(stripe, program, "one_time"));
+    verifiedPrices.get(program.id) ?? (await verifyProgramPrice(stripe, program, priceKind));
 
   try {
     const clientSecret = await openCheckoutSession(
       stripe,
-      { contract, customer, program, priceId },
+      { contract, customer, program, priceId, mode },
       db,
       now,
     );
@@ -221,11 +234,17 @@ export async function requestCheckout(
  */
 async function openCheckoutSession(
   stripe: Stripe,
-  input: { contract: Contract; customer: Customer; program: Program; priceId: string },
+  input: {
+    contract: Contract;
+    customer: Customer;
+    program: Program;
+    priceId: string;
+    mode: CheckoutMode;
+  },
   db: Db,
   now: Date,
 ): Promise<string> {
-  const { contract, customer, program, priceId } = input;
+  const { contract, customer, program, priceId, mode } = input;
   const previous = contract.stripeCheckoutSessionId;
 
   if (previous) {
@@ -238,6 +257,7 @@ async function openCheckoutSession(
       session.status === "open" &&
       session.client_secret &&
       samePrice &&
+      session.mode === mode &&
       session.ui_mode === "form"
     ) {
       return session.client_secret;
@@ -249,16 +269,27 @@ async function openCheckoutSession(
 
   const stripeCustomerId = await ensureStripeCustomer(customer, stripe, db);
   const metadata = { contractId: contract.id, reference: contract.reference };
+  const description = `${program.name} · ${contract.reference}`;
+  const modeParams: Partial<Stripe.Checkout.SessionCreateParams> =
+    mode === "subscription"
+      ? {
+          // La suscripción lleva el contrato en su metadata y Stripe la copia a cada factura: así
+          // `invoice.paid` encuentra el contrato aunque llegue antes que `checkout.session.completed`.
+          // La tarjeta queda guardada en la suscripción para las renovaciones (en Stripe, nunca aquí).
+          subscription_data: { metadata, description },
+        }
+      : {
+          payment_intent_data: { metadata, description },
+          // El cliente puede guardar su tarjeta en Stripe para el siguiente mes (nunca llega a la app).
+          saved_payment_method_options: { payment_method_save: "enabled" },
+        };
   const session = await stripe.checkout.sessions.create({
-    mode: "payment",
+    mode,
     line_items: [{ price: priceId, quantity: 1 }],
     customer: stripeCustomerId,
     client_reference_id: contract.id,
     metadata,
-    payment_intent_data: {
-      metadata,
-      description: `${program.name} · ${contract.reference}`,
-    },
+    ...modeParams,
     locale: "es-419",
     // Formulario de pago de Stripe incrustado en la landing, configurado en Checkout Studio
     // (DECISIONS A27, A29). El nombre no se pide: ya está en el registro.
@@ -268,8 +299,6 @@ async function openCheckoutSession(
     phone_number_collection: { enabled: false },
     automatic_tax: { enabled: false },
     submit_type: "auto",
-    // El cliente puede guardar su tarjeta en Stripe para el siguiente mes (nunca llega a la app).
-    saved_payment_method_options: { payment_method_save: "enabled" },
   });
   if (!session.client_secret) throw new Error("Stripe no devolvió el client_secret de Checkout.");
 

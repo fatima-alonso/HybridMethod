@@ -106,7 +106,10 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
         return;
       }
     } else {
-      const body: CheckoutRequestBody = { ...base, mode: "payment" };
+      const body: CheckoutRequestBody = {
+        ...base,
+        mode: method === "subscription" ? "subscription" : "payment",
+      };
       result = await postJson<CheckoutCreated>("/api/checkout", body);
       if (result.ok) {
         setBusy(false);

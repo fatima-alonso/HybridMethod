@@ -97,6 +97,7 @@ function checkoutCreated(overrides: Record<string, unknown> = {}) {
     clientSecret: "cs_test_1_secret_x",
     publishableKey: "pk_test_123",
     returnUrl: "http://localhost:3000/pago/exito",
+    mode: "payment",
     reference: "HM-2026-000050",
     status: "pending_payment",
     outcome: "created",
@@ -206,7 +207,7 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Elige cómo pagar" }));
   });
 
-  it("el pago único con tarjeta está disponible y la suscripción sigue deshabilitada (Fase 6)", async () => {
+  it("las tres formas de pago están disponibles; transferencia por defecto", async () => {
     await reachPaymentStep();
     const transferOption = screen.getByRole("radio", { name: /Transferencia bancaria/ });
     expect((transferOption as HTMLInputElement).checked).toBe(true);
@@ -214,8 +215,33 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
       false,
     );
     expect((screen.getByRole("radio", { name: /Suscripción/ }) as HTMLInputElement).disabled).toBe(
-      true,
+      false,
     );
+  });
+
+  it("suscripción: pide el Checkout en modo subscription y avisa que se cobra cada mes", async () => {
+    await reachPaymentStep();
+    reply(
+      "/api/checkout",
+      201,
+      checkoutCreated({ mode: "subscription", amount: "1080.00", reference: "HM-2026-000051" }),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Suscripción/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Suscríbete con tarjeta" });
+    await screen.findByText("Formulario de Stripe");
+    expect(screen.getByText(/\$1,080 MXN \/ mes/)).toBeTruthy();
+    expect(screen.getByText(/cobra el siguiente en la misma fecha cada mes/)).toBeTruthy();
+    expect(calls.at(-1)).toEqual({
+      url: "/api/checkout",
+      body: {
+        fullName: "Ana López",
+        whatsapp: { country: "MX", number: "55 1234 5678" },
+        program: "hm-run",
+        privacyAccepted: true,
+        mode: "subscription",
+      },
+    });
   });
 
   it("pago único: pide el Checkout al servidor y monta el formulario de Stripe (DECISIONS A29)", async () => {

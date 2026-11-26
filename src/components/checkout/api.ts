@@ -84,6 +84,8 @@ export type CheckoutCreated = {
   publishableKey: string;
   /** Página de "¡Gracias!" a la que lleva el formulario al terminar de pagar. */
   returnUrl: string;
+  /** `payment` (pago único) o `subscription` (suscripción mensual). */
+  mode: "payment" | "subscription";
   reference: string;
   status: string;
   outcome: string;

@@ -35,9 +35,14 @@ export const CHECKOUT_MESSAGES = {
     "Ya recibimos tu pago con tarjeta y lo estamos procesando. Te avisaremos por correo en cuanto quede listo.",
 } as const;
 
-/** Paso del formulario de pago de Stripe incrustado (DECISIONS A27, A29). */
+/** Paso del formulario de pago de Stripe incrustado (DECISIONS A27, A29, A31). */
 export const CARD_STEP = {
   title: "Paga con tarjeta",
+  subscriptionTitle: "Suscríbete con tarjeta",
+  perMonth: "/ mes",
+  /** Aviso de la suscripción (RF-08, RN-03): se cobra mes con mes desde el primer pago. */
+  subscriptionNote:
+    "Hoy pagas tu primer mes. Stripe cobra el siguiente en la misma fecha cada mes, hasta que canceles tu suscripción.",
   lead: "Completa tu pago en el formulario seguro de Stripe. Nosotros nunca vemos ni guardamos los datos de tu tarjeta.",
   referenceLabel: "Referencia",
   back: "Elegir otra forma de pago",
@@ -100,8 +105,9 @@ export const PAYMENT_STEP = {
     {
       id: "subscription",
       name: "Suscripción mensual con tarjeta",
-      description: "Se renueva cada mes con Stripe hasta que la canceles.",
-      available: false,
+      description:
+        "10 % de descuento. Se cobra cada mes con Stripe, en la misma fecha, hasta que la canceles.",
+      available: true,
     },
   ],
   unavailable: "Disponible muy pronto",

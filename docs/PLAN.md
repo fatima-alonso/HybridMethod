@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.8 y SDD v1.15 (ya incluyen las decisiones A1–A12 y A14–A30). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.8 y SDD v1.16 (ya incluyen las decisiones A1–A12 y A14–A31). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -156,7 +156,7 @@ reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncro
 reintento). La prueba con la Stripe CLI contra la cuenta de prueba queda documentada en el README (necesita las
 claves de la cuenta).
 
-## Fase 6 — Suscripciones y renovaciones ⬜ (RF-08, RF-17, RF-18, RN-03, RN-14)
+## Fase 6 — Suscripciones y renovaciones ✅ (RF-08, RF-17, RF-18, RN-03, RN-14)
 - Checkout en modo `subscription` con `stripePriceIdRecurring` (importe = `subscriptionPrice`).
   `customer.subscription.*` solo sincroniza el estado.
 - `invoice.paid` es la única fuente de los Payment (el primer pago y las renovaciones): crea un ServicePeriod en
@@ -165,6 +165,20 @@ claves de la cuenta).
 - `invoice.payment_failed` → registrar el fallo, suspender (`payment_failed`) y enviar Payment Failed.
   Smart Retries y cancelación al agotarse (configuración de Stripe documentada en el README).
 - Pruebas con Stripe test clocks para simular renovaciones y pagos fallidos.
+
+**Resultado (2026-11-26).** `POST /api/checkout` con `mode: "subscription"` (Price `recurring` comprobado contra
+Stripe, `subscriptionPrice`, metadata del contrato en la suscripción) y la opción "Suscripción mensual con tarjeta"
+habilitada en la landing, con el mismo formulario incrustado. Webhooks nuevos (`invoice.paid`, `invoice.payment_failed`,
+`customer.subscription.created/updated/deleted`) en `stripe-subscription-webhook.service`; cada evento vuelve a leer la
+suscripción en Stripe (`subscription.service`), así que tolera duplicados y desorden. `invoice.paid` crea Payment +
+ServicePeriod (periodo de la línea de la factura, programa del Price cobrado) + botón de entrega y activa, extiende o
+reactiva el contrato; en las renovaciones, Renewal Successful (Ferro) y "Tu suscripción se renovó" (cliente). Cada
+intento fallido es un Payment `failed` (índices únicos parciales solo para pagos exitosos); el primer fallo de una
+renovación suspende (`payment_failed`) y avisa una vez al cliente y a Ferro. Si Stripe cancela la suscripción, el
+contrato pasa a `cancelled` (los correos de cancelación son de la Fase 7). Configuración de Smart Retries y prueba con
+test clocks en el README. Decisiones en DECISIONS A31. Pruebas: unitarias (plantillas, estados de Stripe, periodo de la
+factura, interfaz) y con PostgreSQL + un Stripe en memoria que hace de test clock (alta, desorden, duplicados,
+renovaciones, cambio de plan, importe 0, fallos y reintentos, cancelación, suscripción duplicada, Stripe caído).
 
 ## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
 - Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso

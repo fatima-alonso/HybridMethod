@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.15 |
+| **Versión** | 1.16 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.8 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.16 | 2026-11-26 | Fase 6, suscripciones (DECISIONS A31): §4 `subscription` y `stripe-subscription-webhook` services; §5.3 Payment con `stripeInvoiceId`/`stripePaymentIntentId` únicos solo entre pagos exitosos; §6.2 correos de renovación al cliente y Payment Failed; §7.4 `mode: "subscription"`; §7.5 estado leído de Stripe, periodo de la línea de la factura, reintentos, duplicados y cancelación. |
 | 1.15 | 2026-11-26 | Webhooks en local (DECISIONS A30): §4 `stripe-listen` y `stripe-constants`; §9.1 en desarrollo la configuración se vuelve a leer en cada llamada. |
 | 1.14 | 2026-11-26 | Formulario de pago de Checkout Studio (DECISIONS A29): §6.1 y §7.4 `ui_mode: form`, `returnUrl` en la respuesta, tarjeta guardada en Stripe y sin pedir el nombre. |
 | 1.13 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): §7.3 regla 3 (`409 active_period`), §5.3 `scheduled` solo por un pago tardío, §10. |
@@ -175,9 +176,11 @@ the-hybrid-method/
 │   │   ├── payment.service.ts
 │   │   ├── payment-notifications.service.ts
 │   │   ├── checkout.service.ts
-│   │   ├── stripe-webhook.service.ts
+│   │   ├── stripe-webhook.service.ts             # pago único; despacha los eventos
+│   │   ├── stripe-subscription-webhook.service.ts # invoice.* y customer.subscription.* (Fase 6)
+│   │   ├── stripe-webhook-shared.ts
 │   │   ├── stripe-catalog.service.ts
-│   │   ├── subscription.service.ts
+│   │   ├── subscription.service.ts               # copia local del estado de Stripe
 │   │   ├── transfer.service.ts
 │   │   ├── transfer-approval.service.ts
 │   │   ├── contract-request.service.ts
@@ -338,8 +341,8 @@ Guarda cada transacción.
 | contractId | String (FK) | Contrato asociado |
 | subscriptionId | String? (FK) | Suscripción asociada |
 | method | Enum | `transfer` / `stripe_one_time` / `stripe_subscription` |
-| stripePaymentIntentId | String? (UNIQUE) | Payment Intent |
-| stripeInvoiceId | String? (UNIQUE) | Factura de Stripe |
+| stripePaymentIntentId | String? (UNIQUE entre los `succeeded`) | Payment Intent |
+| stripeInvoiceId | String? (UNIQUE entre los `succeeded`) | Factura de Stripe |
 | amount | Decimal | Importe |
 | currency | String | Moneda |
 | status | Enum | Estado del pago |
@@ -348,7 +351,7 @@ Guarda cada transacción.
 
 Estados: `pending`, `succeeded`, `failed`, `refunded`.
 
-Cada renovación crea un Payment nuevo; los existentes nunca se sobrescriben. Las restricciones UNIQUE sobre `stripeInvoiceId` y `stripePaymentIntentId` son una segunda barrera contra duplicados.
+Cada renovación crea un Payment nuevo; los existentes nunca se sobrescriben. Cada intento de cobro fallido también es un Payment (`failed`); como Smart Retries reintenta la misma factura con el mismo Payment Intent, las restricciones UNIQUE sobre `stripeInvoiceId` y `stripePaymentIntentId` son índices parciales `WHERE status = 'succeeded'` (DECISIONS A31): siguen siendo una segunda barrera contra pagos exitosos duplicados.
 
 #### ServicePeriod
 Un mes pagado (DECISIONS A19). Guarda las tres fechas que pide Ferro.
@@ -523,7 +526,8 @@ Resend envía los correos electrónicos.
 | Transfer Pending | Entrenador | Nueva transferencia pendiente (incluye el enlace privado) |
 | Payment Received | Entrenador | Cada pago confirmado (pago único, transferencia, primer pago de suscripción): datos completos del cliente y de la compra, y botón "Registrar entrega del plan" |
 | Renewal Successful | Entrenador | Renovación exitosa: los mismos datos y su propio botón de entrega |
-| Payment Failed | Cliente y entrenador | Pago fallido |
+| Subscription Renewed | Cliente | Renovación exitosa: programa, importe y nuevo periodo (RF-08; DECISIONS A31) |
+| Payment Failed | Cliente y entrenador | Primer cobro fallido de una renovación: servicio suspendido; al cliente, el enlace de Stripe para pagar con otra tarjeta. Los reintentos no repiten el aviso |
 | Subscription Cancelled | Cliente y entrenador | Cancelación |
 | Transfer Confirmed | Cliente | Transferencia confirmada |
 
@@ -658,7 +662,9 @@ Request (igual que `POST /api/transfers` más `mode`; el correo sale de la sesi�
   "pendingAction": "continue"
 }
 ```
-Valores permitidos para `mode`: `payment` (Fase 5) y `subscription` (Fase 6). `pendingAction` es opcional.
+Valores permitidos para `mode`: `payment` (Fase 5) y `subscription` (Fase 6). `pendingAction` es opcional. La respuesta repite `mode`.
+
+En modo `subscription` (DECISIONS A31) el contrato es `subscription` por `subscriptionPrice`, la sesión usa el Price `recurring` y lleva `subscription_data.metadata.contractId` (Stripe la copia a cada factura); no lleva `payment_intent_data` ni `saved_payment_method_options`. Una sesión abierta se reutiliza solo si es del mismo modo y Price.
 
 Response (201 al crear el contrato; 200 al reutilizar, retomar o cambiar el pendiente):
 ```json
@@ -690,9 +696,11 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 | Pago único | `checkout.session.async_payment_succeeded` | Igual que el anterior con `paid`. |
 | Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido. El contrato sigue `pending_payment` (nunca se activó) y el cliente puede reintentar; se le avisa (DECISIONS A26, B15). |
 | Suscripción | `checkout.session.completed` (modo subscription) | Solo relacionar `stripeSubscriptionId` con el contrato; **no** crea el Payment. |
-| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la factura y el programa del Price facturado; activa o extiende el contrato. En renovaciones, avisa a Ferro. Una factura de importe 0 no abre un mes. |
-| Suscripción | `invoice.payment_failed` | Registrar el Payment fallido, pasar el contrato a `payment_failed` (servicio suspendido) y avisar. |
-| Suscripción | `customer.subscription.created` / `updated` / `deleted` | Solo sincronizar Subscription (estado, periodo, `cancelAtPeriodEnd`). |
+| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la línea de la suscripción en la factura y el programa del Price facturado; activa (`pending_payment`/`expired`), extiende (`active`) o reactiva (`payment_failed`) el contrato. En renovaciones, Renewal Successful (Ferro) y Subscription Renewed (cliente). Una factura de importe 0 no abre un mes. |
+| Suscripción | `invoice.payment_failed` | Registrar cada intento como Payment fallido. En una renovación de un contrato `active`, pasarlo a `payment_failed` (servicio suspendido) y avisar una vez (cliente y Ferro). Si falla el primer pago, el contrato sigue pendiente. |
+| Suscripción | `customer.subscription.created` / `updated` / `deleted` | Solo sincronizar Subscription (estado, periodo, `cancelAtPeriodEnd`, programa). Si Stripe la cancela, el contrato `active`/`payment_failed` pasa a `cancelled`. |
+
+Todos los eventos de suscripción vuelven a leer la suscripción en Stripe (`subscriptions.retrieve`) con el contrato bloqueado y copian su estado actual, así que una entrega fuera de orden no deja un estado viejo (DECISIONS A31). El contrato se encuentra por la Subscription ya ligada o por `metadata.contractId`. Una segunda suscripción del mismo contrato no se guarda: su cobro se registra sin abrir un mes y se avisa a Ferro para cancelarla.
 
 No se escuchan `payment_intent.succeeded` ni `payment_intent.payment_failed`.
 

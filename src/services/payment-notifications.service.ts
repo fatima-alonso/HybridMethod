@@ -14,6 +14,8 @@ import { recordAudit } from "./audit.service";
 import {
   sendPaymentReceivedEmail,
   sendPurchaseConfirmationEmail,
+  sendRenewalSuccessfulEmail,
+  sendSubscriptionRenewedEmail,
   sendTransferConfirmedEmail,
   sendWelcomeEmail,
 } from "./email.service";
@@ -98,6 +100,7 @@ export async function sendPaidNotifications(
               serviceStart,
               serviceEnd,
               startsLater,
+              renewsMonthly: method === "stripe_subscription",
             }),
         ];
 
@@ -145,6 +148,16 @@ export async function sendPaidNotifications(
     ],
   ];
 
+  await sendEach(emails, contract, input.failureAuditAction, db);
+}
+
+/** Envía cada correo; un fallo se registra y no detiene los demás ni revierte nada (SDD §6.2). */
+async function sendEach(
+  emails: ReadonlyArray<readonly [string, () => Promise<unknown>]>,
+  contract: Pick<Contract, "id" | "reference">,
+  failureAuditAction: string,
+  db: Db,
+): Promise<void> {
   for (const [name, send] of emails) {
     try {
       await send();
@@ -155,7 +168,7 @@ export async function sendPaidNotifications(
       );
       await recordAudit(
         {
-          action: input.failureAuditAction,
+          action: failureAuditAction,
           actor: "system",
           entityType: "Contract",
           entityId: contract.id,
@@ -165,4 +178,59 @@ export async function sendPaidNotifications(
       ).catch(() => undefined);
     }
   }
+}
+
+export type RenewalNotificationInput = Omit<PaidNotificationInput, "method" | "failureAuditAction">;
+
+/**
+ * Renovación de una suscripción (RF-08, RF-17, SDD §8.3): al cliente, la confirmación de su
+ * renovación; a Ferro, Renewal Successful con los datos y el botón de entrega de ese mes. `program`
+ * es el programa de ese mes (puede cambiar desde el portal, A21).
+ */
+export async function sendRenewalNotifications(
+  input: RenewalNotificationInput,
+  db: Db = getPrisma(),
+): Promise<void> {
+  const { contract, customer, program, servicePeriod } = input;
+  const serviceStart = formatBusinessDateTime(servicePeriod.startDate);
+  const serviceEnd = formatBusinessDateTime(servicePeriod.endDate);
+  const amount = formatPrice(input.amount, input.currency);
+  await sendEach(
+    [
+      [
+        "subscription_renewed",
+        () =>
+          sendSubscriptionRenewedEmail({
+            to: customer.email,
+            customerName: customer.fullName,
+            reference: contract.reference,
+            programName: program.name,
+            amount,
+            serviceStart,
+            serviceEnd,
+          }),
+      ],
+      [
+        "renewal_successful",
+        () =>
+          sendRenewalSuccessfulEmail({
+            reference: contract.reference,
+            customerName: customer.fullName,
+            customerEmail: customer.email,
+            customerWhatsapp: customer.whatsapp,
+            programName: program.name,
+            amount,
+            method: PAYMENT_METHOD_LABELS.stripe_subscription.ferro,
+            paidAt: formatBusinessDateTime(servicePeriod.paidAt),
+            serviceStart,
+            serviceEnd,
+            monthNumber: servicePeriod.sequence,
+            deliveryUrl: input.deliveryUrl,
+          }),
+      ],
+    ],
+    contract,
+    "payment.notification_failed",
+    db,
+  );
 }

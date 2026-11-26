@@ -2,7 +2,8 @@ import type Stripe from "stripe";
 
 /**
  * Stripe en memoria para las pruebas (sin red). Implementa solo lo que usa la app: Products,
- * Prices, Customers y sesiones de Checkout. Las firmas de los webhooks se prueban con el SDK real
+ * Prices, Customers, sesiones de Checkout y suscripciones con sus facturas (un "test clock" simple:
+ * `startSubscription`, `nextInvoice` y `payInvoice`/`failInvoice` mueven la suscripción mes a mes). Las firmas de los webhooks se prueban con el SDK real
  * (`Stripe.webhooks.generateTestHeaderString`), que no necesita red.
  */
 
@@ -26,6 +27,7 @@ type FakeSession = {
   amount_total: number | null;
   currency: string | null;
   payment_intent: string | null;
+  subscription: string | null;
   line_items: Array<{ price: string; quantity: number }>;
   params: Stripe.Checkout.SessionCreateParams;
 };
@@ -38,6 +40,44 @@ class MissingResourceError extends Error {
   }
 }
 
+type FakeSubscription = {
+  id: string;
+  object: "subscription";
+  status: Stripe.Subscription.Status;
+  customer: string | null;
+  metadata: Record<string, string>;
+  cancel_at_period_end: boolean;
+  cancel_at: number | null;
+  priceId: string;
+  periodStart: number;
+  periodEnd: number;
+};
+
+type FakeInvoice = {
+  id: string;
+  subscriptionId: string;
+  status: "open" | "paid";
+  billing_reason: Stripe.Invoice.BillingReason;
+  amount: number;
+  priceId: string;
+  periodStart: number;
+  periodEnd: number;
+  attempt_count: number;
+  paid_at: number | null;
+  payment_intent: string;
+};
+
+const unix = (date: Date) => Math.floor(date.getTime() / 1000);
+
+/** Mismo día del mes siguiente en UTC (como Stripe con el ancla de facturación). */
+function addMonth(seconds: number): number {
+  const date = new Date(seconds * 1000);
+  const next = new Date(date);
+  next.setUTCMonth(date.getUTCMonth() + 1);
+  if (next.getUTCDate() !== date.getUTCDate()) next.setUTCDate(0);
+  return unix(next);
+}
+
 export class FakeStripe {
   productStore = new Map<
     string,
@@ -46,9 +86,11 @@ export class FakeStripe {
   prices = new Map<string, FakePrice>();
   customersById = new Map<string, Stripe.CustomerCreateParams & { id: string }>();
   sessions = new Map<string, FakeSession>();
+  subscriptionStore = new Map<string, FakeSubscription>();
+  invoices = new Map<string, FakeInvoice>();
   /** Si se define, `checkout.sessions.create` lanza este error. */
   failSessionCreate: Error | null = null;
-  calls = { sessionCreate: 0, sessionExpire: 0, customerCreate: 0 };
+  calls = { sessionCreate: 0, sessionExpire: 0, customerCreate: 0, subscriptionRetrieve: 0 };
   private seq = 0;
   private idempotency = new Map<string, string>();
 
@@ -88,6 +130,188 @@ export class FakeStripe {
     return this.asSession(session);
   }
 
+  // ─── Suscripciones ("test clock" simplificado) ─────────────────────────────
+
+  /**
+   * El cliente paga una sesión en modo `subscription`: Stripe crea la suscripción (con la metadata de
+   * `subscription_data`) y su primera factura pagada. Devuelve la sesión, la suscripción y la factura.
+   */
+  startSubscription(sessionId: string, at: Date = new Date()) {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new MissingResourceError(sessionId);
+    if (session.mode !== "subscription") throw new Error("La sesión no es de suscripción.");
+    const priceId = session.line_items[0]!.price;
+    const start = unix(at);
+    const subscription: FakeSubscription = {
+      id: this.nextId("sub"),
+      object: "subscription",
+      status: "active",
+      customer: session.customer,
+      metadata: {
+        ...((session.params.subscription_data?.metadata as Record<string, string>) ?? {}),
+      },
+      cancel_at_period_end: false,
+      cancel_at: null,
+      priceId,
+      periodStart: start,
+      periodEnd: addMonth(start),
+    };
+    this.subscriptionStore.set(subscription.id, subscription);
+    session.status = "complete";
+    session.payment_status = "paid";
+    session.client_secret = null;
+    session.subscription = subscription.id;
+    const invoice = this.createInvoice(subscription, "subscription_create");
+    invoice.status = "paid";
+    invoice.attempt_count = 1;
+    invoice.paid_at = start;
+    return {
+      session: this.asSession(session),
+      subscription: this.asSubscription(subscription),
+      invoice: this.asInvoice(invoice),
+    };
+  }
+
+  private createInvoice(
+    subscription: FakeSubscription,
+    reason: Stripe.Invoice.BillingReason,
+  ): FakeInvoice {
+    const invoice: FakeInvoice = {
+      id: this.nextId("in"),
+      subscriptionId: subscription.id,
+      status: "open",
+      billing_reason: reason,
+      amount: this.prices.get(subscription.priceId)?.unit_amount ?? 0,
+      priceId: subscription.priceId,
+      periodStart: subscription.periodStart,
+      periodEnd: subscription.periodEnd,
+      attempt_count: 0,
+      paid_at: null,
+      payment_intent: this.nextId("pi"),
+    };
+    this.invoices.set(invoice.id, invoice);
+    return invoice;
+  }
+
+  /** Avanza el reloj al fin del periodo: la suscripción entra a su siguiente mes y se factura. */
+  nextInvoice(subscriptionId: string): FakeInvoice {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    subscription.periodStart = subscription.periodEnd;
+    subscription.periodEnd = addMonth(subscription.periodStart);
+    return this.createInvoice(subscription, "subscription_cycle");
+  }
+
+  /** Un intento de cobro de la factura se paga (renovación o reintento de Smart Retries). */
+  payInvoice(invoiceId: string): Stripe.Invoice {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) throw new MissingResourceError(invoiceId);
+    invoice.status = "paid";
+    invoice.attempt_count += 1;
+    invoice.paid_at = invoice.periodStart;
+    this.subscriptionStore.get(invoice.subscriptionId)!.status = "active";
+    return this.asInvoice(invoice);
+  }
+
+  /** Un intento de cobro falla: la suscripción queda `past_due` (o `unpaid`). */
+  failInvoice(invoiceId: string, status: Stripe.Subscription.Status = "past_due"): Stripe.Invoice {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) throw new MissingResourceError(invoiceId);
+    invoice.attempt_count += 1;
+    this.subscriptionStore.get(invoice.subscriptionId)!.status = status;
+    return this.asInvoice(invoice);
+  }
+
+  /** Stripe cancela la suscripción (p. ej. al agotarse Smart Retries). */
+  cancelSubscription(subscriptionId: string): Stripe.Subscription {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    subscription.status = "canceled";
+    return this.asSubscription(subscription);
+  }
+
+  asSubscription(subscription: FakeSubscription): Stripe.Subscription {
+    return {
+      id: subscription.id,
+      object: "subscription",
+      status: subscription.status,
+      customer: subscription.customer,
+      metadata: { ...subscription.metadata },
+      cancel_at_period_end: subscription.cancel_at_period_end,
+      cancel_at: subscription.cancel_at,
+      items: {
+        object: "list",
+        data: [
+          {
+            id: `si_${subscription.id}`,
+            price: { id: subscription.priceId },
+            current_period_start: subscription.periodStart,
+            current_period_end: subscription.periodEnd,
+          },
+        ],
+      },
+    } as unknown as Stripe.Subscription;
+  }
+
+  asInvoice(invoice: FakeInvoice): Stripe.Invoice {
+    const subscription = this.subscriptionStore.get(invoice.subscriptionId)!;
+    const price = this.prices.get(invoice.priceId);
+    return {
+      id: invoice.id,
+      object: "invoice",
+      status: invoice.status,
+      billing_reason: invoice.billing_reason,
+      currency: price?.currency ?? "mxn",
+      amount_due: invoice.amount,
+      amount_paid: invoice.status === "paid" ? invoice.amount : 0,
+      attempt_count: invoice.attempt_count,
+      hosted_invoice_url: `https://invoice.stripe.test/i/${invoice.id}`,
+      status_transitions: { paid_at: invoice.paid_at },
+      period_start: invoice.periodStart,
+      period_end: invoice.periodStart,
+      parent: {
+        type: "subscription_details",
+        quote_details: null,
+        subscription_details: {
+          subscription: invoice.subscriptionId,
+          metadata: { ...subscription.metadata },
+        },
+      },
+      lines: {
+        object: "list",
+        has_more: false,
+        data: [
+          {
+            id: `il_${invoice.id}`,
+            object: "line_item",
+            amount: invoice.amount,
+            period: { start: invoice.periodStart, end: invoice.periodEnd },
+            parent: { type: "subscription_item_details" },
+            pricing: { price_details: { price: invoice.priceId, product: price?.product } },
+          },
+        ],
+      },
+      payments: {
+        object: "list",
+        data: [
+          {
+            status: invoice.status === "paid" ? "paid" : "open",
+            payment: { type: "payment_intent", payment_intent: invoice.payment_intent },
+          },
+        ],
+      },
+    } as unknown as Stripe.Invoice;
+  }
+
+  readonly subscriptionsApi = {
+    retrieve: async (id: string) => {
+      this.calls.subscriptionRetrieve += 1;
+      const subscription = this.subscriptionStore.get(id);
+      if (!subscription) throw new MissingResourceError(id);
+      return this.asSubscription(subscription);
+    },
+  };
+
   asSession(session: FakeSession): Stripe.Checkout.Session {
     const { params: _params, line_items: _items, ...rest } = session;
     void _params;
@@ -124,6 +348,7 @@ export class FakeStripe {
           amount_total: amount,
           currency: this.prices.get(items[0]?.price ?? "")?.currency ?? "mxn",
           payment_intent: null,
+          subscription: null,
           line_items: items,
           params,
         };
@@ -253,6 +478,7 @@ export class FakeStripe {
       customers: this.customers,
       products: this.productsApi,
       prices: this.pricesApi,
+      subscriptions: this.subscriptionsApi,
     } as unknown as Stripe;
   }
 }

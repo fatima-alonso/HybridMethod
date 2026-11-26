@@ -9,7 +9,7 @@ entrenamiento personalizado de fuerza, running y rendimiento híbrido.
 ## Stack
 
 Next.js 16 (App Router, Route Handlers) · React 19 · TypeScript estricto · Tailwind CSS v4 · Zod ·
-Vitest · PostgreSQL (Neon) + Prisma 7 · Stripe (Checkout y webhooks) · Resend. Despliegue en Vercel (Fase 8).
+Vitest · PostgreSQL (Neon) + Prisma 7 · Stripe (Checkout, Billing y webhooks) · Resend. Despliegue en Vercel (Fase 8).
 
 ## Requisitos previos
 
@@ -117,8 +117,38 @@ el ID de la línea `-->` de `stripe:listen`) debe responder
 `duplicate` sin duplicar nada, y un pago con la tarjeta `4000 0000 0000 0002` se rechaza en el formulario
 sin tocar el contrato (`4000 0025 0000 3155` pide 3D Secure). Las dos claves (`sk_…` y `pk_…`) deben ser del mismo modo; si no, el pago
 con tarjeta aparece como no disponible. Para producción (Fase 8): un endpoint de webhook en el Dashboard apuntando a
-`https://<dominio>/api/webhooks/stripe` con esos tres eventos (y los de suscripción en la Fase 6), y
-`npm run stripe:sync -- --live` con la clave live. Detalle en DECISIONS A26.
+`https://<dominio>/api/webhooks/stripe` con los ocho eventos de `STRIPE_WEBHOOK_EVENTS`
+(`src/lib/stripe-constants.ts`: los tres de `checkout.session.*`, `invoice.paid`, `invoice.payment_failed` y
+`customer.subscription.created/updated/deleted`), y `npm run stripe:sync -- --live` con la clave live. Detalle en
+DECISIONS A26 y A31.
+
+### Suscripción mensual (Fase 6)
+
+Con lo anterior funcionando, elige "Suscripción mensual con tarjeta" y paga con `4242 4242 4242 4242`. En
+`stripe:listen` deben salir `checkout.session.completed`, `customer.subscription.created` e `invoice.paid` con `[200]`;
+el contrato queda `active` con el periodo de la factura y llegan los mismos correos que en el pago único.
+
+**Configuración en el Dashboard de Stripe (modo de prueba y live)** — Billing → Revenue recovery:
+
+- **Smart Retries** activado, con la política por defecto.
+- Cuando se agoten los reintentos: **cancelar la suscripción** (no dejarla `unpaid` ni vencida). Así Stripe manda
+  `customer.subscription.deleted` y el contrato pasa a `cancelled`.
+- Opcional: los correos de Stripe sobre pagos fallidos (la app ya avisa al cliente y a Ferro en el primer fallo).
+
+**Renovaciones y pagos fallidos con test clocks.** Un test clock solo avanza clientes creados dentro de él, así que la
+suscripción de prueba se crea desde el Dashboard y se liga a un contrato hecho en la landing:
+
+1. En la landing, inscríbete con "Suscripción mensual con tarjeta" y **no pagues**: queda un contrato pendiente. Copia
+   su `id` desde `npm run db:studio` (tabla `contracts`).
+2. En el Dashboard (modo de prueba) → Billing → Test clocks, crea un reloj y, dentro de él, un cliente con la tarjeta
+   `4242 4242 4242 4242` (renovaciones exitosas) o `4000 0000 0000 0341` (se guarda, pero los cobros fallan).
+3. Crea para ese cliente una suscripción con el Price `<programa>_recurring` y la metadata `contractId = <id>`.
+   Con `stripe:listen` corriendo, el primer `invoice.paid` activa el contrato.
+4. Avanza el reloj un mes: llega otra `invoice.paid` (mes 2, Renewal Successful a Ferro) o, con la tarjeta que falla,
+   `invoice.payment_failed` (contrato `payment_failed` y aviso al cliente y a Ferro). Sigue avanzando para ver los
+   reintentos de Smart Retries y, al agotarse, `customer.subscription.deleted` (contrato `cancelled`).
+
+Las pruebas automáticas (`src/app/api/__tests__/phase6-flow.db.test.ts`) simulan lo mismo con un Stripe en memoria.
 
 ## Scripts
 
