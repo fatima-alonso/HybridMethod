@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.7 |
+| **Versión** | 1.8 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -15,6 +15,7 @@
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
+| 1.8 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): RF-21, RF-22 y RN-08. |
 | 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); cobro mes con mes desde la fecha de pago y registro informativo de la fecha de entrega del plan, con recordatorios a Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
 
 ---
@@ -369,13 +370,13 @@ El botón de entrega del plan (RF-23) tiene sus propias reglas: token seguro gua
 Reglas para un cliente que vuelve a contratar (DECISIONS A20):
 - **Un solo contrato pendiente por cliente.** Si ya tiene uno del mismo programa y modalidad, se reutiliza su referencia. Si es de otro programa o modalidad, la página le avisa que se encontró un registro pendiente y le pregunta si quiere continuar con él o cambiarlo. Si lo cambia, se actualiza el mismo contrato y conserva su referencia.
 - **Vencimiento.** Un contrato pendiente vence tras 7 días sin actividad (configurable). Un contrato vencido ya no se reutiliza. Si aun así llega un pago real (una transferencia que Ferro confirma o un pago de Stripe que se confirma tarde), se respeta y el contrato se activa.
-- **Pago por adelantado.** Con un contrato de pago único o transferencia vigente o por empezar, el cliente puede pagar su siguiente mes, del mismo programa o de otro. Ese mes empieza cuando termina el vigente. Se permite un solo mes por adelantado.
+- **Mes con mes, sin pagos por adelantado** (DECISIONS A28). Con un mes de pago único o transferencia que todavía no termina, el cliente no puede contratar otro: paga su siguiente mes, del mismo programa o de otro, a partir del día en que termina el vigente. Si aun así llega un pago real tardío de un contrato que ya existía, se respeta y ese mes empieza cuando termina el vigente.
 - **Con suscripción activa** no se puede crear otra contratación: el cambio de programa se hace en el portal (RF-19).
 
 ### RF-22. Periodos de servicio y fechas de pago
 Cada pago confirmado da un mes de servicio que **empieza en la fecha de pago** y termina el mismo día del mes siguiente (o el último día de ese mes si el día no existe). Así aplica a todos los métodos: con la suscripción, el siguiente cobro llega al cumplirse un mes del pago anterior; con pago único o transferencia, el siguiente mes se paga cuando se cumple un mes del pago (DECISIONS A19).
 
-Si el cliente pagó por adelantado con un periodo vigente (RF-21), el mes nuevo empieza cuando termina el vigente.
+No se paga por adelantado (RF-21). Solo si se confirma un pago tardío mientras el cliente tiene un mes vigente, ese mes nuevo empieza cuando termina el vigente.
 
 La fecha de entrega del plan no cambia el periodo ni los cobros.
 
@@ -406,7 +407,7 @@ El entrenador entrega el plan de 3 a 5 días hábiles después del pago. El sist
 
 **RN-07. Entrega del entrenamiento.** Ferro preparará y enviará los planes de entrenamiento directamente por WhatsApp, de 3 a 5 días hábiles después del pago, y registrará en el sistema la fecha de entrega como dato de referencia (RF-23).
 
-**RN-08. Cambios de programa.** Los cambios de programa respetan el periodo ya pagado: con pago único o transferencia, el siguiente mes se paga por adelantado con el nuevo programa; con suscripción, el cambio se hace en el portal y aplica en la siguiente renovación (RF-21).
+**RN-08. Cambios de programa.** Los cambios de programa respetan el periodo ya pagado: con pago único o transferencia, al terminar su mes el cliente paga el siguiente con el nuevo programa; con suscripción, el cambio se hace en el portal y aplica en la siguiente renovación (RF-21).
 
 **RN-09. Reembolsos.** La primera versión no incluye un módulo automatizado de reembolsos. Si Ferro autoriza un reembolso, se gestionará manualmente y se cancelará la suscripción recurrente cuando corresponda. La política definitiva deberá cumplir con la normativa aplicable y no deberá interpretarse como una renuncia a los derechos legales del consumidor.
 

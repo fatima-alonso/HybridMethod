@@ -29,9 +29,12 @@ export type ApiErrorCode =
   | "not_found"
   | "pending_contract_exists"
   | "subscription_active"
-  | "prepaid_limit"
+  | "active_period"
   | "invalid_date"
   | "service_unavailable"
+  | "payments_unavailable"
+  | "invalid_signature"
+  | "payment_in_progress"
   | "internal_error";
 
 const NO_STORE = { "Cache-Control": "no-store" };

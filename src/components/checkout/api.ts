@@ -1,5 +1,5 @@
 /**
- * Llamadas del navegador a la API de la Fase 3. Solo envían lo que pide cada endpoint: el importe
+ * Llamadas del navegador a la API (Fases 3 y 5). Solo envían lo que pide cada endpoint: el importe
  * y el Price nunca salen del navegador (SDD §9.2) y el correo verificado viaja en la cookie.
  */
 
@@ -76,4 +76,16 @@ export type TransferCreated = {
   amount: `${number}`;
   currency: string;
   whatsappUrl: string | null;
+};
+
+/** Respuesta de `POST /api/checkout`: lo necesario para montar Embedded Checkout (DECISIONS A27). */
+export type CheckoutCreated = {
+  clientSecret: string;
+  publishableKey: string;
+  reference: string;
+  status: string;
+  outcome: string;
+  program: { slug: string; name: string };
+  amount: `${number}`;
+  currency: string;
 };

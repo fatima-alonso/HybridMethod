@@ -1,3 +1,5 @@
+import type Stripe from "stripe";
+
 import type { Customer } from "@/generated/prisma/client";
 import { getPrisma, type Db } from "@/lib/prisma";
 import { customerDataSchema, normalizeEmail, type CustomerDataInput } from "@/lib/validations";
@@ -41,4 +43,35 @@ export async function findCustomerIdByEmail(
     select: { id: true },
   });
   return customer?.id ?? null;
+}
+
+/**
+ * Cliente de Stripe del cliente (SDD §5.3 `stripeCustomerId`). Si no tiene, lo crea y lo guarda con
+ * un compare-and-set: con dos solicitudes simultáneas gana la primera y la otra usa ese. La clave
+ * de idempotencia hace que Stripe devuelva el mismo cliente a las dos durante 24 h.
+ */
+export async function ensureStripeCustomer(
+  customer: Pick<Customer, "id" | "email" | "fullName" | "whatsapp" | "stripeCustomerId">,
+  stripe: Pick<Stripe, "customers">,
+  db: Db = getPrisma(),
+): Promise<string> {
+  if (customer.stripeCustomerId) return customer.stripeCustomerId;
+  const created = await stripe.customers.create(
+    {
+      email: customer.email,
+      name: customer.fullName,
+      phone: customer.whatsapp,
+      metadata: { customerId: customer.id },
+    },
+    { idempotencyKey: `customer-${customer.id}` },
+  );
+  await db.customer.updateMany({
+    where: { id: customer.id, stripeCustomerId: null },
+    data: { stripeCustomerId: created.id },
+  });
+  const saved = await db.customer.findUniqueOrThrow({
+    where: { id: customer.id },
+    select: { stripeCustomerId: true },
+  });
+  return saved.stripeCustomerId ?? created.id;
 }

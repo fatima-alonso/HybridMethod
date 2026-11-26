@@ -7,6 +7,23 @@ import { getPhoneCountryOptions } from "@/lib/phone";
 
 import { ApplicationFlow } from "./ApplicationFlow";
 
+// Stripe.js carga un script de js.stripe.com: en las pruebas se sustituye el formulario incrustado.
+const stripeMounts: Array<{ clientSecret?: string | null }> = [];
+vi.mock("@stripe/stripe-js", () => ({ loadStripe: vi.fn(async () => null) }));
+vi.mock("@stripe/react-stripe-js", () => ({
+  EmbeddedCheckoutProvider: ({
+    options,
+    children,
+  }: {
+    options: { clientSecret?: string | null };
+    children: React.ReactNode;
+  }) => {
+    stripeMounts.push(options);
+    return <div data-testid="embedded-provider">{children}</div>;
+  },
+  EmbeddedCheckout: () => <div>Formulario de Stripe</div>,
+}));
+
 const COUNTRIES = getPhoneCountryOptions();
 
 type Reply = { status: number; body: Record<string, unknown> };
@@ -55,6 +72,21 @@ const transfer = {
   currency: "MXN",
   whatsappUrl: "https://wa.me/5215512345678?text=Hola",
 };
+
+function checkoutCreated(overrides: Record<string, unknown> = {}) {
+  return {
+    success: true,
+    clientSecret: "cs_test_1_secret_x",
+    publishableKey: "pk_test_123",
+    reference: "HM-2026-000050",
+    status: "pending_payment",
+    outcome: "created",
+    program: { slug: "hm-run", name: "HM RUN" },
+    amount: "1200.00",
+    currency: "MXN",
+    ...overrides,
+  };
+}
 
 async function reachPaymentStep() {
   reply("/api/verification/request", 200, { success: true, message: "ok" });
@@ -155,16 +187,85 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Elige cómo pagar" }));
   });
 
-  it("los pagos con Stripe aparecen deshabilitados (Fase 5)", async () => {
+  it("el pago único con tarjeta está disponible y la suscripción sigue deshabilitada (Fase 6)", async () => {
     await reachPaymentStep();
     const transferOption = screen.getByRole("radio", { name: /Transferencia bancaria/ });
     expect((transferOption as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("radio", { name: /Pago único/ }) as HTMLInputElement).disabled).toBe(
-      true,
+      false,
     );
     expect((screen.getByRole("radio", { name: /Suscripción/ }) as HTMLInputElement).disabled).toBe(
       true,
     );
+  });
+
+  it("pago único: pide el Checkout al servidor y muestra el formulario de Stripe (DECISIONS A27)", async () => {
+    stripeMounts.length = 0;
+    await reachPaymentStep();
+    reply("/api/checkout", 201, checkoutCreated());
+    fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Paga con tarjeta" });
+    expect(screen.getByText("Formulario de Stripe")).toBeTruthy();
+    expect(screen.getByText("HM-2026-000050")).toBeTruthy();
+    expect(stripeMounts.at(-1)).toEqual({ clientSecret: "cs_test_1_secret_x" });
+
+    // Solo programa y modalidad: el importe y el Price los decide el servidor (SDD §9.2).
+    expect(calls.at(-1)).toEqual({
+      url: "/api/checkout",
+      body: {
+        fullName: "Ana López",
+        whatsapp: { country: "MX", number: "55 1234 5678" },
+        program: "hm-run",
+        privacyAccepted: true,
+        mode: "payment",
+      },
+    });
+
+    // Puede regresar a elegir otra forma de pago.
+    fireEvent.click(screen.getByRole("button", { name: "Elegir otra forma de pago" }));
+    await screen.findByRole("heading", { name: "Elige cómo pagar" });
+  });
+
+  it("pago único: si Stripe no está disponible muestra el aviso y deja elegir otra forma", async () => {
+    await reachPaymentStep();
+    reply("/api/checkout", 503, {
+      success: false,
+      error: "payments_unavailable",
+      message: "El pago con tarjeta no está disponible en este momento.",
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByText(/no está disponible en este momento/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Elige cómo pagar" })).toBeTruthy();
+  });
+
+  it("pago único con un pendiente por transferencia: pregunta con la modalidad elegida", async () => {
+    await reachPaymentStep();
+    reply("/api/checkout", 409, {
+      success: false,
+      error: "pending_contract_exists",
+      message: "Encontramos un registro pendiente a tu nombre.",
+      pending: {
+        reference: "HM-2026-000007",
+        programSlug: "hm-run",
+        programName: "HM RUN",
+        paymentType: "transfer",
+        amount: "1200.00",
+        currency: "MXN",
+      },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Tienes un registro pendiente" });
+    reply(
+      "/api/checkout",
+      200,
+      checkoutCreated({ reference: "HM-2026-000007", outcome: "changed" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Cambiar a HM RUN · Pago único/ }));
+    await screen.findByRole("heading", { name: "Paga con tarjeta" });
+    expect(calls.at(-1)?.body).toMatchObject({ mode: "payment", pendingAction: "change" });
   });
 
   it("muestra el error del código y los intentos restantes", async () => {

@@ -6,17 +6,20 @@ import { FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
 import type { ProgramSlug } from "@/content/programs";
 import { ApplicationForm, type ApplicationFormValues } from "@/components/forms/ApplicationForm";
 import type { PhoneCountryOption } from "@/lib/phone";
-import type { TransferRequestBody } from "@/lib/validations";
+import type { CheckoutRequestBody, TransferRequestBody } from "@/lib/validations";
 import type { ProgramOption } from "@/types/program";
 
 import {
   isPendingSummary,
   postJson,
   type ApiFailure,
+  type ApiResult,
+  type CheckoutCreated,
   type PendingSummary,
   type TransferCreated,
 } from "./api";
-import { PaymentMethodStep } from "./PaymentMethodStep";
+import { CardPaymentStep } from "./CardPaymentStep";
+import { PaymentMethodStep, type PaymentMethodId } from "./PaymentMethodStep";
 import { PendingChoiceStep } from "./PendingChoiceStep";
 import { TransferPendingStep } from "./TransferPendingStep";
 import { VerifyCodeStep } from "./VerifyCodeStep";
@@ -25,8 +28,9 @@ type Step =
   | { name: "form" }
   | { name: "verify"; notice: string | null }
   | { name: "payment" }
-  | { name: "pendingChoice"; pending: PendingSummary }
-  | { name: "pending"; transfer: TransferCreated };
+  | { name: "pendingChoice"; pending: PendingSummary; method: PaymentMethodId }
+  | { name: "pending"; transfer: TransferCreated }
+  | { name: "card"; checkout: CheckoutCreated };
 
 type Props = {
   programs: readonly ProgramOption[];
@@ -40,8 +44,10 @@ function failureMessage(result: ApiFailure): string {
 }
 
 /**
- * Flujo de contratación (SDD §8.1, §8.4, DECISIONS A4):
- * formulario → código de verificación → método de pago → transferencia pendiente.
+ * Flujo de contratación (SDD §8.1, §8.2, §8.4, DECISIONS A4):
+ * formulario → código de verificación → método de pago → transferencia pendiente, o el formulario
+ * de Stripe incrustado para el pago con tarjeta (el pago lo confirma solo el webhook, nunca esta
+ * página).
  *
  * Los datos del formulario se quedan en el navegador hasta crear la contratación; el servidor los
  * vuelve a validar y toma el correo de la sesión de verificación, no del body.
@@ -80,27 +86,38 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     setStep({ name: "form" });
   }
 
-  async function onConfirmPayment(pendingAction?: "continue" | "change") {
+  async function onConfirmPayment(method: PaymentMethodId, pendingAction?: "continue" | "change") {
     if (!values || values.program === "") return;
     setBusy(true);
     setError(null);
-    const body: TransferRequestBody = {
+    const base: TransferRequestBody = {
       fullName: values.fullName,
       whatsapp: { country: values.whatsappCountry, number: values.whatsapp },
       program: values.program,
       privacyAccepted: values.privacyAccepted as true,
       ...(pendingAction ? { pendingAction } : {}),
     };
-    const result = await postJson<TransferCreated>("/api/transfers", body);
-    if (result.ok) {
-      setBusy(false);
-      setStep({ name: "pending", transfer: result.data });
-      return;
+    let result: ApiResult<TransferCreated | CheckoutCreated>;
+    if (method === "transfer") {
+      result = await postJson<TransferCreated>("/api/transfers", base);
+      if (result.ok) {
+        setBusy(false);
+        setStep({ name: "pending", transfer: result.data as TransferCreated });
+        return;
+      }
+    } else {
+      const body: CheckoutRequestBody = { ...base, mode: "payment" };
+      result = await postJson<CheckoutCreated>("/api/checkout", body);
+      if (result.ok) {
+        setBusy(false);
+        setStep({ name: "card", checkout: result.data as CheckoutCreated });
+        return;
+      }
     }
     if (result.error === "pending_contract_exists" && isPendingSummary(result.body?.pending)) {
       // Ya tiene un registro pendiente de otro programa o modalidad: se le pregunta (A20).
       setBusy(false);
-      setStep({ name: "pendingChoice", pending: result.body.pending });
+      setStep({ name: "pendingChoice", pending: result.body.pending, method });
       return;
     }
     if (result.error === "verification_required") {
@@ -152,7 +169,7 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
           program={program}
           busy={busy}
           error={error}
-          onConfirm={() => onConfirmPayment()}
+          onConfirm={(method) => onConfirmPayment(method)}
           onBack={backToForm}
         />
       );
@@ -162,10 +179,10 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       return (
         <PendingChoiceStep
           pending={step.pending}
-          requested={`${program?.name ?? ""} · ${PAYMENT_TYPE_LABELS.transfer}`}
+          requested={`${program?.name ?? ""} · ${PAYMENT_TYPE_LABELS[step.method]}`}
           busy={busy}
           error={error}
-          onChoose={(action) => onConfirmPayment(action)}
+          onChoose={(action) => onConfirmPayment(step.method, action)}
           onBack={() => {
             setError(null);
             setStep({ name: "payment" });
@@ -175,5 +192,15 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     }
     case "pending":
       return <TransferPendingStep transfer={step.transfer} onDone={finish} />;
+    case "card":
+      return (
+        <CardPaymentStep
+          checkout={step.checkout}
+          onBack={() => {
+            setError(null);
+            setStep({ name: "payment" });
+          }}
+        />
+      );
   }
 }

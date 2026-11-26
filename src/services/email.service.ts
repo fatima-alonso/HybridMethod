@@ -2,15 +2,21 @@ import { getConfig } from "@/lib/config";
 import { getResendClient, RESEND_DEV_FROM } from "@/lib/resend";
 
 import {
+  extraPaymentAlertEmail,
+  paymentNotCompletedEmail,
   paymentReceivedEmail,
   planDeliveryReminderEmail,
+  purchaseConfirmationEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
   welcomeEmail,
   type EmailContent,
+  type ExtraPaymentAlertEmailInput,
+  type PaymentNotCompletedEmailInput,
   type PaymentReceivedEmailInput,
   type PlanDeliveryReminderEmailInput,
+  type PurchaseConfirmationEmailInput,
   type TransferConfirmedEmailInput,
   type TransferPendingEmailInput,
   type WelcomeEmailInput,
@@ -108,4 +114,25 @@ export function sendPlanDeliveryReminderEmail(
   input: PlanDeliveryReminderEmailInput,
 ): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...planDeliveryReminderEmail(input) });
+}
+
+/** Purchase Confirmation (cliente): pago con Stripe confirmado por el webhook (RF-07). */
+export function sendPurchaseConfirmationEmail(
+  input: PurchaseConfirmationEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...purchaseConfirmationEmail(input) });
+}
+
+/** Payment Not Completed (cliente): un pago asíncrono (p. ej. OXXO) no se completó. */
+export function sendPaymentNotCompletedEmail(
+  input: PaymentNotCompletedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...paymentNotCompletedEmail(input) });
+}
+
+/** Extra Payment Alert (Ferro): Stripe cobró un contrato que ya estaba pagado. */
+export function sendExtraPaymentAlertEmail(
+  input: ExtraPaymentAlertEmailInput,
+): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...extraPaymentAlertEmail(input) });
 }

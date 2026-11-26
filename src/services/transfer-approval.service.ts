@@ -8,20 +8,13 @@ import type {
   TransferApproval,
 } from "@/generated/prisma/client";
 import { ApprovalPinNotConfiguredError, verifyApprovalPin } from "@/lib/approval-pin";
-import { getConfig, getWhatsAppNumber } from "@/lib/config";
+import { getConfig } from "@/lib/config";
 import { hashToken } from "@/lib/crypto";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { formatBusinessDate, formatBusinessDateTime } from "@/utils/format";
-import { buildWhatsAppLink } from "@/utils/whatsapp";
 
 import { recordAudit } from "./audit.service";
 import { effectiveContractStatus, markContractPaid } from "./contract.service";
 import { createPlanDeliveryLink } from "./delivery-link";
-import {
-  sendPaymentReceivedEmail,
-  sendTransferConfirmedEmail,
-  sendWelcomeEmail,
-} from "./email.service";
 import {
   ContractNotPendingError,
   InvalidApprovalPinError,
@@ -29,6 +22,7 @@ import {
   TransferLinkUnavailableError,
   type TransferLinkProblem,
 } from "./errors";
+import { sendPaidNotifications } from "./payment-notifications.service";
 import { recordSucceededPayment } from "./payment.service";
 import { createServicePeriod, nextOneMonthPeriod } from "./service-period.service";
 import {
@@ -376,98 +370,21 @@ export async function confirmTransfer(
     customer: contract.customer,
     program: contract.program,
   };
-  await sendConfirmationEmails(full, deliveryUrl, db);
+  await sendPaidNotifications(
+    {
+      contract: full.contract,
+      customer: full.customer,
+      program: full.program,
+      servicePeriod: full.servicePeriod,
+      method: "transfer",
+      amount: full.payment.amount.toFixed(2) as `${number}`,
+      currency: full.payment.currency,
+      deliveryUrl,
+      failureAuditAction: "transfer.notification_failed",
+    },
+    db,
+  );
   return full;
-}
-
-async function sendConfirmationEmails(
-  result: ConfirmTransferResult,
-  deliveryUrl: string,
-  db: Db,
-): Promise<void> {
-  const { contract, customer, program, servicePeriod } = result;
-  const serviceStart = formatBusinessDateTime(contract.serviceStartDate!);
-  const serviceEnd = formatBusinessDateTime(contract.serviceEndDate!);
-  const amount = formatContractAmount(contract);
-  const whatsappNumber = getWhatsAppNumber();
-
-  const emails: Array<[string, () => Promise<unknown>]> = [
-    [
-      "transfer_confirmed",
-      () =>
-        sendTransferConfirmedEmail({
-          to: customer.email,
-          customerName: customer.fullName,
-          reference: contract.reference,
-          programName: program.name,
-          amount,
-          serviceStart,
-          serviceEnd,
-        }),
-    ],
-    [
-      "welcome",
-      () =>
-        sendWelcomeEmail({
-          to: customer.email,
-          customerName: customer.fullName,
-          programName: program.name,
-          serviceStart,
-          serviceEnd,
-          whatsappUrl: whatsappNumber
-            ? buildWhatsAppLink(
-                whatsappNumber,
-                `Hola Ferro, soy ${customer.fullName}. Ya está activo mi plan de ${program.name} (${contract.reference}).`,
-              )
-            : null,
-        }),
-    ],
-    [
-      "payment_received",
-      () =>
-        sendPaymentReceivedEmail({
-          reference: contract.reference,
-          customerName: customer.fullName,
-          customerEmail: customer.email,
-          customerWhatsapp: customer.whatsapp,
-          programName: program.name,
-          amount,
-          method: `${TRANSFER_METHOD_LABEL} (confirmada por ti)`,
-          paidAt: formatBusinessDateTime(servicePeriod.paidAt),
-          serviceStart,
-          serviceEnd,
-          prepaid:
-            contract.status === "scheduled"
-              ? {
-                  from: formatBusinessDate(contract.serviceStartDate!),
-                  to: formatBusinessDate(contract.serviceEndDate!),
-                }
-              : null,
-          deliveryUrl,
-        }),
-    ],
-  ];
-
-  for (const [name, send] of emails) {
-    try {
-      await send();
-    } catch (error) {
-      console.error(
-        `[transfer] No se pudo enviar ${name} para ${contract.reference}:`,
-        error instanceof Error ? error.name : "error desconocido",
-      );
-      await recordAudit(
-        {
-          action: "transfer.notification_failed",
-          actor: "system",
-          entityType: "Contract",
-          entityId: contract.id,
-          metadata: { reference: contract.reference, email: name },
-        },
-        db,
-      ).catch(() => undefined);
-    }
-  }
 }
 
 // ─── Regeneración del enlace ────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.7 y SDD v1.10 (ya incluyen las decisiones A1–A12 y A14–A25). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.8 y SDD v1.13 (ya incluyen las decisiones A1–A12 y A14–A28). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -130,7 +130,7 @@ limit. La landing y el paso de pago muestran el precio con suscripción. Decisio
 unitarias (calendario, estados, catálogo, correos, interfaz) y con PostgreSQL (reglas A20, periodos, entrega,
 recordatorios, cron y rutas).
 
-## Fase 5 — Pago único con Stripe ⬜ (RF-07, RN-10, RN-11)
+## Fase 5 — Pago único con Stripe ✅ (RF-07, RN-10, RN-11)
 - `POST /api/checkout` en modo `payment` (exige la sesión verificada), con el precio tomado de la BD
   (`stripePriceIdOneTime`) y una comprobación de que el importe en Stripe coincide con `monthlyPrice`.
 - `POST /api/webhooks/stripe` con verificación de firma, registro en WebhookEvent e idempotencia.
@@ -139,6 +139,21 @@ recordatorios, cron y rutas).
   Received con el botón de entrega (Ferro), construido en la Fase 4.
 - Páginas de éxito y cancelación que solo informan, sin confirmar nada.
 - Pruebas con Stripe CLI (`stripe listen`) y webhooks duplicados o con firma inválida.
+
+**Resultado (2026-11-25).** `npm run stripe:sync` crea en Stripe un Product y dos Prices por programa (por
+`lookup_key`) y guarda sus IDs en la BD. `POST /api/checkout` (modo `payment`) con la sesión verificada: comprueba el
+Price contra Stripe antes de crear el contrato, aplica las reglas de A20, reutiliza la sesión abierta, expira la
+anterior al cambiar el pendiente y crea el cliente de Stripe una sola vez. `POST /api/webhooks/stripe`: firma con el
+body crudo, WebhookEvent con bloqueo de fila (entregas repetidas o simultáneas sin efectos, reintento tras un error),
+Payment + ServicePeriod + botón de entrega + contrato `active`/`scheduled` (pago tardío incluido), cobro adicional
+con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15 resuelta). Correos Purchase Confirmation, Welcome y
+Payment Received (compartidos con la transferencia). El formulario de pago de Stripe va incrustado en la landing
+(Embedded Checkout) y regresa a `/pago/exito`, que solo informa. Por decisión de Ferro se cobra mes con mes: con un mes
+vigente no se puede contratar otro (`409 active_period`). Decisiones en DECISIONS A26, A27 y A28. Pruebas: unitarias (importes en
+centavos, Prices, plantillas, interfaz) y con PostgreSQL + un Stripe en memoria + firmas reales del SDK (checkout,
+reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncrono, pago tardío, mes vigente, error y
+reintento). La prueba con la Stripe CLI contra la cuenta de prueba queda documentada en el README (necesita las
+claves de la cuenta).
 
 ## Fase 6 — Suscripciones y renovaciones ⬜ (RF-08, RF-17, RF-18, RN-03, RN-14)
 - Checkout en modo `subscription` con `stripePriceIdRecurring` (importe = `subscriptionPrice`).
@@ -152,7 +167,7 @@ recordatorios, cron y rutas).
 
 ## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
 - Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso
-  "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, un mes por adelantado y bloqueo
+  "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, mes con mes sin pagos por adelantado (A28) y bloqueo
   con suscripción activa. `GET /api/contracts/pending`. (Se puede adelantar.)
 - `POST /api/portal` con OTP y Stripe Customer Portal (cancelar al final del periodo, cambiar de plan,
   actualizar tarjeta); webhooks y correos de Subscription Cancelled.
@@ -163,4 +178,6 @@ recordatorios, cron y rutas).
 - Metadatos SEO, Open Graph, favicon, sitemap y página 404.
 - Vercel (staging y producción) con el cron diario, Neon, Prisma Migrate en el deploy, webhook de producción en
   Stripe, Customer Portal configurado, dominio de GoDaddy apuntado a Vercel y remitente verificado en Resend.
+- Stripe en modo live: claves live en Vercel, `npm run stripe:sync -- --live`, endpoint de webhook de producción (su
+  `whsec_` en Vercel), OXXO desactivado y recibos de Stripe activados (DECISIONS A26).
 - Prueba de punta a punta de los tres flujos en staging, incluida la entrega del plan.

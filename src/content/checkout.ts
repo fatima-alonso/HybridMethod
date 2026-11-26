@@ -3,6 +3,8 @@
  * transferencia pendiente. Los usan la interfaz y las rutas de la API.
  */
 
+import { formatBusinessDate } from "@/utils/format";
+
 /** Respuesta de `POST /api/verification/request`: igual exista o no el correo (RF-15). */
 export const VERIFICATION_REQUESTED_MESSAGE = "Si el correo es válido, recibirás un código.";
 
@@ -16,10 +18,29 @@ export const CONTRACT_RULE_MESSAGES = {
   pendingExists: "Encontramos un registro pendiente a tu nombre.",
   subscriptionActive:
     "Ya tienes una suscripción activa. Para cambiar de programa, hazlo desde la administración de tu suscripción.",
-  prepaidLimit:
-    "Ya pagaste tu siguiente mes por adelantado. Podrás contratar otro cuando empiece ese mes.",
+  /** Mes con mes, sin pagos por adelantado (DECISIONS A28). */
+  activePeriod: (activeUntil: Date) =>
+    `Ya tienes un mes pagado hasta el ${formatBusinessDate(activeUntil)}. Podrás pagar tu siguiente mes a partir de ese día.`,
   pendingNotTransfer:
     "Tu registro pendiente es de pago con tarjeta. Para pagarlo por transferencia, elige «Cambiar».",
+  pendingNotCard:
+    "Tu registro pendiente es de otra modalidad. Para pagarlo con tarjeta, elige «Cambiar».",
+} as const;
+
+/** Pago con tarjeta (Stripe Checkout, Fase 5). */
+export const CHECKOUT_MESSAGES = {
+  unavailable:
+    "El pago con tarjeta no está disponible en este momento. Puedes pagar por transferencia o intentarlo más tarde.",
+  inProgress:
+    "Ya recibimos tu pago con tarjeta y Stripe lo está confirmando. Te avisaremos por correo en cuanto quede listo.",
+} as const;
+
+/** Paso del formulario de pago de Stripe incrustado (Embedded Checkout, DECISIONS A27). */
+export const CARD_STEP = {
+  title: "Paga con tarjeta",
+  lead: "Completa tu pago en el formulario seguro de Stripe. Nosotros nunca vemos ni guardamos los datos de tu tarjeta.",
+  referenceLabel: "Referencia",
+  back: "Elegir otra forma de pago",
 } as const;
 
 /** Nombre de cada modalidad para el aviso del pendiente. */
@@ -67,8 +88,9 @@ export const PAYMENT_STEP = {
     {
       id: "one_time",
       name: "Pago único con tarjeta",
-      description: "Pagas un mes con Stripe.",
-      available: false,
+      description:
+        "Pagas un mes aquí mismo, en el formulario seguro de Stripe. Tu plan empieza en cuanto se confirma tu pago.",
+      available: true,
     },
     {
       id: "subscription",
@@ -101,3 +123,21 @@ export const FLOW_ERRORS = {
   generic: "Ocurrió un error. Intenta de nuevo en unos minutos.",
   sessionExpired: "Tu verificación venció. Te enviamos un código nuevo para continuar.",
 };
+
+/**
+ * Página de regreso de Stripe Checkout (SDD §7.5): solo informa. El pago lo confirma el webhook,
+ * nunca estas páginas, así que no muestran ni cambian ningún dato del contrato.
+ */
+export const CHECKOUT_RETURN_PAGES = {
+  success: {
+    metaTitle: "Pago enviado · THE HYBRID METHOD",
+    title: "¡Gracias!",
+    lead: "Stripe está procesando tu pago. En cuanto lo confirme te llegarán por correo tu confirmación de compra y la bienvenida a tu programa.",
+    steps: [
+      "Revisa tu correo (y la carpeta de spam) en los próximos minutos.",
+      "Si pagaste en efectivo o con otro método que tarda en confirmarse, te avisaremos cuando se acredite.",
+      "Ferro te escribirá por WhatsApp y te entregará tu plan en 3 a 5 días hábiles.",
+    ],
+    home: "Volver al inicio",
+  },
+} as const;

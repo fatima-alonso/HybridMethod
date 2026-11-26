@@ -6,17 +6,18 @@ import {
   amountForPaymentType,
   createContract,
   expireStalePendingContracts,
+  NON_RENEWING,
 } from "./contract.service";
 import {
+  ActivePeriodError,
   PendingContractExistsError,
-  PrepaidLimitError,
   ProgramUnavailableError,
   SubscriptionActiveError,
   type PendingContractSummary,
 } from "./errors";
 
 /**
- * Reglas antes de crear cualquier contrato (SDD §7.3, DECISIONS A20). Las usan `POST /api/transfers`
+ * Reglas antes de crear cualquier contrato (SDD §7.3, DECISIONS A20, A28). Las usan `POST /api/transfers`
  * y, en la Fase 5, `POST /api/checkout`.
  *
  * Quien llama debe estar dentro de una transacción con el `pg_advisory_xact_lock` del cliente y
@@ -84,7 +85,21 @@ export async function resolveContractRequest(
   });
   if (subscription) throw new SubscriptionActiveError();
 
-  // 3. Un solo pendiente por cliente.
+  // 3. Mes con mes, sin pagos por adelantado (DECISIONS A28): con un mes pagado que todavía no
+  //    termina, el siguiente se paga a partir del día en que termina.
+  const current = await tx.contract.findFirst({
+    where: {
+      customerId,
+      status: { in: ["active", "scheduled"] },
+      paymentType: { in: [...NON_RENEWING] },
+      serviceEndDate: { gt: now },
+    },
+    orderBy: { serviceEndDate: "desc" },
+    select: { serviceEndDate: true },
+  });
+  if (current?.serviceEndDate) throw new ActivePeriodError(current.serviceEndDate);
+
+  // 4. Un solo pendiente por cliente.
   const pending = await tx.contract.findFirst({
     where: { customerId, status: "pending_payment" },
     include: { program: true },
@@ -134,13 +149,6 @@ export async function resolveContractRequest(
     );
     return { outcome: "changed", contract, program, previousPaymentType: pending.paymentType };
   }
-
-  // 4. Un solo mes por adelantado: si ya hay uno pagado que todavía no empieza, no se permite otro.
-  const prepaid = await tx.contract.findFirst({
-    where: { customerId, status: "scheduled", serviceStartDate: { gt: now } },
-    select: { id: true },
-  });
-  if (prepaid) throw new PrepaidLimitError();
 
   const contract = await createContract(
     { customerId, programSlug: input.programSlug, paymentType: input.paymentType },

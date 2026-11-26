@@ -302,3 +302,120 @@ ${button(input.deliveryUrl, DELIVERY_BUTTON)}
   ].join("\n");
   return { subject, html, text };
 }
+
+// ─── Purchase Confirmation (cliente, pago con Stripe) ───────────────────────
+
+export type PurchaseConfirmationEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Importe ya formateado. */
+  amount: string;
+  /** Modalidad en texto (p. ej. "Pago único con tarjeta"). */
+  method: string;
+  /** Fechas ya formateadas. */
+  serviceStart: string;
+  serviceEnd: string;
+  /** `true` si es un mes pagado por adelantado que empieza después (DECISIONS A20). */
+  startsLater: boolean;
+};
+
+export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput): EmailContent {
+  const subject = `Confirmación de compra · ${input.reference}`;
+  const details = [
+    ["Referencia", input.reference],
+    ["Programa", input.programName],
+    ["Importe", input.amount],
+    ["Método", input.method],
+    ["Vigencia", `Del ${input.serviceStart} al ${input.serviceEnd}`],
+  ] as const;
+  const lead = input.startsLater
+    ? `Hola ${input.customerName}, recibimos tu pago. Este mes empieza el ${input.serviceStart}, cuando termina el que ya tenías pagado.`
+    : `Hola ${input.customerName}, recibimos tu pago. Tu plan ya está activo.`;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Compra confirmada</h1>
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">Guarda este correo como comprobante. Stripe también te envía su recibo.</p>`,
+  );
+  const text = [
+    "Compra confirmada",
+    "",
+    lead,
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
+    "",
+    "Guarda este correo como comprobante. Stripe también te envía su recibo.",
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Payment Not Completed (cliente, pago asíncrono fallido) ────────────────
+
+export type PaymentNotCompletedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Enlace para volver a intentarlo (la sección de inscripción de la landing). */
+  retryUrl: string;
+};
+
+export function paymentNotCompletedEmail(input: PaymentNotCompletedEmailInput): EmailContent {
+  const subject = `Tu pago no se completó · ${input.reference}`;
+  const lead = `Hola ${input.customerName}, Stripe nos avisó que tu pago de ${input.programName} no se completó, así que no se hizo ningún cargo.`;
+  const next =
+    "Tu registro sigue pendiente durante 7 días. Puedes volver a intentarlo con tu mismo correo, con otra forma de pago o por transferencia.";
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Tu pago no se completó</h1>
+<p style="margin:0 0 16px;">${escapeHtml(lead)}</p>
+<p style="margin:0;">${escapeHtml(next)}</p>
+${button(input.retryUrl, "Intentarlo de nuevo")}`,
+  );
+  const text = ["Tu pago no se completó", "", lead, "", next, "", input.retryUrl].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Extra Payment Alert (Ferro) ────────────────────────────────────────────
+
+export type ExtraPaymentAlertEmailInput = {
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  /** Importe cobrado por Stripe, ya formateado. */
+  amount: string;
+  /** ID del Payment Intent, para buscarlo en el Dashboard de Stripe. */
+  stripePaymentIntentId: string;
+};
+
+/**
+ * Stripe confirmó un pago para un contrato que ya estaba pagado (p. ej. dos pestañas de Checkout).
+ * No abre otro mes: Ferro decide en Stripe si lo reembolsa (los reembolsos son manuales).
+ */
+export function extraPaymentAlertEmail(input: ExtraPaymentAlertEmailInput): EmailContent {
+  const subject = `Revisa un pago adicional · ${input.reference}`;
+  const details = [
+    ["Cliente", input.customerName],
+    ["Correo", input.customerEmail],
+    ["Referencia", input.reference],
+    ["Importe", input.amount],
+    ["Pago en Stripe", input.stripePaymentIntentId],
+  ] as const;
+  const lead =
+    "Stripe cobró un pago para un contrato que ya estaba pagado. No se abrió otro mes. Revísalo en el Dashboard de Stripe y, si corresponde, reembólsalo desde ahí.";
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">Revisa un pago adicional</h1>
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}`,
+  );
+  const text = [
+    "Revisa un pago adicional",
+    "",
+    lead,
+    "",
+    ...details.map(([label, value]) => `${label}: ${value}`),
+  ].join("\n");
+  return { subject, html, text };
+}

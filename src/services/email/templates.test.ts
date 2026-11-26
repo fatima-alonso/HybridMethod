@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   escapeHtml,
+  extraPaymentAlertEmail,
+  paymentNotCompletedEmail,
   paymentReceivedEmail,
   planDeliveryReminderEmail,
+  purchaseConfirmationEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
@@ -161,6 +164,56 @@ describe("plantillas de correo (SDD §6.2)", () => {
     expect(email.subject).toContain("Está pendiente el plan de");
     expect(email.text).toContain("HM RUN · HM-2026-000001 · pagado el 24 de noviembre de 2026");
     expect(email.html).toContain('href="https://example.com/plan/entrega/xyz"');
+    expect(email.html).not.toContain("<img");
+  });
+
+  it("Purchase Confirmation (Stripe) incluye referencia, método y vigencia, y escapa el nombre", () => {
+    const base = {
+      customerName: evil,
+      reference: "HM-2026-000051",
+      programName: "HM STRENGTH",
+      amount: "$1,500 MXN",
+      method: "Pago único con tarjeta",
+      serviceStart: "25 de noviembre de 2026",
+      serviceEnd: "25 de diciembre de 2026",
+    };
+    const email = purchaseConfirmationEmail({ ...base, startsLater: false });
+    expect(email.subject).toBe("Confirmación de compra · HM-2026-000051");
+    expect(email.text).toContain("Tu plan ya está activo.");
+    expect(email.text).toContain("Método: Pago único con tarjeta");
+    expect(email.text).toContain(
+      "Vigencia: Del 25 de noviembre de 2026 al 25 de diciembre de 2026",
+    );
+    expect(email.html).not.toContain("<img");
+
+    const later = purchaseConfirmationEmail({ ...base, startsLater: true });
+    expect(later.text).toContain("Este mes empieza el 25 de noviembre de 2026");
+    expect(later.text).not.toContain("ya está activo");
+  });
+
+  it("Payment Not Completed dice que no hubo cargo y trae el botón para reintentar", () => {
+    const email = paymentNotCompletedEmail({
+      customerName: evil,
+      reference: "HM-2026-000052",
+      programName: "HM RUN",
+      retryUrl: "https://example.com/?programa=hm-run#athlete-application",
+    });
+    expect(email.text).toContain("no se hizo ningún cargo");
+    expect(email.html).toContain('href="https://example.com/?programa=hm-run#athlete-application"');
+    expect(email.html).not.toContain("<img");
+  });
+
+  it("Extra Payment Alert (Ferro) incluye el pago de Stripe para revisarlo", () => {
+    const email = extraPaymentAlertEmail({
+      reference: "HM-2026-000053",
+      customerName: evil,
+      customerEmail: "ana@example.com",
+      amount: "$1,200 MXN",
+      stripePaymentIntentId: "pi_123",
+    });
+    expect(email.subject).toContain("HM-2026-000053");
+    expect(email.text).toContain("Pago en Stripe: pi_123");
+    expect(email.text).toContain("No se abrió otro mes");
     expect(email.html).not.toContain("<img");
   });
 });

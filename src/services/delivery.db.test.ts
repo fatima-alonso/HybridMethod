@@ -18,7 +18,8 @@ vi.mock("./email.service", async (importOriginal) => ({
   sendPlanDeliveryReminderEmail: (...args: unknown[]) => sendPlanDeliveryReminderEmail(...args),
 }));
 
-const { requestTransfer } = await import("./transfer.service");
+const { createTransferApproval, requestTransfer } = await import("./transfer.service");
+const { createContract } = await import("./contract.service");
 const { confirmTransfer } = await import("./transfer-approval.service");
 const { confirmDelivery, getDeliveryView } = await import("./delivery.service");
 const { runDailyJobs, sendPlanDeliveryReminders, startOfBusinessDay } =
@@ -269,30 +270,21 @@ describe.skipIf(!testDatabaseUrl)("entrega del plan y cron diario (DECISIONS A19
     );
   });
 
-  it("runDailyJobs activa el mes pagado por adelantado cuando termina el anterior", async () => {
+  it("runDailyJobs activa un mes programado (pago tardío) cuando termina el anterior", async () => {
     const first = await paidMonth();
-    // Paga su siguiente mes el 1 de diciembre: queda programado del 24 dic al 24 ene.
+    // Ya no se paga por adelantado (A28), pero un pago tardío de un contrato que ya existía se
+    // respeta (A20) y empieza cuando termina el mes vigente: del 24 dic al 24 ene.
     const december = new Date("2026-12-01T16:00:00Z");
-    await requestTransfer(
-      {
-        verifiedEmail: "ana@example.com",
-        fullName: "Ana López",
-        whatsapp: "+525512345678",
-        programSlug: "hm-run",
-      },
-      {},
+    const customer = await prisma.customer.findUniqueOrThrow({
+      where: { email: "ana@example.com" },
+    });
+    const late = await createContract(
+      { customerId: customer.id, programSlug: "hm-run", paymentType: "transfer" },
       prisma,
       december,
     );
-    const url = (sendTransferPendingEmail.mock.calls.at(-1)?.[0] as { confirmUrl: string })
-      .confirmUrl;
-    const second = await confirmTransfer(
-      { token: tokenFrom(url, "/transfer/confirm/"), pin: PIN },
-      {},
-      prisma,
-      december,
-      pinHash,
-    );
+    const { token } = await createTransferApproval(late.id, prisma, december);
+    const second = await confirmTransfer({ token, pin: PIN }, {}, prisma, december, pinHash);
     expect(second.contract.status).toBe("scheduled");
 
     const result = await runDailyJobs(prisma, new Date("2026-12-24T17:00:00Z"));

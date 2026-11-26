@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -336,7 +336,7 @@ suspende** mientras haya un pago vencido: el contrato pasa a `payment_failed`. S
 `active` con el periodo de esa factura. Si se agotan los reintentos, Stripe cancela la suscripción (configurarlo
 así en Stripe) y el contrato pasa a `cancelled`.
 
-### A20. Contratos pendientes, vencimiento y pagos por adelantado (B9)
+### A20. Contratos pendientes, vencimiento y pagos por adelantado (B9) — el pago por adelantado lo reemplaza A28
 **Un solo pendiente por cliente.** Un cliente tiene como máximo un contrato `pending_payment` (índice único
 parcial). Al pedir una contratación con el correo ya verificado:
 - Si tiene un pendiente con el **mismo programa y modalidad**, se reutiliza: misma referencia, sin crear otro.
@@ -520,6 +520,95 @@ Puntos que el SDD no definía y que se resolvieron así al implementar A18–A20
 precio completo; el paso "Elige cómo pagar" muestra el importe de cada modalidad. Se quitaron los textos de
 "mismo precio" y la nota pendiente sobre el IVA.
 
+### A26. Fase 5: pago único con Stripe (2026-11-25)
+Puntos que el SDD no definía y que se resolvieron así al implementar el pago único. Todos son reversibles.
+
+**Precios en Stripe (`npm run stripe:sync`).** Cada programa tiene en Stripe un Product con el mismo id que su slug
+(`hm-run`, …) y dos Prices identificados por `lookup_key`: `<slug>_one_time` (`monthlyPrice`) y `<slug>_recurring`
+(`subscriptionPrice`, mensual; se crea ya para la Fase 6). El script los crea o reutiliza y guarda sus IDs en
+`programs`. Si un precio del catálogo cambia, crea un Price nuevo (transfiere la `lookup_key`) y archiva el anterior,
+porque en Stripe un Price no se puede editar. Los Prices se crean con `tax_behavior: inclusive` (precios finales, A18).
+Con una clave live exige `--live`. Antes de cada Checkout el servidor lee el Price en Stripe y comprueba que esté
+activo, sea del programa, en MXN, del tipo correcto y por el importe de la BD; si no, no crea el contrato ni el
+Checkout, registra el error y responde `503 payments_unavailable` (el cliente puede pagar por transferencia).
+
+**`POST /api/checkout`.** Igual que `POST /api/transfers` (A16), recibe el formulario completo más `mode`
+(solo `payment` en esta fase) y crea o asocia el cliente en la misma llamada; `customerId` y `programId` del SDD §7.4
+no se exponen. Aplica las reglas de A20/A25 con `paymentType = one_time`:
+- Un pendiente igual se reutiliza con **la misma sesión** de Checkout si sigue abierta y cobra el mismo Price; si
+  venció, se abre otra con la misma referencia. Si la sesión guardada ya se completó (p. ej. un pago en OXXO que
+  todavía no se acredita), responde `409 payment_in_progress` y no abre otra, para no cobrar dos veces.
+- "Cambiar" desde una transferencia invalida el enlace de Ferro; "cambiar" desde otro pago con tarjeta (o de tarjeta
+  a transferencia en `POST /api/transfers`) expira la sesión anterior en Stripe. "Continuar" con un pendiente de otra
+  modalidad responde 409 y pide elegir "cambiar" (como en A25).
+- El cliente de Stripe se crea una vez por cliente (clave de idempotencia `customer-<id>`) y se guarda en
+  `Customer.stripeCustomerId`. La sesión se guarda en el contrato con un compare-and-set: con dos solicitudes
+  simultáneas gana una y la otra sesión se expira. Sin `STRIPE_SECRET_KEY` (desarrollo) responde 503.
+- Checkout en `es-419`, con `metadata.contractId`, `client_reference_id` y la referencia en la descripción del pago.
+  Regresa a `/pago/exito`, página estática que solo informa (no lee la sesión). El formulario va incrustado en la
+  landing (A27). Rate limit:
+  10 por IP por hora.
+
+**Webhook.** La firma se verifica con el body crudo y `STRIPE_WEBHOOK_SECRET` (sin él, 503). El evento se inserta en
+WebhookEvent y se procesa en una transacción que bloquea su fila (`FOR UPDATE`): una entrega repetida o simultánea
+responde 200 sin volver a aplicarse. Si el procesamiento falla, todo se revierte, el evento queda `failed` y se
+responde 500 para que Stripe reintente; el reintento sí se procesa. Un evento sin contrato propio se marca `failed` y
+responde 200 (reintentarlo no ayudaría). Los eventos que no son de A6 se marcan `ignored`.
+- El pago (`stripe_one_time`) se registra con el importe que cobró Stripe y su Payment Intent (UNIQUE). Si no coincide
+  con el contrato, se respeta y se audita `stripe.amount_mismatch`. `paidAt` es la fecha del evento; el mes empieza
+  ahí o al terminar el mes vigente (pago por adelantado, `scheduled`). Un contrato vencido se activa igual
+  (`contract.paid_after_expiry`, A20).
+- Un cobro para un contrato **ya pagado** (p. ej. dos pestañas de Checkout) se registra como Payment, no abre otro
+  mes, se audita `stripe.extra_payment` y Ferro recibe "Revisa un pago adicional" para reembolsarlo desde Stripe si
+  corresponde (los reembolsos son manuales).
+- Correos después de confirmar la transacción: Purchase Confirmation y Welcome (cliente) y Payment Received con el
+  botón de entrega (Ferro), con el mismo código que la transferencia (`payment-notifications.service`).
+
+**Configuración de la cuenta de Stripe (2026-11-26).** THE HYBRID METHOD usa una cuenta de Stripe propia, separada
+del otro negocio de Ferro. No se acepta OXXO (se desactiva en el Dashboard; el código no fija métodos de pago). Se
+activan los recibos de Stripe para pagos exitosos, así que el correo Purchase Confirmation puede decir que Stripe
+también envía su recibo.
+
+**Pago asíncrono fallido (`checkout.session.async_payment_failed`).** El SDD §7.5 decía "pasar el contrato a
+`payment_failed`", pero la máquina de estados (§5.3) no permite `pending_payment → payment_failed` y ese estado
+significa "servicio suspendido", que no aplica a un contrato que nunca se activó. Se implementó así: se registra el
+Payment `failed`, el contrato **sigue `pending_payment`** (vence a los 7 días como cualquier pendiente), se suelta su
+sesión para que el siguiente intento abra otra, se audita `stripe.async_payment_failed` y el cliente recibe "Tu pago
+no se completó" con un botón para intentarlo de nuevo. Confirmado el 2026-11-25 (B15): no se usa `payment_failed`
+para contratos que nunca se activaron; ese estado queda solo para suscripciones con un cobro vencido.
+
+### A27. Formulario de pago incrustado (Embedded Checkout) (2026-11-25)
+Decisión de la dueña del proyecto: el pago con tarjeta se hace **dentro de la landing**, con el formulario de Stripe
+incrustado (Embedded Checkout), en lugar de mandar al cliente a la página de Stripe. Reemplaza lo que A26 decía de
+`/pago/cancelado`.
+- La sesión se crea con `ui_mode: "embedded_page"` y `return_url = /pago/exito`. `POST /api/checkout` responde el
+  `client_secret` de la sesión y la clave publicable (`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) en lugar de una URL. El
+  servidor exige que la clave publicable exista y sea del mismo modo (test o live) que la secreta; si no, `503
+  payments_unavailable`.
+- La sección Athlete Application monta el formulario con `@stripe/react-stripe-js` (`EmbeddedCheckoutProvider`) en
+  el paso "Paga con tarjeta", con el programa, el importe y la referencia. Los datos de la tarjeta los captura Stripe en
+  su iframe (RN-10). "Elegir otra forma de pago" regresa al paso anterior; la sesión sigue abierta y se reutiliza.
+- Ya no hay página de cancelación: el cliente se queda en la landing. `/pago/exito` sigue siendo la única página de
+  regreso y solo informa; el servicio se activa solo con el webhook.
+- Todo lo demás de A26 (precios, reglas, reutilización de la sesión, webhook) no cambia.
+
+### A28. Mes con mes, sin pagos por adelantado (2026-11-26)
+Respuesta de Ferro: para no complicarlo, **no se paga ningún mes por adelantado**; se cobra mes con mes. Reemplaza el
+"pago por adelantado con un periodo vigente" de A20 (y el límite de un mes de A25).
+- Si el cliente tiene un mes de pago único o transferencia que todavía no termina (`active` o `scheduled` con
+  `serviceEndDate > now`), no puede crear otra contratación: `409 active_period` con `activeUntil`, y la página le
+  dice "Ya tienes un mes pagado hasta el [fecha]. Podrás pagar tu siguiente mes a partir de ese día." Aplica a
+  `POST /api/transfers` y `POST /api/checkout`, y se revisa antes que el pendiente.
+- El día en que termina su mes ya puede pagar el siguiente, del mismo programa o de otro (así se cambia de programa
+  con pago único o transferencia, RN-08). Como siempre (A19), el mes nuevo empieza el día del pago.
+- Se conservan el estado `scheduled` y el cálculo "empieza cuando termina el vigente" solo para un **pago tardío**
+  real (A20) de un contrato que ya existía, que se sigue respetando: p. ej. Ferro confirma una transferencia vencida, o
+  Stripe confirma tarde un pago, cuando el cliente ya pagó otro mes por otro camino.
+- Con esto tampoco hace falta cambiar cuándo empiezan los recordatorios de entrega (se habló de esperar al inicio de
+  cada mes adelantado): en el flujo normal cada mes empieza el día del pago.
+- Idea para el futuro, sin implementar: una promoción tipo "paga 3 meses y el 4.º es gratis", como **un solo pago**
+  que active varios meses seguidos. Ver B16.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -538,3 +627,5 @@ precio completo; el paso "Elige cómo pagar" muestra el importe de cada modalida
 | 12 | Política de privacidad y condiciones | Fase 8 | Borrador en A22; faltan los datos del responsable y la revisión legal |
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
+| 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` o sigue pendiente? | — | Resuelto en A26 (2026-11-25): sigue `pending_payment`, el cliente recibe un aviso y puede reintentar con la misma referencia; vence a los 7 días sin actividad |
+| 16 | Promoción de varios meses en un solo pago (p. ej. paga 3 y el 4.º gratis) | — | Idea de Ferro para el futuro (A28), sin fecha. Implicaría un Price de paquete en Stripe y que un Payment abra varios ServicePeriod seguidos (hoy `ServicePeriod.paymentId` es UNIQUE), con sus correos y recordatorios por mes |
