@@ -168,8 +168,14 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
 
 let cached: AppConfig | undefined;
 
-/** Configuración validada del proceso actual (se valida una vez y se guarda en memoria). */
+/**
+ * Configuración validada del proceso actual. En producción se valida una vez y se guarda en
+ * memoria. En desarrollo se vuelve a leer en cada llamada (es barato), porque `next dev` recarga
+ * `.env.local` sin reiniciar: así un cambio de `STRIPE_WEBHOOK_SECRET` (`npm run stripe:listen`)
+ * aplica de inmediato.
+ */
 export function getConfig(): AppConfig {
+  if (process.env.NODE_ENV === "development") return parseConfig(process.env);
   cached ??= parseConfig(process.env);
   return cached;
 }

@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.8 y SDD v1.14 (ya incluyen las decisiones A1–A12 y A14–A29). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.8 y SDD v1.15 (ya incluyen las decisiones A1–A12 y A14–A30). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).

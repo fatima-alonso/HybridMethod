@@ -32,7 +32,7 @@ export const CHECKOUT_MESSAGES = {
   unavailable:
     "El pago con tarjeta no está disponible en este momento. Puedes pagar por transferencia o intentarlo más tarde.",
   inProgress:
-    "Ya recibimos tu pago con tarjeta y Stripe lo está confirmando. Te avisaremos por correo en cuanto quede listo.",
+    "Ya recibimos tu pago con tarjeta y lo estamos procesando. Te avisaremos por correo en cuanto quede listo.",
 } as const;
 
 /** Paso del formulario de pago de Stripe incrustado (DECISIONS A27, A29). */
@@ -137,7 +137,7 @@ export const CHECKOUT_RETURN_PAGES = {
   success: {
     metaTitle: "Pago enviado · THE HYBRID METHOD",
     title: "¡Gracias!",
-    lead: "Stripe está procesando tu pago. En cuanto lo confirme te llegarán por correo tu confirmación de compra y la bienvenida a tu programa.",
+    lead: "Estamos procesando tu pago. En cuanto se confirme te llegarán por correo tu confirmación de compra y la bienvenida a tu programa.",
     steps: [
       "Revisa tu correo (y la carpeta de spam) en los próximos minutos.",
       "Si pagaste en efectivo o con otro método que tarda en confirmarse, te avisaremos cuando se acredite.",

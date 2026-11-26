@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ConfigError, getDatabaseUrl, getWhatsAppNumber, parseConfig } from "./config";
+import {
+  ConfigError,
+  getConfig,
+  getDatabaseUrl,
+  getWhatsAppNumber,
+  parseConfig,
+  resetConfigCache,
+} from "./config";
 
 const validProductionEnv = {
   NODE_ENV: "production",
@@ -187,5 +194,26 @@ describe("getDatabaseUrl (DECISIONS A14)", () => {
     } catch (error) {
       expect((error as Error).message).not.toContain("secreto");
     }
+  });
+});
+
+describe("getConfig (DECISIONS A30)", () => {
+  afterEach(() => resetConfigCache());
+
+  it("en desarrollo toma al instante un cambio de .env.local (p. ej. STRIPE_WEBHOOK_SECRET)", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_primero");
+    expect(getConfig().STRIPE_WEBHOOK_SECRET).toBe("whsec_primero");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_segundo");
+    expect(getConfig().STRIPE_WEBHOOK_SECRET).toBe("whsec_segundo");
+  });
+
+  it("fuera de desarrollo la guarda en memoria", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_primero");
+    resetConfigCache();
+    expect(getConfig().STRIPE_WEBHOOK_SECRET).toBe("whsec_primero");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_segundo");
+    expect(getConfig().STRIPE_WEBHOOK_SECRET).toBe("whsec_primero");
   });
 });

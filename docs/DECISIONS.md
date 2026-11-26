@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -627,6 +627,17 @@ instrucciones de Stripe (servidor nuevo, webhook nuevo, `STRIPE_INTEGRATION_TODO
   y, si Stripe rechaza el pago, se muestra el motivo sin salir de la página. Apariencia: la de Checkout Studio
   (tema `night`, campos separados) con los colores de la marca: fondo `#111111`, texto `#F5F3EE`, principal `#FF6A00`
   y la fuente Inter. Se quita `@stripe/react-stripe-js`.
+
+### A30. Webhooks en local con `npm run stripe:listen` (2026-11-26)
+En las pruebas con la cuenta de Stripe el webhook respondía `[400]` una y otra vez: con `--api-key`, cada ejecución de
+`stripe listen` puede dar un `whsec_` distinto, y había que copiarlo a `.env.local` y reiniciar `npm run dev` en el
+orden correcto. Para evitarlo:
+- `npm run stripe:listen` (`scripts/stripe-listen.ts`) arranca `stripe listen` con la clave de `.env.local`, reenvía a
+  `127.0.0.1:<puerto>/api/webhooks/stripe` (3000 o `--port`; `127.0.0.1` evita el problema de `localhost` → IPv6) solo
+  los eventos de `STRIPE_WEBHOOK_EVENTS` (`src/lib/stripe-constants.ts`, la misma lista que usa el webhook) y escribe el
+  `whsec_` de esa ejecución en `STRIPE_WEBHOOK_SECRET`. Nunca imprime el secreto completo y rechaza claves live.
+- En desarrollo `getConfig()` ya no guarda la configuración en memoria: `next dev` recarga `.env.local` solo y el
+  secreto nuevo aplica sin reiniciar. En producción y pruebas se sigue guardando.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

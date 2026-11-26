@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.14 |
+| **Versión** | 1.15 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.8 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.15 | 2026-11-26 | Webhooks en local (DECISIONS A30): §4 `stripe-listen` y `stripe-constants`; §9.1 en desarrollo la configuración se vuelve a leer en cada llamada. |
 | 1.14 | 2026-11-26 | Formulario de pago de Checkout Studio (DECISIONS A29): §6.1 y §7.4 `ui_mode: form`, `returnUrl` en la respuesta, tarjeta guardada en Stripe y sin pedir el nombre. |
 | 1.13 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): §7.3 regla 3 (`409 active_period`), §5.3 `scheduled` solo por un pago tardío, §10. |
 | 1.12 | 2026-11-25 | Formulario de pago incrustado (DECISIONS A27): §6.1 y §7.4 Embedded Checkout (`client_secret` y clave publicable en la respuesta); se quita `/pago/cancelado`. |
@@ -126,7 +127,8 @@ the-hybrid-method/
 │   └── fonts/
 ├── scripts/
 │   ├── hash-pin.ts
-│   └── stripe-sync.ts
+│   ├── stripe-sync.ts
+│   └── stripe-listen.ts      # webhooks en local (DECISIONS A30)
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx
@@ -161,6 +163,7 @@ the-hybrid-method/
 │   ├── lib/
 │   │   ├── prisma.ts
 │   │   ├── stripe.ts
+│   │   ├── stripe-constants.ts
 │   │   ├── resend.ts
 │   │   ├── validations.ts
 │   │   ├── crypto.ts
@@ -970,7 +973,7 @@ PLAN_DELIVERY_REMINDER_BUSINESS_DAYS=1
 CRON_SECRET=
 ```
 Los valores reales nunca se suben al repositorio. `src/lib/config.ts` valida al iniciar que existan las variables obligatorias.
-En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto), `PENDING_CONTRACT_TTL_DAYS` (7 por defecto) y `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` (1 por defecto); en desarrollo y pruebas son opcionales para poder trabajar sin claves reales (modo desarrollo de cada servicio). Una variable definida siempre se valida en formato. La validación se ejecuta al arrancar el servidor (`src/instrumentation.ts`), no durante `next build` (DECISIONS A9).
+En producción todas las variables son obligatorias salvo `TRANSFER_LINK_TTL_DAYS` (7 por defecto), `PENDING_CONTRACT_TTL_DAYS` (7 por defecto) y `PLAN_DELIVERY_REMINDER_BUSINESS_DAYS` (1 por defecto); en desarrollo y pruebas son opcionales para poder trabajar sin claves reales (modo desarrollo de cada servicio). Una variable definida siempre se valida en formato. La validación se ejecuta al arrancar el servidor (`src/instrumentation.ts`), no durante `next build` (DECISIONS A9). En producción y pruebas la configuración validada se guarda en memoria; en desarrollo se vuelve a leer en cada llamada para tomar los cambios de `.env.local` sin reiniciar (DECISIONS A30).
 
 ### 9.2 Stripe
 - Verificar la firma de todos los webhooks.

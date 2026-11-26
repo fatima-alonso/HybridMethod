@@ -84,27 +84,38 @@ funcionando. Para probarlo en local con tu cuenta de Stripe **en modo de prueba*
    npm run stripe:sync
    ```
 
-3. Instala la [Stripe CLI](https://docs.stripe.com/stripe-cli), inicia sesión y reenvía los
-   webhooks a tu app. El comando imprime un secreto `whsec_…`: ponlo en `STRIPE_WEBHOOK_SECRET` y
-   reinicia `npm run dev`.
+3. Instala la [Stripe CLI](https://docs.stripe.com/stripe-cli) e inicia sesión en la cuenta de
+   THE HYBRID METHOD:
 
    ```bash
    stripe login
    ```
 
+4. Con `npm run dev` corriendo, en **otra terminal** reenvía los webhooks a tu app y déjala abierta:
+
    ```bash
-   stripe listen --forward-to localhost:3000/api/webhooks/stripe --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
+   npm run stripe:listen
    ```
 
-4. Haz una inscripción en la landing y elige "Pago único con tarjeta": el formulario de pago de Stripe
-   aparece ahí mismo, con el diseño de la marca (DECISIONS A29). Paga con la tarjeta de prueba `4242 4242 4242 4242` (cualquier
-   fecha futura y cualquier CVC). El webhook activa el contrato y en
-   la terminal aparecen los correos (Purchase Confirmation, Welcome y Payment Received con el botón
-   de entrega).
+   Usa la clave de `.env.local`, escucha solo los eventos que procesa la app y escribe en
+   `STRIPE_WEBHOOK_SECRET` el `whsec_…` de esa ejecución (cada ejecución puede dar uno nuevo).
+   `npm run dev` lo toma solo, sin reiniciar. Si la app corre en otro puerto:
+   `npm run stripe:listen -- --port 3001`.
 
-Pruebas útiles con la CLI: reenviar un evento (`stripe events resend evt_…`) debe responder
-`duplicate` sin duplicar nada, y un pago con la tarjeta `4000 0000 0000 0002` se rechaza en Checkout
-sin tocar el contrato. Las dos claves (`sk_…` y `pk_…`) deben ser del mismo modo; si no, el pago
+5. Haz una inscripción en la landing y elige "Pago único con tarjeta": el formulario de pago de Stripe
+   aparece ahí mismo, con el diseño de la marca (DECISIONS A29). Paga con la tarjeta de prueba
+   `4242 4242 4242 4242` (cualquier fecha futura y cualquier CVC). En la terminal de
+   `stripe:listen` debe salir `<-- [200] POST …/api/webhooks/stripe`; el webhook activa el contrato y
+   se envían los correos (Purchase Confirmation, Welcome y Payment Received con el botón de
+   entrega).
+
+Si sale `[400]`, la app no tiene el mismo `whsec_`: reinicia `npm run dev`. Si sale "connection
+refused", `npm run dev` no está corriendo o usa otro puerto.
+
+Pruebas útiles con la CLI: reenviar un evento (`stripe events resend evt_… --api-key <sk_test_…>`, con
+el ID de la línea `-->` de `stripe:listen`) debe responder
+`duplicate` sin duplicar nada, y un pago con la tarjeta `4000 0000 0000 0002` se rechaza en el formulario
+sin tocar el contrato (`4000 0025 0000 3155` pide 3D Secure). Las dos claves (`sk_…` y `pk_…`) deben ser del mismo modo; si no, el pago
 con tarjeta aparece como no disponible. Para producción (Fase 8): un endpoint de webhook en el Dashboard apuntando a
 `https://<dominio>/api/webhooks/stripe` con esos tres eventos (y los de suscripción en la Fase 6), y
 `npm run stripe:sync -- --live` con la clave live. Detalle en DECISIONS A26.
@@ -129,6 +140,7 @@ con tarjeta aparece como no disponible. Para producción (Fase 8): un endpoint d
 | `npm run format:check` | Comprueba el formato (lo ejecuta la CI).                   |
 | `npm run hash-pin`     | Genera `FERRO_APPROVAL_PIN_HASH` a partir del PIN de Ferro. |
 | `npm run stripe:sync`  | Crea o actualiza en Stripe los productos y precios y guarda sus IDs. |
+| `npm run stripe:listen` | Reenvía los webhooks de Stripe a la app local y guarda su `whsec_`. |
 
 Antes de abrir un PR: `npm run lint`, `npm run typecheck` y `npm test` sin errores. La CI
 (`.github/workflows/ci.yml`) ejecuta además `format:check` y `build` en cada PR.
@@ -140,7 +152,7 @@ Sigue la sección 4 del SDD:
 ```
 prisma/              Esquema, seed y migraciones
 public/              images/, logos/, fonts/
-scripts/             Scripts de soporte (hash-pin, stripe-sync)
+scripts/             Scripts de soporte (hash-pin, stripe-sync, stripe-listen)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
 src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
 src/content/         Catálogo de programas (precios) y textos de la landing
