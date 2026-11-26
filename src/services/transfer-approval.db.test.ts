@@ -381,10 +381,11 @@ describe.skipIf(!testDatabaseUrl)(
         expect(result.paidAfterExpiry).toBe(true);
       });
 
-      it("pago por adelantado: el mes nuevo empieza cuando termina el vigente (scheduled)", async () => {
-        const first = await pendingTransfer();
-        await confirm(first.token, PIN);
-        // Al día siguiente contrata su siguiente mes y Ferro lo confirma.
+      it("pago tardío con un mes vigente: el mes nuevo empieza cuando termina el vigente (scheduled)", async () => {
+        // Ya no se paga por adelantado (A28), pero un pago real tardío se respeta (A20): Ana dejó
+        // vencer una transferencia, contrató y pagó otra, y después Ferro confirma la primera.
+        const late = await pendingTransfer();
+        const dec2 = new Date("2026-12-02T16:00:00Z");
         const second = await requestTransfer(
           {
             verifiedEmail: "ana@example.com",
@@ -394,20 +395,32 @@ describe.skipIf(!testDatabaseUrl)(
           },
           {},
           prisma,
-          new Date(now.getTime() + day),
+          dec2,
         );
-        const result = await confirm(lastToken(), PIN, new Date(now.getTime() + day));
         expect(second.outcome).toBe("created");
+        const paidSecond = await confirm(lastToken(), PIN, dec2);
+        expect(paidSecond.contract.status).toBe("active");
+
+        const dec3 = new Date("2026-12-03T16:00:00Z");
+        await regenerateTransferLink(
+          { reference: late.contract.reference, pin: PIN },
+          context,
+          prisma,
+          dec3,
+          pinHash,
+        );
+        const result = await confirm(lastToken(), PIN, dec3);
+        expect(result.paidAfterExpiry).toBe(true);
         expect(result.contract).toMatchObject({
           status: "scheduled",
-          serviceStartDate: new Date("2026-12-25T16:30:00Z"),
-          serviceEndDate: new Date("2027-01-25T16:30:00Z"),
+          serviceStartDate: paidSecond.contract.serviceEndDate,
+          serviceEndDate: new Date("2027-02-02T16:00:00Z"),
         });
-        expect(result.servicePeriod.paidAt).toEqual(new Date(now.getTime() + day));
+        expect(result.servicePeriod.paidAt).toEqual(dec3);
         const email = sendPaymentReceivedEmail.mock.calls.at(-1)?.[0] as { prepaid: unknown };
         expect(email.prepaid).toEqual({
-          from: "25 de diciembre de 2026",
-          to: "25 de enero de 2027",
+          from: "2 de enero de 2027",
+          to: "2 de febrero de 2027",
         });
       });
     });

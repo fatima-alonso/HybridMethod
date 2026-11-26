@@ -103,7 +103,7 @@ async function hasUsableApproval(contractId: string, db: Db, now: Date): Promise
  *
  * Un pendiente reutilizado que todavía tiene un enlace vigente no genera otro ni reenvía el correo
  * (así un doble envío no duplica nada, A16). Lanza `PendingContractExistsError`,
- * `SubscriptionActiveError` o `PrepaidLimitError` según las reglas.
+ * `SubscriptionActiveError` o `ActivePeriodError` según las reglas.
  *
  * Quien llama debe haber validado la sesión de verificación (RN-12).
  */

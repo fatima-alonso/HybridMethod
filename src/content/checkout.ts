@@ -3,6 +3,8 @@
  * transferencia pendiente. Los usan la interfaz y las rutas de la API.
  */
 
+import { formatBusinessDate } from "@/utils/format";
+
 /** Respuesta de `POST /api/verification/request`: igual exista o no el correo (RF-15). */
 export const VERIFICATION_REQUESTED_MESSAGE = "Si el correo es válido, recibirás un código.";
 
@@ -16,8 +18,9 @@ export const CONTRACT_RULE_MESSAGES = {
   pendingExists: "Encontramos un registro pendiente a tu nombre.",
   subscriptionActive:
     "Ya tienes una suscripción activa. Para cambiar de programa, hazlo desde la administración de tu suscripción.",
-  prepaidLimit:
-    "Ya pagaste tu siguiente mes por adelantado. Podrás contratar otro cuando empiece ese mes.",
+  /** Mes con mes, sin pagos por adelantado (DECISIONS A28). */
+  activePeriod: (activeUntil: Date) =>
+    `Ya tienes un mes pagado hasta el ${formatBusinessDate(activeUntil)}. Podrás pagar tu siguiente mes a partir de ese día.`,
   pendingNotTransfer:
     "Tu registro pendiente es de pago con tarjeta. Para pagarlo por transferencia, elige «Cambiar».",
   pendingNotCard:

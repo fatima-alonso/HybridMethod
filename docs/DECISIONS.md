@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -336,7 +336,7 @@ suspende** mientras haya un pago vencido: el contrato pasa a `payment_failed`. S
 `active` con el periodo de esa factura. Si se agotan los reintentos, Stripe cancela la suscripción (configurarlo
 así en Stripe) y el contrato pasa a `cancelled`.
 
-### A20. Contratos pendientes, vencimiento y pagos por adelantado (B9)
+### A20. Contratos pendientes, vencimiento y pagos por adelantado (B9) — el pago por adelantado lo reemplaza A28
 **Un solo pendiente por cliente.** Un cliente tiene como máximo un contrato `pending_payment` (índice único
 parcial). Al pedir una contratación con el correo ya verificado:
 - Si tiene un pendiente con el **mismo programa y modalidad**, se reutiliza: misma referencia, sin crear otro.
@@ -587,6 +587,23 @@ incrustado (Embedded Checkout), en lugar de mandar al cliente a la página de St
   regreso y solo informa; el servicio se activa solo con el webhook.
 - Todo lo demás de A26 (precios, reglas, reutilización de la sesión, webhook) no cambia.
 
+### A28. Mes con mes, sin pagos por adelantado (2026-11-26)
+Respuesta de Ferro: para no complicarlo, **no se paga ningún mes por adelantado**; se cobra mes con mes. Reemplaza el
+"pago por adelantado con un periodo vigente" de A20 (y el límite de un mes de A25).
+- Si el cliente tiene un mes de pago único o transferencia que todavía no termina (`active` o `scheduled` con
+  `serviceEndDate > now`), no puede crear otra contratación: `409 active_period` con `activeUntil`, y la página le
+  dice "Ya tienes un mes pagado hasta el [fecha]. Podrás pagar tu siguiente mes a partir de ese día." Aplica a
+  `POST /api/transfers` y `POST /api/checkout`, y se revisa antes que el pendiente.
+- El día en que termina su mes ya puede pagar el siguiente, del mismo programa o de otro (así se cambia de programa
+  con pago único o transferencia, RN-08). Como siempre (A19), el mes nuevo empieza el día del pago.
+- Se conservan el estado `scheduled` y el cálculo "empieza cuando termina el vigente" solo para un **pago tardío**
+  real (A20) de un contrato que ya existía, que se sigue respetando: p. ej. Ferro confirma una transferencia vencida, o
+  Stripe confirma tarde un pago, cuando el cliente ya pagó otro mes por otro camino.
+- Con esto tampoco hace falta cambiar cuándo empiezan los recordatorios de entrega (se habló de esperar al inicio de
+  cada mes adelantado): en el flujo normal cada mes empieza el día del pago.
+- Idea para el futuro, sin implementar: una promoción tipo "paga 3 meses y el 4.º es gratis", como **un solo pago**
+  que active varios meses seguidos. Ver B16.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -606,3 +623,4 @@ incrustado (Embedded Checkout), en lugar de mandar al cliente a la página de St
 | 13 | Formato del WhatsApp guardado (E.164 vs. 10 dígitos sin lada) | — | Resuelto en A15: selector de país (México por defecto), cualquier país, E.164 |
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
 | 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` o sigue pendiente? | — | Resuelto en A26 (2026-11-25): sigue `pending_payment`, el cliente recibe un aviso y puede reintentar con la misma referencia; vence a los 7 días sin actividad |
+| 16 | Promoción de varios meses en un solo pago (p. ej. paga 3 y el 4.º gratis) | — | Idea de Ferro para el futuro (A28), sin fecha. Implicaría un Price de paquete en Stripe y que un Payment abra varios ServicePeriod seguidos (hoy `ServicePeriod.paymentId` es UNIQUE), con sus correos y recordatorios por mes |

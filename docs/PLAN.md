@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.7 y SDD v1.12 (ya incluyen las decisiones A1–A12 y A14–A27). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.8 y SDD v1.13 (ya incluyen las decisiones A1–A12 y A14–A28). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -148,9 +148,10 @@ body crudo, WebhookEvent con bloqueo de fila (entregas repetidas o simultáneas 
 Payment + ServicePeriod + botón de entrega + contrato `active`/`scheduled` (pago tardío incluido), cobro adicional
 con aviso a Ferro y pago asíncrono fallido (el contrato sigue pendiente, B15 resuelta). Correos Purchase Confirmation, Welcome y
 Payment Received (compartidos con la transferencia). El formulario de pago de Stripe va incrustado en la landing
-(Embedded Checkout) y regresa a `/pago/exito`, que solo informa. Decisiones en DECISIONS A26 y A27. Pruebas: unitarias (importes en
+(Embedded Checkout) y regresa a `/pago/exito`, que solo informa. Por decisión de Ferro se cobra mes con mes: con un mes
+vigente no se puede contratar otro (`409 active_period`). Decisiones en DECISIONS A26, A27 y A28. Pruebas: unitarias (importes en
 centavos, Prices, plantillas, interfaz) y con PostgreSQL + un Stripe en memoria + firmas reales del SDK (checkout,
-reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncrono, pago tardío, adelantado, error y
+reglas, firma inválida, duplicados, simultáneos, fuera de orden, pago asíncrono, pago tardío, mes vigente, error y
 reintento). La prueba con la Stripe CLI contra la cuenta de prueba queda documentada en el README (necesita las
 claves de la cuenta).
 
@@ -166,7 +167,7 @@ claves de la cuenta).
 
 ## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
 - Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso
-  "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, un mes por adelantado y bloqueo
+  "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, mes con mes sin pagos por adelantado (A28) y bloqueo
   con suscripción activa. `GET /api/contracts/pending`. (Se puede adelantar.)
 - `POST /api/portal` con OTP y Stripe Customer Portal (cancelar al final del periodo, cambiar de plan,
   actualizar tarjeta); webhooks y correos de Subscription Cancelled.

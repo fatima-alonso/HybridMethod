@@ -103,9 +103,13 @@ export class SubscriptionActiveError extends ServiceError {
   }
 }
 
-export class PrepaidLimitError extends ServiceError {
-  constructor() {
-    super("El cliente ya pagó su siguiente mes por adelantado.", "prepaid_limit");
+/**
+ * El cliente tiene un mes pagado (pago único o transferencia) que todavía no termina. Se cobra mes
+ * con mes: el siguiente se paga a partir del día en que termina (DECISIONS A28).
+ */
+export class ActivePeriodError extends ServiceError {
+  constructor(public readonly activeUntil: Date) {
+    super("El cliente tiene un mes pagado que todavía no termina.", "active_period");
   }
 }
 

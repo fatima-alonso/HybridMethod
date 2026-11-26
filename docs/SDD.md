@@ -3,9 +3,9 @@
 
 | | |
 |---|---|
-| **Versión** | 1.12 |
+| **Versión** | 1.13 |
 | **Estado** | Diseño técnico actualizado |
-| **Relacionado con** | SRS v1.7 |
+| **Relacionado con** | SRS v1.8 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 
 ### Historial de cambios
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.13 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): §7.3 regla 3 (`409 active_period`), §5.3 `scheduled` solo por un pago tardío, §10. |
 | 1.12 | 2026-11-25 | Formulario de pago incrustado (DECISIONS A27): §6.1 y §7.4 Embedded Checkout (`client_secret` y clave publicable en la respuesta); se quita `/pago/cancelado`. |
 | 1.11 | 2026-11-25 | Fase 5, pago único con Stripe (DECISIONS A26): §4 `checkout`, `stripe-webhook`, `stripe-catalog` y `payment-notifications` services, script `stripe-sync` y páginas `/pago/exito` y `/pago/cancelado`; §6.1 productos y Prices por `lookup_key`; §7.4 body, reutilización de la sesión y respuestas; §7.5 bloqueo del evento, reintentos, cobro adicional y pago asíncrono fallido: el contrato sigue pendiente (B15, confirmado). |
 | 1.6 | 2026-11-23 | §4: `program.service`; §5.3: Program con `displayOrder` y `updatedAt`, origen de los datos de la landing, formato de la referencia; §5.4: restricciones CHECK y transiciones compare-and-set (DECISIONS A14); WhatsApp de cualquier país en E.164 (DECISIONS A15). |
@@ -302,7 +303,7 @@ Estados:
 |---|---|
 | `pending_payment` | Creado y esperando el pago (transferencia sin aprobar o Checkout sin completar). |
 | `expired` | Pendiente vencido tras 7 días sin actividad. Ya no se reutiliza (DECISIONS A20). |
-| `scheduled` | Pagado por adelantado: el mes empieza al terminar el periodo vigente del cliente (DECISIONS A20). |
+| `scheduled` | Pagado, pero el mes empieza al terminar el periodo vigente del cliente. Ya no se paga por adelantado (DECISIONS A28): solo ocurre con un pago tardío confirmado mientras el cliente tiene un mes vigente (A20). |
 | `active` | Pago confirmado y mes en curso: `serviceStartDate ≤ now < serviceEndDate`. |
 | `completed` | Terminó el periodo pagado sin renovación (pago único o transferencia). |
 | `payment_failed` | Suscripción con un cobro vencido (`past_due`/`unpaid`) o pago asíncrono fallido. El servicio está suspendido. |
@@ -312,7 +313,7 @@ Transiciones permitidas (solo mediante `contract.service`):
 
 ```
 pending_payment ──> active          (pago confirmado)
-pending_payment ──> scheduled       (pago confirmado con un periodo vigente: pago por adelantado)
+pending_payment ──> scheduled       (pago confirmado con un periodo vigente: pago tardío, A28)
 pending_payment ──> expired         (7 días sin actividad)
 expired         ──> active | scheduled  (pago tardío: se respeta y se audita)
 scheduled       ──> active          (llega la fecha de inicio)
@@ -357,7 +358,7 @@ Un mes pagado (DECISIONS A19). Guarda las tres fechas que pide Ferro.
 | sequence | Integer | Número de mes dentro del contrato (1, 2, …); UNIQUE con `contractId` |
 | paidAt | DateTime | Fecha de pago |
 | planDeliveredOn | Date? | Día de entrega del plan, registrado por Ferro. Solo referencia |
-| startDate | DateTime | Inicio del mes: la fecha de pago, o el fin del periodo vigente del cliente si pagó por adelantado (en suscripciones, el inicio del periodo de la factura) |
+| startDate | DateTime | Inicio del mes: la fecha de pago, o el fin del periodo vigente del cliente si el pago tardío llegó con un mes vigente (en suscripciones, el inicio del periodo de la factura) |
 | endDate | DateTime | Mismo día del mes siguiente (último día del mes si no existe) |
 | deliveryRecordedAt | DateTime? | Cuándo se registró la entrega |
 | lastReminderAt | DateTime? | Último recordatorio enviado a Ferro |
@@ -633,7 +634,7 @@ El servidor determina el importe a partir del programa guardado y de la modalida
    - Del mismo programa y modalidad: reutilizarlo (misma referencia), actualizar `lastActivityAt` y, si es transferencia sin enlace vigente, generar uno nuevo y avisar a Ferro.
    - De otro programa o modalidad: responder `409 pending_contract_exists` con el resumen del pendiente (programa, modalidad, importe, referencia) para que la página pregunte "¿continuar o cambiar?". La elección vuelve en el mismo endpoint con `pendingAction: "continue" | "change"`.
    - Con `change`: actualizar ese contrato (programa, modalidad, importe de la BD), invalidar su enlace de transferencia o expirar su Checkout en Stripe, y escribir `contract.pending_changed` en AuditLog.
-4. Si tiene un mes pagado sin terminar (`scheduled` o `active`, de pago único o transferencia), se permite **un** contrato más por adelantado. Si ya tiene uno, responder `409 prepaid_limit`.
+4. Mes con mes, sin pagos por adelantado (DECISIONS A28): si tiene un mes pagado sin terminar (`scheduled` o `active`, de pago único o transferencia, con `serviceEndDate > now`), responder `409 active_period` con `activeUntil` (fin de ese mes). Se revisa antes que el pendiente. El siguiente mes se paga a partir del día en que termina.
 
 `POST /api/transfers` (y en la Fase 5 `/api/checkout`) responde 201 al crear un contrato y 200 al reutilizar, retomar o cambiar el pendiente, con `outcome` (`created`, `reused`, `continued`, `changed`). Implementado en `contract-request.service` (DECISIONS A25).
 
@@ -680,7 +681,7 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 
 | Flujo | Evento | Acción |
 |---|---|---|
-| Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago por adelantado). Si es `unpaid` (pago asíncrono), esperar. |
+| Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago tardío con un mes vigente). Si es `unpaid` (pago asíncrono), esperar. |
 | Pago único | `checkout.session.async_payment_succeeded` | Igual que el anterior con `paid`. |
 | Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido. El contrato sigue `pending_payment` (nunca se activó) y el cliente puede reintentar; se le avisa (DECISIONS A26, B15). |
 | Suscripción | `checkout.session.completed` (modo subscription) | Solo relacionar `stripeSubscriptionId` con el contrato; **no** crea el Payment. |
@@ -727,7 +728,7 @@ Response:
 ```
 En una transacción crea o asocia el Customer (como `POST /api/customers`), crea el contrato `pending_payment`, genera el token de aprobación (solo se guarda su hash) y escribe AuditLog (`transfer.requested`). Después envía el correo Transfer Pending a Ferro con el enlace `${APP_URL}/transfer/confirm/<token>`; si falla, el contrato se conserva y se registra `transfer.notification_failed`. La respuesta también incluye el programa, el importe y el enlace `wa.me` prellenado (RF-10).
 
-Aplica las reglas de §7.3 (un solo pendiente por cliente, vencimiento, suscripción activa, un mes por adelantado). Un doble envío dentro de la misma sesión devuelve el mismo contrato sin reenviar el correo (DECISIONS A16). Rate limit: 10 por IP por hora.
+Aplica las reglas de §7.3 (un solo pendiente por cliente, vencimiento, suscripción activa, mes vigente). Un doble envío dentro de la misma sesión devuelve el mismo contrato sin reenviar el correo (DECISIONS A16). Rate limit: 10 por IP por hora.
 
 **`GET /transfer/confirm/[token]`** — Página privada para que Ferro revise la transferencia.
 
@@ -1033,7 +1034,7 @@ Se pide y guarda solo la información necesaria para prestar el servicio y proce
 | Entrega ya registrada | Mostrar la fecha registrada, sin cambios |
 | Cliente con suscripción activa intenta contratar | `409 subscription_active`; ofrecer el portal |
 | Cliente con otro pendiente | `409 pending_contract_exists`; preguntar si continúa o cambia |
-| Cliente que ya pagó un mes por adelantado | `409 prepaid_limit` |
+| Cliente con un mes pagado que todavía no termina | `409 active_period` con la fecha en que termina (DECISIONS A28) |
 | Pago confirmado de un contrato vencido | Respetar el pago y auditar `contract.paid_after_expiry` |
 | Error de correo | Registrar el fallo y permitir un reintento controlado, sin revertir el pago |
 | Error de base de datos | Registrar el error sin exponer información sensible |
@@ -1087,11 +1088,11 @@ El dominio se compra en GoDaddy (DECISIONS A17). Sus DNS se apuntan a Vercel y s
 - Envío de correos.
 - Cancelación y cambio de plan desde el portal (webhooks).
 - Transiciones válidas e inválidas de estados del contrato.
-- Periodos: un mes desde la fecha de pago, fin de mes en meses cortos, mes por adelantado (`scheduled`).
+- Periodos: un mes desde la fecha de pago, fin de mes en meses cortos, pago tardío con un mes vigente (`scheduled`).
 - Registro de la entrega: GET sin efectos, fecha por defecto hoy, fecha futura o anterior al pago rechazada, botón vencido, varios botones del mismo mes, doble registro sin cambios.
 - Recordatorios: solo días hábiles, uno por cliente y por día, cada uno con botón nuevo, se detienen al registrar la entrega.
 - Transferencia confirmada sobre un contrato vencido (pago tardío).
-- Pendiente reutilizado, cambiado y vencido; pago tardío; límite de un mes por adelantado; suscripción activa.
+- Pendiente reutilizado, cambiado y vencido; pago tardío; mes vigente (sin pagos por adelantado); suscripción activa.
 - Precio de suscripción con 10 % de descuento.
 
 ### 12.2 Pruebas de integración

@@ -6,8 +6,8 @@ import { createTestPrisma, testDatabaseUrl, truncateAll } from "@/test/db";
 import { isContractReference } from "@/utils/reference";
 
 import {
+  ActivePeriodError,
   PendingContractExistsError,
-  PrepaidLimitError,
   ProgramUnavailableError,
   SubscriptionActiveError,
 } from "./errors";
@@ -294,16 +294,18 @@ describe.skipIf(!testDatabaseUrl)("transfer.service con PostgreSQL (RF-09)", () 
       );
     });
 
-    it("permite un solo mes por adelantado", async () => {
+    it("mes con mes: con un mes pagado vigente rechaza otra contratación hasta que termine (A28)", async () => {
       const { contract } = await requestTransfer(input, {}, prisma, now);
-      // Ya pagó su siguiente mes, que empieza más adelante.
       await prisma.contract.update({
         where: { id: contract.id },
-        data: { status: "scheduled", serviceStartDate: later(10), serviceEndDate: later(40) },
+        data: { status: "active", serviceStartDate: now, serviceEndDate: later(30) },
       });
-      await expect(requestTransfer(input, {}, prisma, later(1))).rejects.toBeInstanceOf(
-        PrepaidLimitError,
-      );
+      const error = await requestTransfer(input, {}, prisma, later(1)).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ActivePeriodError);
+      expect((error as ActivePeriodError).activeUntil).toEqual(later(30));
+      // El día en que termina ya puede pagar su siguiente mes.
+      const next = await requestTransfer(input, {}, prisma, later(30));
+      expect(next.outcome).toBe("created");
     });
   });
 });

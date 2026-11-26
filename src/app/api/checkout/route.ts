@@ -15,11 +15,11 @@ import { consumeRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { checkoutRequestSchema } from "@/lib/validations";
 import { requestCheckout } from "@/services/checkout.service";
 import {
+  ActivePeriodError,
   CheckoutInProgressError,
   PaymentsUnavailableError,
   PendingContractExistsError,
   PendingNotCardError,
-  PrepaidLimitError,
   ProgramUnavailableError,
   SubscriptionActiveError,
 } from "@/services/errors";
@@ -92,8 +92,15 @@ export async function POST(request: NextRequest) {
     if (error instanceof SubscriptionActiveError) {
       return jsonError(409, "subscription_active", CONTRACT_RULE_MESSAGES.subscriptionActive);
     }
-    if (error instanceof PrepaidLimitError) {
-      return jsonError(409, "prepaid_limit", CONTRACT_RULE_MESSAGES.prepaidLimit);
+    if (error instanceof ActivePeriodError) {
+      return jsonError(
+        409,
+        "active_period",
+        CONTRACT_RULE_MESSAGES.activePeriod(error.activeUntil),
+        {
+          activeUntil: error.activeUntil.toISOString(),
+        },
+      );
     }
     if (error instanceof PendingNotCardError) {
       return jsonError(409, "pending_contract_exists", CONTRACT_RULE_MESSAGES.pendingNotCard);

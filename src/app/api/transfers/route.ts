@@ -14,9 +14,9 @@ import {
 import { consumeRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { transferRequestSchema } from "@/lib/validations";
 import {
+  ActivePeriodError,
   PendingContractExistsError,
   PendingNotTransferError,
-  PrepaidLimitError,
   ProgramUnavailableError,
   SubscriptionActiveError,
 } from "@/services/errors";
@@ -87,8 +87,15 @@ export async function POST(request: NextRequest) {
     if (error instanceof SubscriptionActiveError) {
       return jsonError(409, "subscription_active", CONTRACT_RULE_MESSAGES.subscriptionActive);
     }
-    if (error instanceof PrepaidLimitError) {
-      return jsonError(409, "prepaid_limit", CONTRACT_RULE_MESSAGES.prepaidLimit);
+    if (error instanceof ActivePeriodError) {
+      return jsonError(
+        409,
+        "active_period",
+        CONTRACT_RULE_MESSAGES.activePeriod(error.activeUntil),
+        {
+          activeUntil: error.activeUntil.toISOString(),
+        },
+      );
     }
     if (error instanceof PendingNotTransferError) {
       return jsonError(409, "pending_contract_exists", CONTRACT_RULE_MESSAGES.pendingNotTransfer);

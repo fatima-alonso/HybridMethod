@@ -29,7 +29,7 @@ export type ApiErrorCode =
   | "not_found"
   | "pending_contract_exists"
   | "subscription_active"
-  | "prepaid_limit"
+  | "active_period"
   | "invalid_date"
   | "service_unavailable"
   | "payments_unavailable"

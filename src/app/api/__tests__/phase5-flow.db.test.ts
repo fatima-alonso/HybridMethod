@@ -532,16 +532,36 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 5 (Stripe) con PostgreSQL", ()
       ).toBe(1);
     });
 
-    it("un mes pagado por adelantado queda `scheduled` y empieza al terminar el vigente", async () => {
-      const first = await openCheckout("hm-run");
-      await webhook(stripeEvent("checkout.session.completed", paid(first.sessionId)));
-      const current = await prisma.contract.findUniqueOrThrow({ where: { id: first.contract.id } });
+    it("mes con mes: con un mes vigente no abre otro Checkout (409 active_period, A28)", async () => {
+      const { contract, sessionId } = await openCheckout("hm-run");
+      await webhook(stripeEvent("checkout.session.completed", paid(sessionId)));
+      const res = await checkout("hm-strength");
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body).toMatchObject({ error: "active_period" });
+      const active = await prisma.contract.findUniqueOrThrow({ where: { id: contract.id } });
+      expect(body.activeUntil).toBe(active.serviceEndDate!.toISOString());
+      expect(fake.calls.sessionCreate).toBe(1);
+    });
 
-      const second = await openCheckout("hm-strength");
-      await webhook(stripeEvent("checkout.session.completed", paid(second.sessionId)));
-      const next = await prisma.contract.findUniqueOrThrow({ where: { id: second.contract.id } });
+    it("un pago tardío con un mes vigente queda `scheduled` y empieza al terminar el vigente", async () => {
+      // El cliente dejó vencer un Checkout, contrató y pagó otro, y después Stripe confirma el
+      // primero (p. ej. un pago lento): se respeta (A20) y empieza al terminar el mes vigente.
+      const late = await openCheckout("hm-run");
+      await prisma.contract.update({
+        where: { id: late.contract.id },
+        data: { status: "expired" },
+      });
+      const current = await openCheckout("hm-strength");
+      await webhook(stripeEvent("checkout.session.completed", paid(current.sessionId)));
+      const active = await prisma.contract.findUniqueOrThrow({
+        where: { id: current.contract.id },
+      });
+
+      await webhook(stripeEvent("checkout.session.completed", paid(late.sessionId)));
+      const next = await prisma.contract.findUniqueOrThrow({ where: { id: late.contract.id } });
       expect(next.status).toBe("scheduled");
-      expect(next.serviceStartDate!.toISOString()).toBe(current.serviceEndDate!.toISOString());
+      expect(next.serviceStartDate!.toISOString()).toBe(active.serviceEndDate!.toISOString());
       const confirmation = sent.filter((s) => s.kind === "purchase_confirmation").at(-1)!;
       expect(confirmation.input.startsLater).toBe(true);
     });
