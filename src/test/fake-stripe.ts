@@ -65,6 +65,8 @@ type FakeInvoice = {
   attempt_count: number;
   paid_at: number | null;
   payment_intent: string;
+  /** Próximo reintento programado, o `null` si Stripe ya no reintentará. */
+  next_payment_attempt: number | null;
 };
 
 const unix = (date: Date) => Math.floor(date.getTime() / 1000);
@@ -90,7 +92,13 @@ export class FakeStripe {
   invoices = new Map<string, FakeInvoice>();
   /** Si se define, `checkout.sessions.create` lanza este error. */
   failSessionCreate: Error | null = null;
-  calls = { sessionCreate: 0, sessionExpire: 0, customerCreate: 0, subscriptionRetrieve: 0 };
+  calls = {
+    sessionCreate: 0,
+    sessionExpire: 0,
+    customerCreate: 0,
+    subscriptionRetrieve: 0,
+    subscriptionCancel: 0,
+  };
   private seq = 0;
   private idempotency = new Map<string, string>();
 
@@ -188,6 +196,7 @@ export class FakeStripe {
       attempt_count: 0,
       paid_at: null,
       payment_intent: this.nextId("pi"),
+      next_payment_attempt: null,
     };
     this.invoices.set(invoice.id, invoice);
     return invoice;
@@ -202,7 +211,7 @@ export class FakeStripe {
     return this.createInvoice(subscription, "subscription_cycle");
   }
 
-  /** Un intento de cobro de la factura se paga (renovación o reintento de Smart Retries). */
+  /** Un intento de cobro de la factura se paga (renovación o reintento diario). */
   payInvoice(invoiceId: string): Stripe.Invoice {
     const invoice = this.invoices.get(invoiceId);
     if (!invoice) throw new MissingResourceError(invoiceId);
@@ -213,11 +222,22 @@ export class FakeStripe {
     return this.asInvoice(invoice);
   }
 
+  /**
+   * Intentos de cobro de una renovación (DECISIONS A32): el del día y un reintento diario. Después
+   * del último, Stripe ya no programa otro (`next_payment_attempt = null`).
+   */
+  maxPaymentAttempts = 3;
+
   /** Un intento de cobro falla: la suscripción queda `past_due` (o `unpaid`). */
   failInvoice(invoiceId: string, status: Stripe.Subscription.Status = "past_due"): Stripe.Invoice {
     const invoice = this.invoices.get(invoiceId);
     if (!invoice) throw new MissingResourceError(invoiceId);
     invoice.attempt_count += 1;
+    invoice.next_payment_attempt =
+      invoice.billing_reason !== "subscription_create" &&
+      invoice.attempt_count < this.maxPaymentAttempts
+        ? invoice.periodStart + invoice.attempt_count * 86_400
+        : null;
     this.subscriptionStore.get(invoice.subscriptionId)!.status = status;
     return this.asInvoice(invoice);
   }
@@ -265,6 +285,7 @@ export class FakeStripe {
       amount_due: invoice.amount,
       amount_paid: invoice.status === "paid" ? invoice.amount : 0,
       attempt_count: invoice.attempt_count,
+      next_payment_attempt: invoice.next_payment_attempt,
       hosted_invoice_url: `https://invoice.stripe.test/i/${invoice.id}`,
       status_transitions: { paid_at: invoice.paid_at },
       period_start: invoice.periodStart,
@@ -309,6 +330,10 @@ export class FakeStripe {
       const subscription = this.subscriptionStore.get(id);
       if (!subscription) throw new MissingResourceError(id);
       return this.asSubscription(subscription);
+    },
+    cancel: async (id: string) => {
+      this.calls.subscriptionCancel += 1;
+      return this.cancelSubscription(id);
     },
   };
 

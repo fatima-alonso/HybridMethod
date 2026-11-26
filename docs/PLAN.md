@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.8 y SDD v1.16 (ya incluyen las decisiones A1–A12 y A14–A31). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.9 y SDD v1.17 (ya incluyen las decisiones A1–A12 y A14–A32). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -163,7 +163,7 @@ claves de la cuenta).
   y su botón de entrega con el periodo de la factura, extiende el contrato y avisa a Ferro (Renewal Successful
   con botón en las renovaciones). Stripe cobra mes con mes desde el primer pago.
 - `invoice.payment_failed` → registrar el fallo, suspender (`payment_failed`) y enviar Payment Failed.
-  Smart Retries y cancelación al agotarse (configuración de Stripe documentada en el README).
+  Tres intentos en días seguidos y cancelación si ninguno pasa (DECISIONS A32; configuración de Stripe en el README).
 - Pruebas con Stripe test clocks para simular renovaciones y pagos fallidos.
 
 **Resultado (2026-11-26).** `POST /api/checkout` con `mode: "subscription"` (Price `recurring` comprobado contra
@@ -174,8 +174,9 @@ suscripción en Stripe (`subscription.service`), así que tolera duplicados y de
 ServicePeriod (periodo de la línea de la factura, programa del Price cobrado) + botón de entrega y activa, extiende o
 reactiva el contrato; en las renovaciones, Renewal Successful (Ferro) y "Tu suscripción se renovó" (cliente). Cada
 intento fallido es un Payment `failed` (índices únicos parciales solo para pagos exitosos); el primer fallo de una
-renovación suspende (`payment_failed`) y avisa una vez al cliente y a Ferro. Si Stripe cancela la suscripción, el
-contrato pasa a `cancelled` (los correos de cancelación son de la Fase 7). Configuración de Smart Retries y prueba con
+renovación suspende (`payment_failed`) y avisa una vez al cliente y a Ferro. Tres intentos en días seguidos (A32): con el
+tercer fallo la app cancela la suscripción en Stripe y el contrato pasa a `cancelled` (los correos de cancelación son de
+la Fase 7). Configuración de los reintentos y prueba con
 test clocks en el README. Decisiones en DECISIONS A31. Pruebas: unitarias (plantillas, estados de Stripe, periodo de la
 factura, interfaz) y con PostgreSQL + un Stripe en memoria que hace de test clock (alta, desorden, duplicados,
 renovaciones, cambio de plan, importe 0, fallos y reintentos, cancelación, suscripción duplicada, Stripe caído).

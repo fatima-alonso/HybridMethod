@@ -128,11 +128,12 @@ Con lo anterior funcionando, elige "Suscripción mensual con tarjeta" y paga con
 `stripe:listen` deben salir `checkout.session.completed`, `customer.subscription.created` e `invoice.paid` con `[200]`;
 el contrato queda `active` con el periodo de la factura y llegan los mismos correos que en el pago único.
 
-**Configuración en el Dashboard de Stripe (modo de prueba y live)** — Billing → Revenue recovery:
+**Configuración en el Dashboard de Stripe (modo de prueba y live)** — Billing → Revenue recovery → Retries
+(DECISIONS A32: tres intentos en tres días seguidos):
 
-- **Smart Retries** activado, con la política por defecto.
-- Cuando se agoten los reintentos: **cancelar la suscripción** (no dejarla `unpaid` ni vencida). Así Stripe manda
-  `customer.subscription.deleted` y el contrato pasa a `cancelled`.
+- **Sin Smart Retries**: programación personalizada con **2 reintentos, 1 día después del intento anterior**.
+- Si todos los reintentos fallan: **cancelar la suscripción** (no dejarla `unpaid` ni vencida). La app también la
+  cancela al recibir el último intento fallido, y el contrato pasa a `cancelled`.
 - Opcional: los correos de Stripe sobre pagos fallidos (la app ya avisa al cliente y a Ferro en el primer fallo).
 
 **Renovaciones y pagos fallidos con test clocks.** Un test clock solo avanza clientes creados dentro de él, así que la
@@ -145,8 +146,8 @@ suscripción de prueba se crea desde el Dashboard y se liga a un contrato hecho 
 3. Crea para ese cliente una suscripción con el Price `<programa>_recurring` y la metadata `contractId = <id>`.
    Con `stripe:listen` corriendo, el primer `invoice.paid` activa el contrato.
 4. Avanza el reloj un mes: llega otra `invoice.paid` (mes 2, Renewal Successful a Ferro) o, con la tarjeta que falla,
-   `invoice.payment_failed` (contrato `payment_failed` y aviso al cliente y a Ferro). Sigue avanzando para ver los
-   reintentos de Smart Retries y, al agotarse, `customer.subscription.deleted` (contrato `cancelled`).
+   `invoice.payment_failed` (contrato `payment_failed` y aviso al cliente y a Ferro). Avanza el reloj un día dos veces
+   más para ver los reintentos; con el tercer fallo la suscripción se cancela y el contrato queda `cancelled`.
 
 Las pruebas automáticas (`src/app/api/__tests__/phase6-flow.db.test.ts`) simulan lo mismo con un Stripe en memoria.
 

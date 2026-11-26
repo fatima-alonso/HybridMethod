@@ -26,6 +26,7 @@ import { createServicePeriod } from "./service-period.service";
 import {
   fetchSubscriptionSnapshot,
   programIdForPrice,
+  subscriptionSnapshot,
   upsertSubscription,
   type SubscriptionSnapshot,
   type SyncResult,
@@ -49,7 +50,7 @@ import {
  * - `invoice.payment_failed`: registra el intento fallido y, en una renovación, suspende el servicio
  *   (`active → payment_failed`).
  * - `customer.subscription.*`: solo sincroniza la fila Subscription. Si Stripe la cancela (p. ej. al
- *   agotarse Smart Retries), el contrato pasa a `cancelled`.
+ *   fallar los tres intentos de cobro, A32), el contrato pasa a `cancelled`.
  *
  * Todos los eventos vuelven a leer la suscripción en Stripe con el contrato bloqueado
  * (`subscription.service`), así que toleran entregas repetidas o fuera de orden.
@@ -158,6 +159,42 @@ async function syncFromStripe(
     );
   }
   return { snapshot, sync };
+}
+
+/**
+ * Último intento fallido (DECISIONS A32): cancela la suscripción en Stripe si sigue viva y el
+ * contrato pasa a `cancelled`. Si Stripe falla, el evento responde 500 y Stripe lo reintenta.
+ */
+async function cancelExhaustedSubscription(
+  contract: ContractWithRelations,
+  snapshot: SubscriptionSnapshot,
+  context: SubscriptionEventContext,
+): Promise<void> {
+  const { tx, stripe, event, now } = context;
+  let current = snapshot;
+  if (current.status !== "canceled") {
+    if (!stripe)
+      throw new Error("Stripe no está configurado: no se puede cancelar la suscripción.");
+    current = subscriptionSnapshot(
+      await stripe.subscriptions.cancel(snapshot.stripeSubscriptionId),
+    );
+    await upsertSubscription(contract, current, tx, now);
+  }
+  await cancelContract(contract.id, tx);
+  await recordAudit(
+    {
+      ...auditFor(contract),
+      action: "subscription.cancelled",
+      metadata: {
+        reference: contract.reference,
+        stripeEventId: event.id,
+        stripeSubscriptionId: snapshot.stripeSubscriptionId,
+        stripeStatus: current.stripeStatus,
+        reason: "payment_attempts_exhausted",
+      },
+    },
+    tx,
+  );
 }
 
 // ─── checkout.session.completed (modo subscription) ─────────────────────────
@@ -454,8 +491,13 @@ export async function handleInvoicePaid(
 /**
  * `invoice.payment_failed`: cada intento fallido es un Payment `failed` (RF-18). En una renovación
  * de un contrato activo, el servicio se suspende (`active → payment_failed`, RN-14) y se avisa al
- * cliente y a Ferro una sola vez; los reintentos siguientes de Smart Retries solo se registran. Si el
- * primer pago falla, el contrato sigue pendiente (como un pago asíncrono fallido, A26).
+ * cliente y a Ferro una sola vez; los reintentos siguientes solo se registran. Si el primer pago
+ * falla, el contrato sigue pendiente (como un pago asíncrono fallido, A26).
+ *
+ * Último intento (DECISIONS A32: 3 días seguidos): cuando Stripe ya no programa otro reintento
+ * (`next_payment_attempt = null`), la app cancela la suscripción en Stripe (por si el Dashboard no
+ * está configurado para hacerlo) y el contrato pasa a `cancelled`: termina la programación del
+ * cliente, sin esperar a `customer.subscription.deleted`.
  */
 export async function handleInvoicePaymentFailed(
   invoice: Stripe.Invoice,
@@ -471,7 +513,7 @@ export async function handleInvoicePaymentFailed(
   );
   if (!contract) return contractNotFound("La factura", invoice.id);
 
-  const { sync } = await syncFromStripe(contract, stripeSubscriptionId, context);
+  const { snapshot, sync } = await syncFromStripe(contract, stripeSubscriptionId, context);
   const subscription: Subscription | null = sync.kind === "synced" ? sync.subscription : null;
   const amount = fromMinorUnits(invoice.amount_due);
   const currency = normalizeCurrency(invoice.currency);
@@ -494,20 +536,29 @@ export async function handleInvoicePaymentFailed(
     select: { id: true },
   });
 
-  const suspend =
+  const renewalFailed =
     sync.kind === "synced" &&
-    contract.status === "active" &&
+    (contract.status === "active" || contract.status === "payment_failed") &&
     contract.paymentType === "subscription" &&
     !alreadyPaid;
+  const suspend = renewalFailed && contract.status === "active";
   if (suspend) await markContractPaymentFailed(contract.id, tx);
 
-  const outcome = suspend
-    ? "suspended"
-    : contract.status === "payment_failed"
-      ? "retry_failed"
-      : UNPAID.includes(contract.status)
-        ? "first_payment_failed"
-        : "recorded";
+  // Se agotaron los intentos: Stripe ya no reintentará esta factura.
+  const exhausted = renewalFailed && invoice.next_payment_attempt === null;
+  if (exhausted) {
+    await cancelExhaustedSubscription(contract, snapshot, context);
+  }
+
+  const outcome = exhausted
+    ? "attempts_exhausted"
+    : suspend
+      ? "suspended"
+      : contract.status === "payment_failed"
+        ? "retry_failed"
+        : UNPAID.includes(contract.status)
+          ? "first_payment_failed"
+          : "recorded";
   await recordAudit(
     {
       ...auditFor(contract),
@@ -525,7 +576,9 @@ export async function handleInvoicePaymentFailed(
     },
     tx,
   );
-  if (!suspend) return { status: "processed", note: outcome };
+  // Los avisos dicen que se volverá a intentar: solo van con el primer fallo, si queda algún reintento.
+  // La cancelación la avisa la Fase 7 (Subscription Cancelled).
+  if (!suspend || exhausted) return { status: "processed", note: outcome };
 
   const formatted = formatPrice(amount.toFixed(2) as `${number}`, currency);
   const programName = contract.program.name;

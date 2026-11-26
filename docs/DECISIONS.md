@@ -687,7 +687,7 @@ que llega después de que la factura ya se pagó no suspende nada. Si falla el *
 pendiente (como en B15) y no se manda correo: el formulario de Stripe ya muestra el error. Si Stripe da la suscripción
 por terminada (`incomplete_expired`), se suelta la sesión del contrato para que el cliente pueda reintentar.
 
-**Cancelación.** Cuando Stripe cancela la suscripción (al agotarse Smart Retries, configurado en el Dashboard, o al
+**Cancelación.** Cuando Stripe cancela la suscripción (al fallar los tres intentos, A32, o al
 final del periodo desde el portal), el contrato `active` o `payment_failed` pasa a `cancelled` y se audita
 `subscription.cancelled`, sin recortar el periodo pagado. Los correos Subscription Cancelled y el portal son de la
 Fase 7.
@@ -695,6 +695,25 @@ Fase 7.
 **Pruebas.** Sin claves de Stripe aquí, las renovaciones, fallos y cancelaciones se prueban con un Stripe en memoria
 que funciona como test clock (crea la suscripción, factura mes a mes, reintenta y cancela) y con firmas reales del SDK.
 La prueba con test clocks reales en la cuenta de prueba queda documentada en el README.
+
+### A32. Pagos fallidos de la suscripción: tres días seguidos y se cancela (2026-11-26)
+Decisión de la dueña del proyecto. Reemplaza "Smart Retries con la configuración por defecto" de A19 (B7), RF-18 y
+SDD §6.1.
+- Si falla el cobro de una renovación, se intenta **una vez al día durante tres días seguidos**: el día de la
+  renovación y los dos siguientes (tres intentos en total). Mientras tanto el servicio sigue suspendido
+  (`payment_failed`); si un intento pasa, se reactiva.
+- Si ninguno de los tres pasa, **se da por terminada la programación del cliente**: la suscripción se cancela y el
+  contrato pasa a `cancelled`.
+- En Stripe (Dashboard → Billing → Revenue recovery → Retries): programación personalizada, sin Smart Retries,
+  **2 reintentos, 1 día después del intento anterior**, y al fallar todos, **cancelar la suscripción**.
+- La app no depende solo de esa configuración: cuando llega `invoice.payment_failed` sin otro reintento programado
+  (`next_payment_attempt = null`) para una renovación, cancela la suscripción en Stripe si sigue viva y pasa el contrato
+  a `cancelled` en la misma transacción (`subscription.cancelled` con `reason: payment_attempts_exhausted`). El
+  `customer.subscription.deleted` que llega después ya no cambia nada.
+- El aviso al cliente y a Ferro del primer fallo dice que se volverá a intentar una vez al día durante los próximos 2
+  días; después del último intento no se manda ese aviso (la cancelación la avisa la Fase 7, Subscription Cancelled).
+  El número de intentos está en `SUBSCRIPTION_PAYMENT_ATTEMPTS` (`src/lib/stripe-constants.ts`), solo para los textos;
+  si cambia, se cambia también en Stripe y en las condiciones (`src/content/legal.ts`).
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
@@ -706,7 +725,7 @@ La prueba con test clocks reales en la cuenta de prueba queda documentada en el 
 | 4 | Dominio | Fase 8 | Resuelto en A17: se compra en GoDaddy |
 | 5 | Remitente de Resend | — | Resuelto en A17: se carga en Vercel; se verifica con el dominio (Fase 8) |
 | 6 | Fechas exactas del periodo de un mes | — | Resuelto en A19: un mes desde la fecha de pago; la entrega del plan es solo referencia |
-| 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19: Smart Retries; el servicio se suspende mientras haya un pago vencido |
+| 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19 y A32: tres intentos en días seguidos; el servicio se suspende mientras haya un pago vencido; si ninguno pasa, se cancela |
 | 8 | Mecanismo de cancelación | — | Resuelto en A21: Stripe Customer Portal con OTP, al final del periodo |
 | 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | — | Resuelto en A20 |
 | 10 | WhatsApp oficial de Ferro | — | Resuelto en A17: se carga en Vercel |

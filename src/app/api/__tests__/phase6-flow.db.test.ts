@@ -436,7 +436,7 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 6 (suscripciones) con PostgreS
       );
       expect(await prisma.subscription.findFirst()).toMatchObject({ status: "past_due" });
 
-      // Smart Retries: otro intento fallido se registra sin volver a avisar.
+      // Reintento del día siguiente: otro intento fallido se registra sin volver a avisar.
       await webhook(stripeEvent("invoice.payment_failed", fake.failInvoice(invoice.id)));
       expect(await prisma.payment.count({ where: { status: "failed" } })).toBe(2);
       expect(kinds()).toHaveLength(2);
@@ -462,19 +462,65 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 6 (suscripciones) con PostgreS
       expect((await contractOf(contract.id)).status).toBe("active");
     });
 
-    it("al agotarse los reintentos Stripe cancela: el contrato pasa a cancelled", async () => {
+    it("3 días seguidos sin poder cobrar: se cancela la suscripción y el contrato (A32)", async () => {
       const { contract, subscriptionId } = await subscribe();
+      sent.length = 0;
       const invoice = fake.nextInvoice(subscriptionId);
-      await webhook(stripeEvent("invoice.payment_failed", fake.failInvoice(invoice.id)));
-      const cancelled = fake.cancelSubscription(subscriptionId);
-      const res = await webhook(stripeEvent("customer.subscription.deleted", cancelled));
+
+      // Día 1 y día 2: suspendido, con un solo aviso.
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const failed = fake.failInvoice(invoice.id);
+        expect(failed.next_payment_attempt).not.toBeNull();
+        await webhook(stripeEvent("invoice.payment_failed", failed));
+        expect((await contractOf(contract.id)).status).toBe("payment_failed");
+      }
+      expect(kinds()).toEqual(["payment_failed", "payment_failed_alert"]);
+
+      // Día 3: último intento. La app cancela en Stripe y el contrato queda cancelado.
+      const last = fake.failInvoice(invoice.id);
+      expect(last.next_payment_attempt).toBeNull();
+      const res = await webhook(stripeEvent("invoice.payment_failed", last));
       expect(res.body).toMatchObject({ status: "processed" });
       expect((await contractOf(contract.id)).status).toBe("cancelled");
+      expect(fake.calls.subscriptionCancel).toBe(1);
+      expect(fake.subscriptionStore.get(subscriptionId)?.status).toBe("canceled");
       expect(await prisma.subscription.findFirst()).toMatchObject({ status: "canceled" });
+      expect(await prisma.payment.count({ where: { status: "failed" } })).toBe(3);
+      expect(
+        await prisma.auditLog.findFirst({ where: { action: "subscription.cancelled" } }),
+      ).toMatchObject({ metadata: { reason: "payment_attempts_exhausted" } });
+      // Sin un aviso de "volveremos a intentar" después del último intento.
+      expect(kinds()).toHaveLength(2);
+
+      // El aviso de Stripe de la cancelación no cambia nada más.
+      const deleted = await fake.asStripe().subscriptions.retrieve(subscriptionId);
+      await webhook(stripeEvent("customer.subscription.deleted", deleted));
+      expect((await contractOf(contract.id)).status).toBe("cancelled");
       expect(await prisma.auditLog.count({ where: { action: "subscription.cancelled" } })).toBe(1);
 
       // Ya puede contratar de nuevo.
       expect((await checkout("hm-run")).status).toBe(201);
+    });
+
+    it("si Stripe ya canceló la suscripción, no la vuelve a cancelar", async () => {
+      const { contract, subscriptionId } = await subscribe();
+      const invoice = fake.nextInvoice(subscriptionId);
+      fake.failInvoice(invoice.id);
+      fake.failInvoice(invoice.id);
+      const last = fake.failInvoice(invoice.id);
+      fake.cancelSubscription(subscriptionId); // configurado en el Dashboard
+      await webhook(stripeEvent("invoice.payment_failed", last));
+      expect((await contractOf(contract.id)).status).toBe("cancelled");
+      expect(fake.calls.subscriptionCancel).toBe(0);
+    });
+
+    it("si Stripe cancela por su cuenta, customer.subscription.deleted cancela el contrato", async () => {
+      const { contract, subscriptionId } = await subscribe();
+      const invoice = fake.nextInvoice(subscriptionId);
+      await webhook(stripeEvent("invoice.payment_failed", fake.failInvoice(invoice.id)));
+      const cancelled = fake.cancelSubscription(subscriptionId);
+      await webhook(stripeEvent("customer.subscription.deleted", cancelled));
+      expect((await contractOf(contract.id)).status).toBe("cancelled");
     });
   });
 

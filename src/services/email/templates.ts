@@ -5,7 +5,12 @@
  * paleta de la marca. Todo valor que viene del usuario se escapa.
  */
 
+import { SUBSCRIPTION_PAYMENT_ATTEMPTS } from "@/lib/stripe-constants";
+
 export type EmailContent = { subject: string; html: string; text: string };
+
+/** Reintentos que quedan después del primer cobro fallido (DECISIONS A32). */
+const RETRY_DAYS = SUBSCRIPTION_PAYMENT_ATTEMPTS - 1;
 
 const COLORS = { ink: "#111111", bone: "#F5F3EE", volt: "#FF6A00", muted: "#5C5A55" };
 
@@ -359,8 +364,7 @@ export type PaymentFailedEmailInput = {
 export function paymentFailedEmail(input: PaymentFailedEmailInput): EmailContent {
   const subject = `No pudimos cobrar tu suscripción · ${input.reference}`;
   const lead = `Hola ${input.customerName}, el cobro de ${input.amount} de tu suscripción a ${input.programName} no se completó.`;
-  const paused =
-    "Mientras el pago esté pendiente, tu servicio queda en pausa. Stripe volverá a intentar el cobro en los próximos días; en cuanto se pague, tu plan se reactiva solo. Si los intentos no se completan, la suscripción se cancela.";
+  const paused = `Mientras el pago esté pendiente, tu servicio queda en pausa. Volveremos a intentar el cobro una vez al día durante los próximos ${RETRY_DAYS} días; en cuanto se pague, tu plan se reactiva solo. Si ninguno de los intentos pasa, tu suscripción se cancela y termina tu programación.`;
   const action = input.payUrl
     ? "Si tu tarjeta cambió o no tiene fondos, puedes pagar ahora con otra tarjeta:"
     : "Si tu tarjeta cambió o no tiene fondos, escríbele a Ferro por WhatsApp.";
@@ -408,8 +412,7 @@ export function paymentFailedAlertEmail(input: PaymentFailedAlertEmailInput): Em
     ["Referencia", input.reference],
     ["Intento", String(input.attempt)],
   ] as const;
-  const lead =
-    "Stripe no pudo cobrar la renovación de esta suscripción. El servicio queda suspendido hasta que se pague; Stripe reintenta el cobro solo y, si los intentos se agotan, cancela la suscripción. Ya le avisamos al cliente.";
+  const lead = `Stripe no pudo cobrar la renovación de esta suscripción. El servicio queda suspendido hasta que se pague. Stripe reintenta el cobro una vez al día durante los próximos ${RETRY_DAYS} días; si ninguno pasa, la suscripción se cancela y el contrato queda cancelado. Ya le avisamos al cliente.`;
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Pago fallido</h1>

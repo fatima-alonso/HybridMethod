@@ -9,6 +9,14 @@ export function isLiveKey(key: string): boolean {
 }
 
 /**
+ * Intentos de cobro de una renovación de la suscripción (DECISIONS A32): el día de la renovación y
+ * un reintento cada día siguiente, 3 días seguidos. Si ninguno pasa, la suscripción se cancela. Los
+ * reintentos los programa Stripe (Dashboard → Billing → Revenue recovery, ver README); este número
+ * solo se usa en los textos.
+ */
+export const SUBSCRIPTION_PAYMENT_ATTEMPTS = 3;
+
+/**
  * Eventos de Stripe que escucha `POST /api/webhooks/stripe` (DECISIONS A6). Es la lista que se
  * configura en el endpoint del Dashboard y la que usa `npm run stripe:listen`.
  */
