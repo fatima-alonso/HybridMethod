@@ -564,6 +564,11 @@ responde 200 (reintentarlo no ayudaría). Los eventos que no son de A6 se marcan
 - Correos después de confirmar la transacción: Purchase Confirmation y Welcome (cliente) y Payment Received con el
   botón de entrega (Ferro), con el mismo código que la transferencia (`payment-notifications.service`).
 
+**Configuración de la cuenta de Stripe (2026-11-26).** THE HYBRID METHOD usa una cuenta de Stripe propia, separada
+del otro negocio de Ferro. No se acepta OXXO (se desactiva en el Dashboard; el código no fija métodos de pago). Se
+activan los recibos de Stripe para pagos exitosos, así que el correo Purchase Confirmation puede decir que Stripe
+también envía su recibo.
+
 **Pago asíncrono fallido (`checkout.session.async_payment_failed`).** El SDD §7.5 decía "pasar el contrato a
 `payment_failed`", pero la máquina de estados (§5.3) no permite `pending_payment → payment_failed` y ese estado
 significa "servicio suspendido", que no aplica a un contrato que nunca se activó. Se implementó así: se registra el

@@ -178,4 +178,6 @@ claves de la cuenta).
 - Metadatos SEO, Open Graph, favicon, sitemap y página 404.
 - Vercel (staging y producción) con el cron diario, Neon, Prisma Migrate en el deploy, webhook de producción en
   Stripe, Customer Portal configurado, dominio de GoDaddy apuntado a Vercel y remitente verificado en Resend.
+- Stripe en modo live: claves live en Vercel, `npm run stripe:sync -- --live`, endpoint de webhook de producción (su
+  `whsec_` en Vercel), OXXO desactivado y recibos de Stripe activados (DECISIONS A26).
 - Prueba de punta a punta de los tres flujos en staging, incluida la entrega del plan.
