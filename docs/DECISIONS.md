@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -577,7 +577,7 @@ sesión para que el siguiente intento abra otra, se audita `stripe.async_payment
 no se completó" con un botón para intentarlo de nuevo. Confirmado el 2026-11-25 (B15): no se usa `payment_failed`
 para contratos que nunca se activaron; ese estado queda solo para suscripciones con un cobro vencido.
 
-### A27. Formulario de pago incrustado (Embedded Checkout) (2026-11-25)
+### A27. Formulario de pago incrustado (Embedded Checkout) (2026-11-25) — la variante la reemplaza A29
 Decisión de la dueña del proyecto: el pago con tarjeta se hace **dentro de la landing**, con el formulario de Stripe
 incrustado (Embedded Checkout), en lugar de mandar al cliente a la página de Stripe. Reemplaza lo que A26 decía de
 `/pago/cancelado`.
@@ -608,6 +608,25 @@ Respuesta de Ferro: para no complicarlo, **no se paga ningún mes por adelantado
   cada mes adelantado): en el flujo normal cada mes empieza el día del pago.
 - Idea para el futuro, sin implementar: una promoción tipo "paga 3 meses y el 4.º es gratis", como **un solo pago**
   que active varios meses seguidos. Ver B16.
+
+### A29. Formulario de pago de Checkout Studio (`ui_mode: form`) (2026-11-26)
+La dueña del proyecto configuró en Checkout Studio de Stripe un "embedded form". Reemplaza la variante de A27
+(`embedded_page`, la página de Stripe completa en un recuadro blanco) por el formulario de pago incrustado, que se
+integra al diseño de la landing. Se aplicaron solo los parámetros de la configuración; las partes genéricas de las
+instrucciones de Stripe (servidor nuevo, webhook nuevo, `STRIPE_INTEGRATION_TODO.md`) no aplican porque ya existen.
+- **Servidor:** `ui_mode: "form"`, `integration_identifier: "custom_embedded_web_0002"`,
+  `billing_address_collection: "auto"`, sin teléfono, sin impuestos automáticos y `submit_type: "auto"`. **Sin
+  `name_collection`**: el nombre ya está en el registro. **Se puede guardar la tarjeta**
+  (`saved_payment_method_options.payment_method_save: "enabled"`): queda en Stripe, ligada al cliente de Stripe,
+  nunca en la app. Ya no se manda `return_url` a Stripe: la respuesta de `POST /api/checkout` incluye `returnUrl`
+  (`/pago/exito`) y el navegador lo usa al confirmar. Una sesión abierta de la variante anterior no se reutiliza: se
+  expira y se abre otra. La versión de la API del SDK (`2026-10-28.endive`) ya es posterior a la mínima que pide
+  Stripe (`2026-03-25.dahlia`).
+- **Navegador:** `stripe.initCheckoutFormSdk` (Stripe.js cargado desde js.stripe.com con `@stripe/stripe-js`) con
+  `createForm({ layout: "expanded" })`; el evento `confirm` llama a `actions.confirm({ formConfirmEvent, returnUrl })`
+  y, si Stripe rechaza el pago, se muestra el motivo sin salir de la página. Apariencia: la de Checkout Studio
+  (tema `night`, campos separados) con los colores de la marca: fondo `#111111`, texto `#F5F3EE`, principal `#FF6A00`
+  y la fuente Inter. Se quita `@stripe/react-stripe-js`.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

@@ -35,12 +35,17 @@ export const CHECKOUT_MESSAGES = {
     "Ya recibimos tu pago con tarjeta y Stripe lo está confirmando. Te avisaremos por correo en cuanto quede listo.",
 } as const;
 
-/** Paso del formulario de pago de Stripe incrustado (Embedded Checkout, DECISIONS A27). */
+/** Paso del formulario de pago de Stripe incrustado (DECISIONS A27, A29). */
 export const CARD_STEP = {
   title: "Paga con tarjeta",
   lead: "Completa tu pago en el formulario seguro de Stripe. Nosotros nunca vemos ni guardamos los datos de tu tarjeta.",
   referenceLabel: "Referencia",
   back: "Elegir otra forma de pago",
+  loading: "Cargando el formulario de pago seguro…",
+  loadError:
+    "No pudimos cargar el formulario de pago. Revisa tu conexión, vuelve a intentarlo o elige transferencia.",
+  confirmError:
+    "No se pudo completar el pago. Revisa los datos de tu tarjeta e inténtalo de nuevo.",
 } as const;
 
 /** Nombre de cada modalidad para el aviso del pendiente. */

@@ -24,7 +24,6 @@
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "@stripe/react-stripe-js": "7.0.1",
     "@stripe/stripe-js": "10.2.1",
     "bcryptjs": "^3.0.3",
     "libphonenumber-js": "1.13.15",

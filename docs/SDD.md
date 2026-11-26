@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.13 |
+| **Versión** | 1.14 |
 | **Estado** | Diseño técnico actualizado |
 | **Relacionado con** | SRS v1.8 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.14 | 2026-11-26 | Formulario de pago de Checkout Studio (DECISIONS A29): §6.1 y §7.4 `ui_mode: form`, `returnUrl` en la respuesta, tarjeta guardada en Stripe y sin pedir el nombre. |
 | 1.13 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): §7.3 regla 3 (`409 active_period`), §5.3 `scheduled` solo por un pago tardío, §10. |
 | 1.12 | 2026-11-25 | Formulario de pago incrustado (DECISIONS A27): §6.1 y §7.4 Embedded Checkout (`client_secret` y clave publicable en la respuesta); se quita `/pago/cancelado`. |
 | 1.11 | 2026-11-25 | Fase 5, pago único con Stripe (DECISIONS A26): §4 `checkout`, `stripe-webhook`, `stripe-catalog` y `payment-notifications` services, script `stripe-sync` y páginas `/pago/exito` y `/pago/cancelado`; §6.1 productos y Prices por `lookup_key`; §7.4 body, reutilización de la sesión y respuestas; §7.5 bloqueo del evento, reintentos, cobro adicional y pago asíncrono fallido: el contrato sigue pendiente (B15, confirmado). |
@@ -492,7 +493,7 @@ Se actualiza con un único `INSERT … ON CONFLICT DO UPDATE` (atómico). Los co
 
 ### 6.1 Stripe
 Stripe procesa los pagos y administra las suscripciones. Se usarán:
-- Stripe Checkout en modo `payment` para pagos únicos (`stripePriceIdOneTime`), con el formulario incrustado en la landing (Embedded Checkout, DECISIONS A27).
+- Stripe Checkout en modo `payment` para pagos únicos (`stripePriceIdOneTime`), con el formulario de pago incrustado en la landing (`ui_mode: form`, configurado en Checkout Studio; DECISIONS A27, A29).
 - Stripe Checkout en modo `subscription` para suscripciones mensuales (`stripePriceIdRecurring`).
 - Stripe Billing para los ciclos recurrentes.
 - Stripe Webhooks para sincronizar los eventos con la aplicación.
@@ -662,6 +663,7 @@ Response (201 al crear el contrato; 200 al reutilizar, retomar o cambiar el pend
   "success": true,
   "clientSecret": "cs_..._secret_...",
   "publishableKey": "pk_...",
+  "returnUrl": "https://<dominio>/pago/exito",
   "reference": "HM-2026-000001",
   "status": "pending_payment",
   "outcome": "created"
@@ -672,7 +674,7 @@ El backend valida el programa, su disponibilidad, el Price correspondiente y que
 - "Cambiar" invalida el enlace de transferencia o expira la sesión anterior en Stripe.
 - El cliente de Stripe se crea una sola vez y se guarda en `Customer.stripeCustomerId`.
 - Respuestas de error: `401` sin sesión; `400` datos inválidos; `409` reglas de §7.3 o `payment_in_progress`; `422 program_unavailable`; `503 payments_unavailable` (sin Stripe, Price ausente o distinto, o error de Stripe). Rate limit: 10 por IP por hora.
-- La sesión es de Embedded Checkout (`ui_mode: embedded_page`): el navegador monta el formulario de Stripe con `clientSecret` y `publishableKey` (del mismo modo que la clave secreta; si no, 503). Al pagar, Stripe regresa a `/pago/exito`, que solo informa (DECISIONS A27).
+- La sesión usa el formulario de pago incrustado (`ui_mode: form`, DECISIONS A29): el navegador lo monta con `stripe.initCheckoutFormSdk` usando `clientSecret` y `publishableKey` (del mismo modo que la clave secreta; si no, 503) y confirma el pago con `returnUrl`. Al pagar, lleva al cliente a `/pago/exito`, que solo informa. No pide el nombre (ya está en el registro) y permite guardar la tarjeta en Stripe.
 
 ### 7.5 Webhooks de Stripe
 **`POST /api/webhooks/stripe`** — Recibe los eventos de Stripe.

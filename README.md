@@ -96,8 +96,8 @@ funcionando. Para probarlo en local con tu cuenta de Stripe **en modo de prueba*
    stripe listen --forward-to localhost:3000/api/webhooks/stripe --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
    ```
 
-4. Haz una inscripción en la landing y elige "Pago único con tarjeta": el formulario de Stripe aparece
-   ahí mismo (Embedded Checkout). Paga con la tarjeta de prueba `4242 4242 4242 4242` (cualquier
+4. Haz una inscripción en la landing y elige "Pago único con tarjeta": el formulario de pago de Stripe
+   aparece ahí mismo, con el diseño de la marca (DECISIONS A29). Paga con la tarjeta de prueba `4242 4242 4242 4242` (cualquier
    fecha futura y cualquier CVC). El webhook activa el contrato y en
    la terminal aparecen los correos (Purchase Confirmation, Welcome y Payment Received con el botón
    de entrega).

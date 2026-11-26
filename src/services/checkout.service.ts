@@ -27,16 +27,20 @@ import type { RequestContext } from "./transfer.service";
  * Pago único con Stripe Checkout (RF-07, SDD §7.4, §8.2, DECISIONS A26).
  *
  * `requestCheckout` resuelve la contratación con las mismas reglas que la transferencia (SDD §7.3)
- * y devuelve el `client_secret` de una sesión de Embedded Checkout en modo `payment`. El Price sale del programa en la
+ * y devuelve el `client_secret` de una sesión de Checkout con formulario incrustado (`ui_mode: form`,
+ * DECISIONS A29) en modo `payment`. El Price sale del programa en la
  * BD y se comprueba contra Stripe antes de cobrar (SDD §6.1, §9.2). Aquí **no** se confirma ningún
  * pago: eso solo lo hace el webhook (`stripe-webhook.service`).
  */
 
 /**
- * Página a la que Stripe regresa al terminar el pago en el formulario incrustado. Solo informa
+ * Página a la que el formulario incrustado lleva al cliente al terminar el pago. Solo informa
  * (SDD §7.5): no lee la sesión ni confirma nada.
  */
 export const CHECKOUT_RETURN_PATH = "/pago/exito";
+
+/** Identificador de la configuración hecha en Checkout Studio (DECISIONS A29). */
+export const CHECKOUT_INTEGRATION_IDENTIFIER = "custom_embedded_web_0002";
 
 export type CheckoutRequestInput = {
   /** Correo verificado, tomado de la sesión de verificación (nunca del body). */
@@ -57,6 +61,8 @@ export type CheckoutRequestResult = {
   clientSecret: string;
   /** Clave publicable para montar el formulario en el navegador (misma cuenta y modo). */
   publishableKey: string;
+  /** Página a la que el formulario lleva al cliente al terminar de pagar (solo informa). */
+  returnUrl: string;
 };
 
 /** Expira una sesión de Checkout que ya no corresponde. Si falla (ya expiró o se pagó), solo se registra. */
@@ -195,7 +201,8 @@ export async function requestCheckout(
       now,
     );
     contract = await db.contract.findUniqueOrThrow({ where: { id: contract.id } });
-    return { contract, program, customer, outcome, clientSecret, publishableKey };
+    const returnUrl = `${getConfig().APP_URL}${CHECKOUT_RETURN_PATH}`;
+    return { contract, program, customer, outcome, clientSecret, publishableKey, returnUrl };
   } catch (error) {
     if (error instanceof CheckoutInProgressError || error instanceof PaymentsUnavailableError) {
       throw error;
@@ -225,7 +232,14 @@ async function openCheckoutSession(
     const session = await stripe.checkout.sessions.retrieve(previous);
     if (session.status === "complete") throw new CheckoutInProgressError(contract.reference);
     const samePrice = await sessionUsesPrice(stripe, session, priceId);
-    if (session.status === "open" && session.client_secret && samePrice) {
+    // Una sesión abierta se reutiliza si cobra el mismo Price y es del formulario actual (una de
+    // `embedded_page`, de antes de A29, no se puede montar con el formulario nuevo).
+    if (
+      session.status === "open" &&
+      session.client_secret &&
+      samePrice &&
+      session.ui_mode === "form"
+    ) {
       return session.client_secret;
     }
     if (session.status === "open") {
@@ -234,7 +248,6 @@ async function openCheckoutSession(
   }
 
   const stripeCustomerId = await ensureStripeCustomer(customer, stripe, db);
-  const appUrl = getConfig().APP_URL;
   const metadata = { contractId: contract.id, reference: contract.reference };
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -247,9 +260,16 @@ async function openCheckoutSession(
       description: `${program.name} · ${contract.reference}`,
     },
     locale: "es-419",
-    // Formulario de Stripe incrustado en la landing (DECISIONS A27).
-    ui_mode: "embedded_page",
-    return_url: `${appUrl}${CHECKOUT_RETURN_PATH}`,
+    // Formulario de pago de Stripe incrustado en la landing, configurado en Checkout Studio
+    // (DECISIONS A27, A29). El nombre no se pide: ya está en el registro.
+    ui_mode: "form",
+    integration_identifier: CHECKOUT_INTEGRATION_IDENTIFIER,
+    billing_address_collection: "auto",
+    phone_number_collection: { enabled: false },
+    automatic_tax: { enabled: false },
+    submit_type: "auto",
+    // El cliente puede guardar su tarjeta en Stripe para el siguiente mes (nunca llega a la app).
+    saved_payment_method_options: { payment_method_save: "enabled" },
   });
   if (!session.client_secret) throw new Error("Stripe no devolvió el client_secret de Checkout.");
 
