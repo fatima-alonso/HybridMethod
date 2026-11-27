@@ -45,7 +45,10 @@ npm run db:migrate
 npm run db:seed
 ```
 
-`db:migrate` aplica las migraciones (y crea nuevas si cambias `prisma/schema.prisma`); `db:seed` copia
+`db:migrate` aplica las migraciones (y crea nuevas si cambias `prisma/schema.prisma`) y regenera el cliente de Prisma
+(`src/generated/prisma`, que no se sube al repositorio: Prisma 7 ya no lo regenera solo al migrar). Si cambias de rama y
+alguna trae una migración, corre `npm run db:migrate` y reinicia `npm run dev`; si no, el webhook falla con
+`PrismaClientValidationError`. `db:seed` copia
 los programas de `src/content/programs.ts` a la BD y se puede repetir sin duplicar nada. En staging y
 producción se usa `npm run db:deploy` (solo aplica migraciones). Detalle en DECISIONS A14.
 
@@ -268,7 +271,7 @@ Las pruebas automáticas están en `src/app/api/__tests__/phase7b-flow.db.test.t
 | `npm run dev`          | Servidor de desarrollo.                                    |
 | `npm run build`        | Build de producción (no necesita variables de entorno).    |
 | `npm start`            | Sirve el build (exige todas las variables de producción).  |
-| `npm run db:migrate`   | Aplica y crea migraciones en desarrollo (`prisma migrate dev`). |
+| `npm run db:migrate`   | Aplica y crea migraciones en desarrollo y regenera el cliente de Prisma. |
 | `npm run db:deploy`    | Aplica migraciones pendientes (staging/producción).        |
 | `npm run db:seed`      | Copia el catálogo de programas a la BD (idempotente).      |
 | `npm run db:studio`    | Abre Prisma Studio.                                        |
