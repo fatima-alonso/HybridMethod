@@ -19,6 +19,10 @@ import { sendPaidNotifications } from "./payment-notifications.service";
 import { recordFailedStripePayment, recordStripePayment } from "./payment.service";
 import { createServicePeriod, nextOneMonthPeriod } from "./service-period.service";
 import {
+  sendSubscriptionNotices,
+  type SubscriptionNotice,
+} from "./subscription-notifications.service";
+import {
   handleInvoicePaid,
   handleInvoicePaymentFailed,
   handleSubscriptionChanged,
@@ -73,6 +77,7 @@ export async function processStripeEvent(
     skipDuplicates: true,
   });
 
+  const notices: SubscriptionNotice[] = [];
   let handled: Handled | null;
   try {
     handled = await db.$transaction(
@@ -82,7 +87,8 @@ export async function processStripeEvent(
         const status = rows[0]?.status;
         if (status === "processed" || status === "ignored") return null;
 
-        const result = await dispatch(event, { tx, now, stripe, event });
+        notices.length = 0;
+        const result = await dispatch(event, { tx, now, stripe, event, notices });
         await tx.webhookEvent.update({
           where: { stripeEventId: event.id },
           data: { status: result.status, error: result.note ?? null, processedAt: now },
@@ -105,6 +111,7 @@ export async function processStripeEvent(
 
   if (!handled) return { status: "duplicate" };
   if (handled.after) await handled.after(db);
+  await sendSubscriptionNotices(notices, db);
   if (handled.status === "failed") return { status: "failed", note: handled.note ?? "" };
   return { status: handled.status, note: handled.note };
 }

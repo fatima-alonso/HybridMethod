@@ -19,6 +19,8 @@ type Props = {
   onBack: () => void;
   /** Pide un código nuevo (`POST /api/verification/request`). */
   onResend: () => Promise<ApiResult<unknown>>;
+  /** Texto del botón para regresar (por defecto, "Cambiar mis datos"). */
+  backLabel?: string;
 };
 
 function failureMessage(result: ApiFailure): string {
@@ -27,7 +29,14 @@ function failureMessage(result: ApiFailure): string {
 }
 
 /** Paso 2: el cliente escribe el código OTP (DECISIONS A4, SDD §8.1). */
-export function VerifyCodeStep({ email, notice = null, onVerified, onBack, onResend }: Props) {
+export function VerifyCodeStep({
+  email,
+  notice = null,
+  onVerified,
+  onBack,
+  onResend,
+  backLabel = VERIFY_STEP.changeEmail,
+}: Props) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(notice);
@@ -148,7 +157,7 @@ export function VerifyCodeStep({ email, notice = null, onVerified, onBack, onRes
         onClick={onBack}
         className="text-sm font-semibold text-bone/70 underline underline-offset-4 hover:text-volt"
       >
-        {VERIFY_STEP.changeEmail}
+        {backLabel}
       </button>
     </div>
   );

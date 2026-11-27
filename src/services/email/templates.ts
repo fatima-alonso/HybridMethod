@@ -65,7 +65,7 @@ export function verificationCodeEmail(input: {
   const html = layout(
     subject,
     `<h1 style="margin:0 0 12px;font-size:22px;">Verifica tu correo</h1>
-<p style="margin:0 0 16px;">Escribe este código en la página para continuar con tu inscripción:</p>
+<p style="margin:0 0 16px;">Escribe este código en la página para continuar:</p>
 <p style="margin:0 0 16px;font-size:36px;font-weight:800;letter-spacing:10px;font-family:'Courier New',monospace;">${escapeHtml(input.code)}</p>
 <p style="margin:0 0 8px;">Vence en ${input.expiresInMinutes} minutos y solo se puede usar una vez.</p>
 <p style="margin:0;color:${COLORS.muted};font-size:14px;">Si no pediste este código, ignora este correo. Nadie de THE HYBRID METHOD te lo va a pedir.</p>`,
@@ -314,6 +314,8 @@ export type SubscriptionRenewedEmailInput = {
   /** Fechas ya formateadas. */
   serviceStart: string;
   serviceEnd: string;
+  /** Página "Administrar mi suscripción" (DECISIONS A33). */
+  manageUrl: string;
 };
 
 /** El cliente recibe la confirmación de cada renovación (RF-08). */
@@ -334,7 +336,8 @@ export function subscriptionRenewedEmail(input: SubscriptionRenewedEmailInput): 
     `<h1 style="margin:0 0 12px;font-size:22px;">Suscripción renovada</h1>
 <p style="margin:0;">${escapeHtml(lead)}</p>
 ${rows(details)}
-<p style="margin:0;color:${COLORS.muted};font-size:14px;">${escapeHtml(note)} Stripe también te envía su recibo.</p>`,
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">${escapeHtml(note)} Stripe también te envía su recibo.</p>
+${manageLinkHtml(input.manageUrl)}`,
   );
   const text = [
     "Suscripción renovada",
@@ -344,6 +347,7 @@ ${rows(details)}
     ...details.map(([label, value]) => `${label}: ${value}`),
     "",
     `${note} Stripe también te envía su recibo.`,
+    ...manageLinkText(input.manageUrl),
   ].join("\n");
   return { subject, html, text };
 }
@@ -478,6 +482,8 @@ export type PurchaseConfirmationEmailInput = {
   startsLater: boolean;
   /** `true` si es el primer pago de una suscripción (se renueva cada mes, RF-08). */
   renewsMonthly?: boolean;
+  /** Con la suscripción: página "Administrar mi suscripción" (DECISIONS A33). */
+  manageUrl?: string;
 };
 
 export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput): EmailContent {
@@ -501,7 +507,8 @@ export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput)
 <p style="margin:0;">${escapeHtml(lead)}</p>
 ${rows(details)}
 ${renews ? `<p style="margin:0 0 16px;">${escapeHtml(renews)}</p>` : ""}
-<p style="margin:0;color:${COLORS.muted};font-size:14px;">Guarda este correo como comprobante. Stripe también te envía su recibo.</p>`,
+<p style="margin:0;color:${COLORS.muted};font-size:14px;">Guarda este correo como comprobante. Stripe también te envía su recibo.</p>
+${renews && input.manageUrl ? manageLinkHtml(input.manageUrl) : ""}`,
   );
   const text = [
     "Compra confirmada",
@@ -512,6 +519,7 @@ ${renews ? `<p style="margin:0 0 16px;">${escapeHtml(renews)}</p>` : ""}
     "",
     ...(renews ? [renews, ""] : []),
     "Guarda este correo como comprobante. Stripe también te envía su recibo.",
+    ...(renews && input.manageUrl ? manageLinkText(input.manageUrl) : []),
   ].join("\n");
   return { subject, html, text };
 }
@@ -591,5 +599,231 @@ ${rows(details)}`,
     "",
     ...details.map(([label, value]) => `${label}: ${value}`),
   ].join("\n");
+  return { subject, html, text };
+}
+
+// ─── Portal de la suscripción: cancelación, cambio de programa (Fase 7) ─────
+
+/** Texto del enlace al portal (`/suscripcion`, DECISIONS A33). */
+export const MANAGE_SUBSCRIPTION_LABEL = "Administrar mi suscripción";
+const MANAGE_SUBSCRIPTION_NOTE =
+  "Para cancelar, cambiar de programa o actualizar tu tarjeta, entra a «Administrar mi suscripción»:";
+
+function manageLinkHtml(manageUrl: string): string {
+  return `<p style="margin:16px 0 0;color:${COLORS.muted};font-size:14px;">${escapeHtml(MANAGE_SUBSCRIPTION_NOTE)} <a href="${escapeHtml(manageUrl)}" style="color:${COLORS.ink};font-weight:bold;">${escapeHtml(MANAGE_SUBSCRIPTION_LABEL)}</a></p>`;
+}
+
+function manageLinkText(manageUrl: string): string[] {
+  return ["", MANAGE_SUBSCRIPTION_NOTE, manageUrl];
+}
+
+/** Correo simple al cliente: título, párrafos, botón opcional y enlace opcional al portal. */
+function customerNotice(input: {
+  subject: string;
+  title: string;
+  paragraphs: readonly string[];
+  details?: ReadonlyArray<readonly [string, string]>;
+  action?: { href: string; label: string };
+  manageUrl?: string;
+}): EmailContent {
+  const html = layout(
+    input.subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">${escapeHtml(input.title)}</h1>
+${input.paragraphs.map((p) => `<p style="margin:0 0 16px;">${escapeHtml(p)}</p>`).join("\n")}
+${input.details ? rows(input.details) : ""}
+${input.action ? button(input.action.href, input.action.label) : ""}
+${input.manageUrl ? manageLinkHtml(input.manageUrl) : ""}`,
+  );
+  const text = [
+    input.title,
+    "",
+    ...input.paragraphs.flatMap((p) => [p, ""]),
+    ...(input.details ? input.details.map(([label, value]) => `${label}: ${value}`) : []),
+    ...(input.action ? ["", `${input.action.label}:`, input.action.href] : []),
+    ...(input.manageUrl ? manageLinkText(input.manageUrl) : []),
+  ]
+    .join("\n")
+    .trimEnd();
+  return { subject: input.subject, html, text };
+}
+
+export type SubscriptionCancellationScheduledEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Último día del servicio, ya formateado. */
+  endsOn: string;
+  manageUrl: string;
+};
+
+/** Subscription Cancelled (cliente), al pedir la cancelación: termina al final del periodo (RF-19). */
+export function subscriptionCancellationScheduledEmail(
+  input: SubscriptionCancellationScheduledEmailInput,
+): EmailContent {
+  return customerNotice({
+    subject: `Tu suscripción terminará el ${input.endsOn} · ${input.reference}`,
+    title: "Cancelaste tu suscripción",
+    paragraphs: [
+      `Hola ${input.customerName}, recibimos la cancelación de tu suscripción a ${input.programName}.`,
+      `Tu servicio sigue activo hasta el ${input.endsOn}: ese día termina el mes que ya pagaste y no se hará ningún otro cobro.`,
+      "Si cambias de opinión antes de esa fecha, puedes deshacer la cancelación desde «Administrar mi suscripción».",
+    ],
+    manageUrl: input.manageUrl,
+  });
+}
+
+export type SubscriptionCancellationRevertedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  /** Fecha del siguiente cobro, ya formateada. */
+  renewsOn: string;
+  manageUrl: string;
+};
+
+/** El cliente deshizo la cancelación en el portal: la suscripción vuelve a renovarse. */
+export function subscriptionCancellationRevertedEmail(
+  input: SubscriptionCancellationRevertedEmailInput,
+): EmailContent {
+  return customerNotice({
+    subject: `Tu suscripción sigue activa · ${input.reference}`,
+    title: "Tu suscripción sigue activa",
+    paragraphs: [
+      `Hola ${input.customerName}, deshiciste la cancelación de tu suscripción a ${input.programName}.`,
+      `Se renovará como siempre: el siguiente cobro es el ${input.renewsOn}.`,
+    ],
+    manageUrl: input.manageUrl,
+  });
+}
+
+export type SubscriptionPlanChangedEmailInput = {
+  customerName: string;
+  reference: string;
+  fromProgramName: string;
+  toProgramName: string;
+  /** Importe mensual del programa nuevo, ya formateado. */
+  amount: string;
+  /** Fecha de la siguiente renovación, ya formateada. */
+  effectiveOn: string;
+  manageUrl: string;
+};
+
+/** Cambio de programa en el portal: aplica en la siguiente renovación, sin prorrateo (RN-08). */
+export function subscriptionPlanChangedEmail(
+  input: SubscriptionPlanChangedEmailInput,
+): EmailContent {
+  return customerNotice({
+    subject: `Cambiaste a ${input.toProgramName} · ${input.reference}`,
+    title: "Cambio de programa",
+    paragraphs: [
+      `Hola ${input.customerName}, cambiaste tu suscripción de ${input.fromProgramName} a ${input.toProgramName}.`,
+      `El cambio aplica en tu siguiente renovación, el ${input.effectiveOn}. Hasta entonces sigues con ${input.fromProgramName}, que ya pagaste.`,
+    ],
+    details: [
+      ["Programa nuevo", input.toProgramName],
+      ["Importe mensual", input.amount],
+      ["A partir del", input.effectiveOn],
+    ],
+    manageUrl: input.manageUrl,
+  });
+}
+
+/** Por qué terminó la suscripción. */
+export type SubscriptionEndReason = "requested" | "payment_failed";
+
+export type SubscriptionEndedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  reason: SubscriptionEndReason;
+  /** Sección de inscripción de la landing, para volver. */
+  rejoinUrl: string;
+};
+
+/** Subscription Cancelled (cliente), cuando la suscripción ya terminó. */
+export function subscriptionEndedEmail(input: SubscriptionEndedEmailInput): EmailContent {
+  const paragraphs =
+    input.reason === "payment_failed"
+      ? [
+          `Hola ${input.customerName}, no pudimos cobrar tu suscripción a ${input.programName} en ninguno de los ${SUBSCRIPTION_PAYMENT_ATTEMPTS} intentos, así que se canceló y terminó tu programación.`,
+          "No se hará ningún otro cobro. Si quieres volver a entrenar con Ferro, puedes inscribirte de nuevo cuando quieras.",
+        ]
+      : [
+          `Hola ${input.customerName}, tu suscripción a ${input.programName} terminó. No se hará ningún otro cobro.`,
+          "Gracias por entrenar con THE HYBRID METHOD. Si quieres volver, puedes inscribirte de nuevo cuando quieras.",
+        ];
+  return customerNotice({
+    subject: `Tu suscripción terminó · ${input.reference}`,
+    title: "Tu suscripción terminó",
+    paragraphs,
+    action: { href: input.rejoinUrl, label: "Volver a inscribirme" },
+  });
+}
+
+export type SubscriptionChangeAlertEmailInput = {
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  customerWhatsapp: string;
+  programName: string;
+} & (
+  | { kind: "cancellation_scheduled"; endsOn: string }
+  | { kind: "cancellation_reverted"; renewsOn: string }
+  | { kind: "plan_changed"; toProgramName: string; amount: string; effectiveOn: string }
+  | { kind: "ended"; reason: SubscriptionEndReason }
+);
+
+/** Aviso a Ferro de los cambios de una suscripción (Subscription Cancelled y A33). */
+export function subscriptionChangeAlertEmail(
+  input: SubscriptionChangeAlertEmailInput,
+): EmailContent {
+  let title: string;
+  let lead: string;
+  const extra: Array<readonly [string, string]> = [];
+  switch (input.kind) {
+    case "cancellation_scheduled":
+      title = "Cancelación programada";
+      lead = `El cliente canceló su suscripción. Su servicio sigue hasta el ${input.endsOn} y ya no se renovará. Ya le confirmamos la cancelación.`;
+      extra.push(["Termina el", input.endsOn]);
+      break;
+    case "cancellation_reverted":
+      title = "Cancelación deshecha";
+      lead = `El cliente deshizo la cancelación: su suscripción se renovará el ${input.renewsOn}.`;
+      extra.push(["Siguiente cobro", input.renewsOn]);
+      break;
+    case "plan_changed":
+      title = "Cambio de programa";
+      lead = `El cliente cambió de programa. A partir de su renovación del ${input.effectiveOn}, su programa será ${input.toProgramName} (${input.amount} al mes). Hasta entonces sigue con ${input.programName}.`;
+      extra.push(["Programa nuevo", input.toProgramName], ["A partir del", input.effectiveOn]);
+      break;
+    case "ended":
+      title =
+        input.reason === "payment_failed"
+          ? "Suscripción cancelada por pagos fallidos"
+          : "Suscripción terminada";
+      lead =
+        input.reason === "payment_failed"
+          ? `Ninguno de los ${SUBSCRIPTION_PAYMENT_ATTEMPTS} intentos de cobro pasó: la suscripción se canceló y el contrato quedó cancelado. Ya le avisamos al cliente.`
+          : "La suscripción terminó y ya no se renovará. El contrato quedó cancelado. Ya le avisamos al cliente.";
+      break;
+  }
+  const subject = `${title} · ${input.reference} · ${input.customerName}`;
+  const details = [
+    ["Cliente", input.customerName],
+    ["Correo", input.customerEmail],
+    ["WhatsApp", input.customerWhatsapp],
+    ["Programa", input.programName],
+    ["Referencia", input.reference],
+    ...extra,
+  ] as const;
+  const html = layout(
+    subject,
+    `<h1 style="margin:0 0 12px;font-size:22px;">${escapeHtml(title)}</h1>
+<p style="margin:0;">${escapeHtml(lead)}</p>
+${rows(details)}`,
+  );
+  const text = [title, "", lead, "", ...details.map(([label, value]) => `${label}: ${value}`)].join(
+    "\n",
+  );
   return { subject, html, text };
 }

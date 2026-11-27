@@ -181,12 +181,26 @@ test clocks en el README. Decisiones en DECISIONS A31. Pruebas: unitarias (plant
 factura, interfaz) y con PostgreSQL + un Stripe en memoria que hace de test clock (alta, desorden, duplicados,
 renovaciones, cambio de plan, importe 0, fallos y reintentos, cancelación, suscripción duplicada, Stripe caído).
 
-## Fase 7 — Clientes recurrentes, portal y cancelación ⬜ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
+## Fase 7 — Clientes recurrentes, portal y cancelación ✅ (RF-14, RF-15, RF-19, RF-21, RN-08, RN-15)
 - Reglas de SDD §7.3 (DECISIONS A20): un solo pendiente por cliente, reutilizar la referencia, aviso
   "¿continuar o cambiar?", vencimiento a los 7 días sin actividad, pago tardío, mes con mes sin pagos por adelantado (A28) y bloqueo
   con suscripción activa. `GET /api/contracts/pending`. (Se puede adelantar.)
 - `POST /api/portal` con OTP y Stripe Customer Portal (cancelar al final del periodo, cambiar de plan,
   actualizar tarjeta); webhooks y correos de Subscription Cancelled.
+
+**Resultado (2026-11-27).** Las reglas de SDD §7.3 ya estaban desde las Fases 4–6; se revisaron contra el SDD y se
+corrigió "Continuar con el pendiente": cuando el pendiente era de otra modalidad, la página pedía la que el cliente
+acababa de elegir y el servidor le decía que eligiera "Cambiar". Ahora pide la modalidad y el programa del pendiente, y
+el botón dice cuál ("Continuar con HM STRENGTH · Transferencia"). Portal (DECISIONS A33): página `/suscripcion`
+(correo → código → Stripe Customer Portal), enlazada en el pie de página y en los correos de la suscripción, y botón
+directo al portal en el aviso de `409 subscription_active`. `POST /api/portal` abre el portal con una suscripción
+`active`, `past_due` o `unpaid` y responde igual (`404`) exista o no el correo. Los webhooks comparan la Subscription
+antes y después de sincronizar y avisan al cliente y a Ferro, una sola vez: cancelación programada (sigue hasta el
+final del periodo), cancelación deshecha, cambio de programa (aplica en la siguiente renovación) y fin de la suscripción
+(contrato `cancelled`; texto propio si fue por cobros fallidos). Configuración del Customer Portal en el README.
+Pruebas: plantillas, flujo de la página y del aviso de suscripción activa, y con PostgreSQL + el Stripe en memoria
+(portal con y sin suscripción, otro correo, `past_due`, terminada, Stripe caído, rate limit; cancelar, deshacer, `cancel_at`,
+fin del periodo, cobros fallidos, cambio de programa y eventos repetidos o fuera de orden).
 
 ## Fase 8 — Lanzamiento ⬜ (RNF-01, RNF-03, RNF-08, SDD §11)
 - Versión final de privacidad y condiciones (hay un borrador desde el 2026-11-24, DECISIONS A22): datos del

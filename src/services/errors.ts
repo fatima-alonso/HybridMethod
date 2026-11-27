@@ -155,6 +155,25 @@ export class PaymentsUnavailableError extends ServiceError {
   }
 }
 
+// ─── Portal de la suscripción (Fase 7, DECISIONS A21, A33) ──────────────────
+
+/**
+ * El cliente de la sesión no tiene una suscripción que se pueda administrar. Se usa igual exista o
+ * no el cliente, para no revelar qué correos están registrados (SDD §7.7).
+ */
+export class SubscriptionNotFoundError extends ServiceError {
+  constructor() {
+    super("No hay una suscripción que administrar para este correo.", "subscription_not_found");
+  }
+}
+
+/** Stripe no está configurado o no pudo crear la sesión del portal. */
+export class PortalUnavailableError extends ServiceError {
+  constructor(reason: "not_configured" | "stripe_error") {
+    super(`El portal de la suscripción no está disponible (${reason}).`, "portal_unavailable");
+  }
+}
+
 // ─── Entrega del plan (DECISIONS A19) ───────────────────────────────────────
 
 export class DeliveryLinkUnavailableError extends ServiceError {

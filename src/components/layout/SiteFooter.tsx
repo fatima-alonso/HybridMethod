@@ -23,7 +23,7 @@ export function SiteFooter() {
             ))}
           </ul>
         </nav>
-        <nav aria-label="Legal">
+        <nav aria-label="Clientes y legal">
           <ul className="space-y-2">
             {FOOTER.legal.map((link) => (
               <li key={link.href}>

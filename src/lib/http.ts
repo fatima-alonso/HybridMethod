@@ -35,6 +35,8 @@ export type ApiErrorCode =
   | "payments_unavailable"
   | "invalid_signature"
   | "payment_in_progress"
+  | "subscription_not_found"
+  | "portal_unavailable"
   | "internal_error";
 
 const NO_STORE = { "Cache-Control": "no-store" };

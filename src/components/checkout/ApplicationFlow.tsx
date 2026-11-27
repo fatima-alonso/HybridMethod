@@ -21,6 +21,7 @@ import {
 import { CardPaymentStep } from "./CardPaymentStep";
 import { PaymentMethodStep, type PaymentMethodId } from "./PaymentMethodStep";
 import { PendingChoiceStep } from "./PendingChoiceStep";
+import { SubscriptionActiveStep } from "./SubscriptionActiveStep";
 import { TransferPendingStep } from "./TransferPendingStep";
 import { VerifyCodeStep } from "./VerifyCodeStep";
 
@@ -30,7 +31,8 @@ type Step =
   | { name: "payment" }
   | { name: "pendingChoice"; pending: PendingSummary; method: PaymentMethodId }
   | { name: "pending"; transfer: TransferCreated }
-  | { name: "card"; checkout: CheckoutCreated };
+  | { name: "card"; checkout: CheckoutCreated }
+  | { name: "subscriptionActive" };
 
 type Props = {
   programs: readonly ProgramOption[];
@@ -135,6 +137,12 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       setStep({ name: "pendingChoice", pending: result.body.pending, method });
       return;
     }
+    if (result.error === "subscription_active") {
+      // Con suscripción activa se administra en el portal (SDD §7.3 regla 2, DECISIONS A33).
+      setBusy(false);
+      setStep({ name: "subscriptionActive" });
+      return;
+    }
     if (result.error === "verification_required") {
       // La sesión de 30 minutos venció: se pide otro código y se vuelve a verificar.
       const resent = await requestCode(values.email);
@@ -219,6 +227,15 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     }
     case "pending":
       return <TransferPendingStep transfer={step.transfer} onDone={finish} />;
+    case "subscriptionActive":
+      return (
+        <SubscriptionActiveStep
+          onBack={() => {
+            setError(null);
+            setStep({ name: "payment" });
+          }}
+        />
+      );
     case "card":
       return (
         <CardPaymentStep

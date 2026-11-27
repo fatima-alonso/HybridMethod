@@ -189,7 +189,9 @@ export const FAQ = {
 
 export const FOOTER = {
   tagline: "Entrenamiento personalizado de fuerza, running y rendimiento híbrido.",
+  /** Primero "Administrar mi suscripción" (DECISIONS A33), luego los documentos legales. */
   legal: [
+    { href: "/suscripcion", label: "Administrar mi suscripción" },
     { href: "/privacidad", label: "Política de privacidad" },
     { href: "/condiciones", label: "Condiciones de contratación" },
   ],

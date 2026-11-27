@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PROGRAMS } from "@/content/programs";
 import { getPhoneCountryOptions } from "@/lib/phone";
+import { navigation } from "@/utils/navigation";
 
 import { ApplicationFlow } from "./ApplicationFlow";
 
@@ -365,6 +366,26 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(calls.at(-1)?.url).toBe("/api/transfers");
     expect(calls.at(-1)?.body).toMatchObject({ program: "hm-strength", pendingAction: "continue" });
     expect(screen.getByText(/HM-2026-000007/)).toBeTruthy();
+  });
+
+  it("con suscripción activa ofrece ir directo al portal, sin otro código (A33)", async () => {
+    const assign = vi.spyOn(navigation, "assign").mockImplementation(() => undefined);
+    await reachPaymentStep();
+    reply("/api/transfers", 409, {
+      success: false,
+      error: "subscription_active",
+      message: "Ya tienes una suscripción activa.",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Ya tienes una suscripción" });
+
+    reply("/api/portal", 200, { success: true, url: "https://billing.stripe.com/p/session/x" });
+    fireEvent.click(screen.getByRole("button", { name: "Administrar mi suscripción" }));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("https://billing.stripe.com/p/session/x"),
+    );
+    expect(calls.at(-1)).toEqual({ url: "/api/portal", body: {} });
+    assign.mockRestore();
   });
 
   it("«continuar» retoma el pendiente de pago único aunque ahora eligió transferencia", async () => {

@@ -32,6 +32,12 @@ import {
   type SyncResult,
 } from "./subscription.service";
 import {
+  detectSubscriptionChanges,
+  endedNotice,
+  endReasonFromStripe,
+  type SubscriptionNotice,
+} from "./subscription-notifications.service";
+import {
   lockContract,
   notifyQuietly,
   UNPAID,
@@ -62,6 +68,11 @@ export type SubscriptionEventContext = {
   /** Para leer la suscripción actual en Stripe. */
   stripe: Pick<Stripe, "subscriptions"> | null;
   event: Stripe.Event;
+  /**
+   * Avisos de cambios de la suscripción (cancelación, cambio de programa, …) que se envían después
+   * de confirmar la transacción (Fase 7, DECISIONS A33).
+   */
+  notices?: SubscriptionNotice[];
 };
 
 const idOf = (value: string | { id: string } | null | undefined): string | null =>
@@ -126,7 +137,9 @@ async function applySubscriptionStatus(
       },
       tx,
     );
-    // Los correos Subscription Cancelled son de la Fase 7 (portal y cancelación).
+    context.notices?.push(
+      await endedNotice(contract, endReasonFromStripe(snapshot.cancellationReason), tx),
+    );
     return "contract_cancelled";
   }
   if (UNPAID.includes(contract.status) && contract.stripeCheckoutSessionId) {
@@ -143,6 +156,17 @@ async function syncFromStripe(
 ): Promise<{ snapshot: SubscriptionSnapshot; sync: SyncResult }> {
   const snapshot = await fetchSubscriptionSnapshot(context.stripe, stripeSubscriptionId);
   const sync = await upsertSubscription(contract, snapshot, context.tx, context.now);
+  if (sync.kind === "synced" && context.notices) {
+    context.notices.push(
+      ...(await detectSubscriptionChanges(
+        contract,
+        sync.previous,
+        sync.subscription,
+        snapshot,
+        context.tx,
+      )),
+    );
+  }
   if (sync.kind === "duplicate") {
     await recordAudit(
       {
@@ -195,6 +219,7 @@ async function cancelExhaustedSubscription(
     },
     tx,
   );
+  context.notices?.push(await endedNotice(contract, "payment_failed", tx));
 }
 
 // ─── checkout.session.completed (modo subscription) ─────────────────────────
@@ -577,7 +602,7 @@ export async function handleInvoicePaymentFailed(
     tx,
   );
   // Los avisos dicen que se volverá a intentar: solo van con el primer fallo, si queda algún reintento.
-  // La cancelación la avisa la Fase 7 (Subscription Cancelled).
+  // La cancelación la avisa Subscription Cancelled (`context.notices`).
   if (!suspend || exhausted) return { status: "processed", note: outcome };
 
   const formatted = formatPrice(amount.toFixed(2) as `${number}`, currency);

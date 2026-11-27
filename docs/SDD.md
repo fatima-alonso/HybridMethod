@@ -3,9 +3,9 @@
 
 | | |
 |---|---|
-| **Versión** | 1.17 |
+| **Versión** | 1.18 |
 | **Estado** | Diseño técnico actualizado |
-| **Relacionado con** | SRS v1.8 |
+| **Relacionado con** | SRS v1.10 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 
 ### Historial de cambios
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.18 | 2026-11-27 | Fase 7, portal y cancelación (DECISIONS A33): §4 página `suscripcion`, `portal` y `subscription-notifications` services; §6.2 correos de cancelación al pedirla y al terminar, de cambio de programa y de cancelación deshecha; §7.7 estados que abren el portal, respuestas, rate limit y detección de los cambios; §8.5. |
 | 1.17 | 2026-11-26 | Reintentos de la suscripción (DECISIONS A32): §6.1 tres intentos en días seguidos en lugar de Smart Retries; §7.5 al último intento fallido la app cancela la suscripción y el contrato; §8.3 y §13. |
 | 1.16 | 2026-11-26 | Fase 6, suscripciones (DECISIONS A31): §4 `subscription` y `stripe-subscription-webhook` services; §5.3 Payment con `stripeInvoiceId`/`stripePaymentIntentId` únicos solo entre pagos exitosos; §6.2 correos de renovación al cliente y Payment Failed; §7.4 `mode: "subscription"`; §7.5 estado leído de Stripe, periodo de la línea de la factura, reintentos, duplicados y cancelación. |
 | 1.15 | 2026-11-26 | Webhooks en local (DECISIONS A30): §4 `stripe-listen` y `stripe-constants`; §9.1 en desarrollo la configuración se vuelve a leer en cada llamada. |
@@ -145,6 +146,7 @@ the-hybrid-method/
 │   │   ├── confirmation/
 │   │   ├── pago/
 │   │   │   └── exito/            # regreso de Stripe Checkout (solo informa)
+│   │   ├── suscripcion/          # "Administrar mi suscripción" → Customer Portal (Fase 7)
 │   │   └── api/
 │   │       ├── customers/
 │   │       ├── contracts/
@@ -161,6 +163,7 @@ the-hybrid-method/
 │   │   ├── programs/
 │   │   ├── forms/
 │   │   ├── checkout/
+│   │   ├── subscription/      # flujo de "Administrar mi suscripción"
 │   │   └── shared/
 │   ├── lib/
 │   │   ├── prisma.ts
@@ -182,6 +185,8 @@ the-hybrid-method/
 │   │   ├── stripe-webhook-shared.ts
 │   │   ├── stripe-catalog.service.ts
 │   │   ├── subscription.service.ts               # copia local del estado de Stripe
+│   │   ├── subscription-notifications.service.ts # avisos de cancelación y cambios (Fase 7)
+│   │   ├── portal.service.ts                     # sesión del Customer Portal (Fase 7)
 │   │   ├── transfer.service.ts
 │   │   ├── transfer-approval.service.ts
 │   │   ├── contract-request.service.ts
@@ -529,7 +534,9 @@ Resend envía los correos electrónicos.
 | Renewal Successful | Entrenador | Renovación exitosa: los mismos datos y su propio botón de entrega |
 | Subscription Renewed | Cliente | Renovación exitosa: programa, importe y nuevo periodo (RF-08; DECISIONS A31) |
 | Payment Failed | Cliente y entrenador | Primer cobro fallido de una renovación: servicio suspendido; al cliente, el enlace de Stripe para pagar con otra tarjeta. Los reintentos no repiten el aviso |
-| Subscription Cancelled | Cliente y entrenador | Cancelación |
+| Subscription Cancelled | Cliente y entrenador | Al pedir la cancelación en el portal: el servicio sigue hasta el final del periodo, con la fecha (DECISIONS A33). Al terminar la suscripción (contrato `cancelled`): aviso de fin, con un texto propio si fue por los cobros fallidos (A32) |
+| Subscription Plan Changed | Cliente y entrenador | Cambio de programa en el portal: el programa nuevo, su importe y desde cuándo aplica (la siguiente renovación) (A33) |
+| Subscription Reactivated | Cliente y entrenador | El cliente deshizo la cancelación en el portal: la fecha del siguiente cobro (A33) |
 | Transfer Confirmed | Cliente | Transferencia confirmada |
 
 El remitente ya está definido; se verifica en Resend junto con el dominio (Fase 8). En desarrollo, si no hay `RESEND_API_KEY`, los correos se registran en la consola.
@@ -777,7 +784,10 @@ Respuestas: `200` con `reference`, `status`, `serviceStartDate` y `serviceEndDat
 **`POST /api/transfers/regenerate`** — Genera un enlace nuevo para un contrato que sigue en `pending_payment` o que venció (`expired`). Requiere el PIN de Ferro y la referencia del contrato (`{ reference, pin }`). Invalida los enlaces anteriores y envía uno nuevo al correo de Ferro; el token nunca viaja en la respuesta. Con un PIN incorrecto responde `403` igual exista o no la referencia. Rate limit: 10 por IP y 30 en total por hora (no hay un enlace que cuente los intentos). Respuestas: `200`, `403 invalid_pin`, `404 not_found`, `409 contract_not_pending`, `502 email_failed` (el enlace se generó pero el correo falló). Se ofrece en la página del enlace cuando está vencido, invalidado o no existe.
 
 ### 7.7 Suscripciones y Customer Portal
-**`POST /api/portal`**: requiere la sesión de verificación. Busca el `stripeCustomerId` del cliente de esa sesión y responde con la URL de una sesión del Stripe Customer Portal (`return_url` = la landing). Si el cliente no tiene una suscripción, responde lo mismo que si no existiera, sin revelar nada.
+**`POST /api/portal`**: requiere la sesión de verificación y no recibe body. Busca el `stripeCustomerId` del cliente de esa sesión y responde con la URL de una sesión del Stripe Customer Portal (`return_url` = la landing, `locale: es-419`). Si el cliente no tiene una suscripción, responde lo mismo que si no existiera, sin revelar nada (DECISIONS A33):
+- Abre el portal con una suscripción `active`, `past_due` o `unpaid` (también con la cancelación programada, para deshacerla).
+- Respuestas: `200 { url }`; `401` sin sesión; `404 subscription_not_found` (correo desconocido, sin suscripción, `incomplete` o `canceled`, siempre el mismo mensaje); `429`; `503 portal_unavailable` (sin Stripe o si Stripe falla). Rate limit: 10 por IP por hora. Se audita `portal.session_created`.
+- Se llega desde la página `/suscripcion` (correo → código → portal), enlazada en el pie de página y en los correos de la suscripción, y desde el aviso de `409 subscription_active` del formulario, que abre el portal directo porque el correo ya está verificado.
 
 En el portal (DECISIONS A21), el cliente puede:
 - Cancelar, con efecto al final del periodo.
@@ -785,6 +795,8 @@ En el portal (DECISIONS A21), el cliente puede:
 - Actualizar su tarjeta.
 
 El sistema se entera por `customer.subscription.updated/deleted`: sincroniza Subscription y, al cancelarse, pasa el contrato a `cancelled` y envía Subscription Cancelled al cliente y a Ferro. No hay endpoints propios de cancelación ni de consulta de suscripciones.
+
+Avisos de los cambios (DECISIONS A33): cada evento de la suscripción compara la fila Subscription de antes y de después de copiar el estado de Stripe. Si `cancelAtPeriodEnd` pasa a `true` (por `cancel_at_period_end` o `cancel_at`), se avisa la cancelación programada; si vuelve a `false`, la cancelación deshecha; si cambia el programa, el cambio de programa. Solo para contratos `active` o `payment_failed` y nunca en la primera sincronización (el alta). Como el primer evento que ve un cambio lo copia, los siguientes ya no lo ven: un evento repetido o fuera de orden no repite el aviso. El motivo del fin sale de `cancellation_details.reason` (`payment_failed` → texto de cobros fallidos). Los correos se envían después de confirmar la transacción.
 
 ### 7.8 Entrega del plan
 Solo registra un dato de referencia (DECISIONS A19). Cada ServicePeriod crea su primer PlanDeliveryLink en la misma transacción del pago, y el botón va en el correo Payment Received o Renewal Successful. Cada recordatorio crea otro.
@@ -932,10 +944,13 @@ Ferro abre el enlace (GET, solo lectura)
 
 ### 8.5 Cancelación de suscripción
 ```
-Cliente -> verificación OTP -> POST /api/portal -> Stripe Customer Portal
-  -> cancela (al final del periodo) / cambia de plan / actualiza tarjeta
-  -> customer.subscription.updated|deleted -> sincronizar Subscription y Contract
-  -> Subscription Cancelled (cliente y Ferro)
+Cliente -> /suscripcion -> verificación OTP -> POST /api/portal -> Stripe Customer Portal
+  -> cancela (al final del periodo) / cambia de plan / actualiza tarjeta / deshace la cancelación
+  -> customer.subscription.updated -> sincronizar Subscription
+       -> cancelación programada: Subscription Cancelled "terminará el …" (cliente y Ferro); contrato sigue active
+       -> cambio de programa o cancelación deshecha: su aviso (cliente y Ferro)
+  -> al final del periodo: customer.subscription.deleted -> Contract cancelled
+       -> Subscription Cancelled "terminó" (cliente y Ferro)
 ```
 
 ### 8.6 Entrega del plan (solo referencia)

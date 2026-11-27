@@ -176,6 +176,39 @@ y `npm run stripe:listen` corriendo:
 
 Las pruebas automáticas (`src/app/api/__tests__/phase6-flow.db.test.ts`) simulan lo mismo con un Stripe en memoria.
 
+### Portal y cancelación (Fase 7)
+
+El cliente entra a **"Administrar mi suscripción"** (`/suscripcion`, enlazada en el pie de página y en los correos de
+la suscripción), verifica su correo con un código y la app le abre el **Stripe Customer Portal**
+(`POST /api/portal`). Ahí cancela, cambia de programa o actualiza su tarjeta; la app se entera por
+`customer.subscription.updated/deleted` y avisa al cliente y a Ferro (DECISIONS A33).
+
+**Configuración del Customer Portal en el Dashboard de Stripe (modo de prueba y live)** — Settings → Billing →
+Customer portal (DECISIONS A21):
+
+- **Cancelar suscripciones**: activado, **al final del periodo de facturación** (no de inmediato). Opcional: pedir
+  el motivo.
+- **Cambiar de plan**: activado, con los **tres Prices recurrentes** (`hm-run_recurring`, `hm-strength_recurring`,
+  `hm-complete_recurring`, los que crea `npm run stripe:sync`) y **sin prorrateo** ("No prorrateo"): el cambio se
+  cobra en la siguiente renovación. Si `stripe:sync` crea un Price nuevo porque cambió un precio, cámbialo también aquí.
+- **Actualizar el método de pago**: activado.
+- Facturas y datos de facturación: opcional. Enlace de regreso: lo manda la app (la landing).
+- Si un día hay varias configuraciones del portal, la app usa la predeterminada.
+
+**Prueba en local.** Con una suscripción activa (ver arriba), entra a `http://localhost:3000/suscripcion`, verifica
+el correo (el código sale en la consola) y en el portal:
+
+1. **Cancela**: en `stripe:listen` sale `customer.subscription.updated` y en la consola los correos "Tu suscripción
+   terminará el …" (cliente) y "Cancelación programada" (Ferro). El contrato sigue `active`.
+2. **Renueva la suscripción** (deshacer la cancelación): "Tu suscripción sigue activa" y "Cancelación deshecha".
+3. **Cambia de programa**: "Cambiaste a …" y "Cambio de programa"; el mes nuevo se cobra con ese programa en la
+   siguiente renovación (con test clocks: `npm run stripe:test-clock -- renew`).
+4. Con la cancelación programada y un test clock, adelanta al fin del periodo (`renew`): llega
+   `customer.subscription.deleted`, el contrato pasa a `cancelled` y salen "Tu suscripción terminó" y "Suscripción
+   terminada".
+
+Las pruebas automáticas están en `src/app/api/__tests__/phase7-flow.db.test.ts`.
+
 ## Scripts
 
 | Script                 | Qué hace                                                   |

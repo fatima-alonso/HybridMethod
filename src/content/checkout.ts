@@ -17,7 +17,7 @@ export function transferWhatsAppMessage(programName: string, reference: string):
 export const CONTRACT_RULE_MESSAGES = {
   pendingExists: "Encontramos un registro pendiente a tu nombre.",
   subscriptionActive:
-    "Ya tienes una suscripción activa. Para cambiar de programa, hazlo desde la administración de tu suscripción.",
+    "Ya tienes una suscripción activa, así que no puedes contratar otra. Para cambiar de programa, cancelar o actualizar tu tarjeta, entra a «Administrar mi suscripción».",
   /** Mes con mes, sin pagos por adelantado (DECISIONS A28). */
   activePeriod: (activeUntil: Date) =>
     `Ya tienes un mes pagado hasta el ${formatBusinessDate(activeUntil)}. Podrás pagar tu siguiente mes a partir de ese día.`,
@@ -67,6 +67,14 @@ export const PENDING_STEP = {
   question: (requested: string) => `¿Quieres continuar con él o cambiarlo a ${requested}?`,
   continue: (pending: string) => `Continuar con ${pending}`,
   change: (requested: string) => `Cambiar a ${requested}`,
+  back: "Volver",
+};
+
+/** Paso "ya tienes una suscripción" (409 subscription_active, DECISIONS A33). */
+export const SUBSCRIPTION_ACTIVE_STEP = {
+  title: "Ya tienes una suscripción",
+  manage: "Administrar mi suscripción",
+  managePage: "Ir a la página «Administrar mi suscripción»",
   back: "Volver",
 };
 
