@@ -3,20 +3,28 @@ import { getResendClient, RESEND_DEV_FROM } from "@/lib/resend";
 
 import {
   extraPaymentAlertEmail,
+  paymentFailedAlertEmail,
+  paymentFailedEmail,
   paymentNotCompletedEmail,
   paymentReceivedEmail,
   planDeliveryReminderEmail,
   purchaseConfirmationEmail,
+  renewalSuccessfulEmail,
+  subscriptionRenewedEmail,
   transferConfirmedEmail,
   transferPendingEmail,
   verificationCodeEmail,
   welcomeEmail,
   type EmailContent,
   type ExtraPaymentAlertEmailInput,
+  type PaymentFailedAlertEmailInput,
+  type PaymentFailedEmailInput,
   type PaymentNotCompletedEmailInput,
   type PaymentReceivedEmailInput,
   type PlanDeliveryReminderEmailInput,
   type PurchaseConfirmationEmailInput,
+  type RenewalSuccessfulEmailInput,
+  type SubscriptionRenewedEmailInput,
   type TransferConfirmedEmailInput,
   type TransferPendingEmailInput,
   type WelcomeEmailInput,
@@ -135,4 +143,32 @@ export function sendExtraPaymentAlertEmail(
   input: ExtraPaymentAlertEmailInput,
 ): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...extraPaymentAlertEmail(input) });
+}
+
+/** Renewal Successful (Ferro): renovación cobrada, con su botón de entrega (RF-08, RF-17). */
+export function sendRenewalSuccessfulEmail(
+  input: RenewalSuccessfulEmailInput,
+): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...renewalSuccessfulEmail(input) });
+}
+
+/** Subscription Renewed (cliente): confirmación de cada renovación (RF-08). */
+export function sendSubscriptionRenewedEmail(
+  input: SubscriptionRenewedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionRenewedEmail(input) });
+}
+
+/** Payment Failed (cliente): el cobro de la renovación falló y el servicio se suspende (RF-18). */
+export function sendPaymentFailedEmail(
+  input: PaymentFailedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...paymentFailedEmail(input) });
+}
+
+/** Payment Failed (Ferro): aviso de la suspensión (RF-18). */
+export function sendPaymentFailedAlertEmail(
+  input: PaymentFailedAlertEmailInput,
+): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...paymentFailedAlertEmail(input) });
 }

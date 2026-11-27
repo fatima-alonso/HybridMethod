@@ -126,7 +126,7 @@ export class PendingNotCardError extends ServiceError {
     public readonly reference: string,
     public readonly paymentType: string,
   ) {
-    super(`El pendiente ${reference} no es de pago único con tarjeta.`, "pending_not_card");
+    super(`El pendiente ${reference} es de otra modalidad (${paymentType}).`, "pending_not_card");
   }
 }
 

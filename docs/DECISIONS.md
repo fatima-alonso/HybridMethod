@@ -639,6 +639,82 @@ orden correcto. Para evitarlo:
 - En desarrollo `getConfig()` ya no guarda la configuración en memoria: `next dev` recarga `.env.local` solo y el
   secreto nuevo aplica sin reiniciar. En producción y pruebas se sigue guardando.
 
+### A31. Fase 6: suscripciones y renovaciones (2026-11-26)
+Puntos que el SDD no definía y que se resolvieron así al implementar la suscripción mensual. Todos son reversibles.
+
+**Checkout en modo `subscription`.** `POST /api/checkout` acepta `mode: "subscription"`: contrato `subscription` por
+`subscriptionPrice`, Price `recurring` comprobado contra Stripe (mensual, MXN, del programa, por el importe de la BD) y las
+mismas reglas de contratación de A20/A25/A28. La sesión usa el mismo formulario incrustado (A29) y pone
+`metadata.contractId` también en la suscripción (`subscription_data.metadata`): Stripe la copia a cada factura, así que
+`invoice.paid` encuentra el contrato aunque llegue antes que `checkout.session.completed`. No lleva
+`payment_intent_data` ni `saved_payment_method_options` (son del modo `payment`): la tarjeta queda en la suscripción, en
+Stripe. Una sesión abierta se reutiliza solo si es del mismo modo y Price. La respuesta incluye `mode`, y el paso de
+pago dice "Suscríbete con tarjeta", "$1,080 MXN / mes" y que el siguiente cobro es en la misma fecha cada mes.
+
+**Estado de la suscripción leído de Stripe.** Cada evento de suscripción (`checkout.session.completed` en modo
+subscription, `customer.subscription.*`, `invoice.*`) bloquea el contrato y **vuelve a leer la suscripción en Stripe**
+(`subscriptions.retrieve`) para copiar su estado, periodo, `cancelAtPeriodEnd` (también con `cancel_at`) y programa. Así
+una entrega repetida o fuera de orden (p. ej. `created` con `incomplete` después de `updated` con `active`, que pueden
+llevar el mismo segundo) nunca deja un estado viejo. Si Stripe no responde, el evento falla con 500 y Stripe lo
+reintenta. Estados de Stripe sin equivalente: `trialing` → `active`; `paused` → `unpaid`; `incomplete_expired` →
+`canceled`.
+
+**`invoice.paid` (única fuente de pagos).**
+- El periodo del mes es el de la **línea** de la suscripción en la factura (el encabezado de la factura de alta trae
+  inicio = fin). El programa del mes es el del Price cobrado (o el de su Product, que tiene el slug como id, si el Price
+  ya se archivó con `stripe:sync`).
+- Primer pago (`pending_payment` o `expired`): Payment `stripe_subscription` con factura, Payment Intent y suscripción,
+  ServicePeriod + botón de entrega y contrato `active` con el periodo de la factura. Si el contrato estaba vencido se
+  audita `contract.paid_after_expiry`. Si mientras pagaba el cliente cambió el pendiente a otra modalidad, el pago real
+  manda: el contrato vuelve a ser de suscripción, se invalida el enlace de transferencia y se audita
+  `stripe.payment_type_changed`. A diferencia del pago único, el mes **no** se recorre si el cliente tiene otro mes
+  vigente: en la suscripción el periodo lo decide Stripe (A19).
+- Renovación (`active`): Payment y ServicePeriod nuevos (secuencia 2, 3, …) y el contrato toma el periodo nuevo (si la
+  factura es de un periodo anterior, no lo retrocede). Desde `payment_failed`, vuelve a `active`. Correos: al cliente,
+  "Tu suscripción se renovó" (RF-08 pide correos de renovación al cliente; Stripe además manda su recibo) y a Ferro,
+  Renewal Successful con los datos y su botón de entrega. Los recordatorios de entrega funcionan igual para cada mes.
+- Importe 0: no abre un mes. Importe distinto del `subscriptionPrice` del programa cobrado: se respeta y se audita.
+- Una segunda suscripción del mismo contrato (dos pestañas pagadas) no se guarda (Subscription es 1:1 con el contrato):
+  su cobro se registra sin abrir un mes y Ferro recibe "Revisa un pago adicional" con el ID de la suscripción duplicada
+  para cancelarla en Stripe. Un cobro para un contrato `cancelled` se trata igual.
+
+**`invoice.payment_failed`.** Cada intento fallido es un Payment `failed` (RF-18). Por eso la unicidad de
+`stripeInvoiceId` y `stripePaymentIntentId` aplica **solo a los pagos `succeeded`** (índices únicos parciales): Smart
+Retries reintenta la misma factura con el mismo Payment Intent. En una renovación de un contrato `active`, el primer
+fallo lo pasa a `payment_failed` (servicio suspendido, RN-14) y avisa una vez al cliente (con el enlace de Stripe para
+pagar la factura con otra tarjeta) y a Ferro; los reintentos siguientes solo se registran y auditan. Un aviso de fallo
+que llega después de que la factura ya se pagó no suspende nada. Si falla el **primer** pago, el contrato sigue
+pendiente (como en B15) y no se manda correo: el formulario de Stripe ya muestra el error. Si Stripe da la suscripción
+por terminada (`incomplete_expired`), se suelta la sesión del contrato para que el cliente pueda reintentar.
+
+**Cancelación.** Cuando Stripe cancela la suscripción (al fallar los tres intentos, A32, o al
+final del periodo desde el portal), el contrato `active` o `payment_failed` pasa a `cancelled` y se audita
+`subscription.cancelled`, sin recortar el periodo pagado. Los correos Subscription Cancelled y el portal son de la
+Fase 7.
+
+**Pruebas.** Sin claves de Stripe aquí, las renovaciones, fallos y cancelaciones se prueban con un Stripe en memoria
+que funciona como test clock (crea la suscripción, factura mes a mes, reintenta y cancela) y con firmas reales del SDK.
+La prueba con test clocks reales en la cuenta de prueba queda documentada en el README.
+
+### A32. Pagos fallidos de la suscripción: tres días seguidos y se cancela (2026-11-26)
+Decisión de la dueña del proyecto. Reemplaza "Smart Retries con la configuración por defecto" de A19 (B7), RF-18 y
+SDD §6.1.
+- Si falla el cobro de una renovación, se intenta **una vez al día durante tres días seguidos**: el día de la
+  renovación y los dos siguientes (tres intentos en total). Mientras tanto el servicio sigue suspendido
+  (`payment_failed`); si un intento pasa, se reactiva.
+- Si ninguno de los tres pasa, **se da por terminada la programación del cliente**: la suscripción se cancela y el
+  contrato pasa a `cancelled`.
+- En Stripe (Dashboard → Billing → Revenue recovery → Retries): programación personalizada, sin Smart Retries,
+  **2 reintentos, 1 día después del intento anterior**, y al fallar todos, **cancelar la suscripción**.
+- La app no depende solo de esa configuración: cuando llega `invoice.payment_failed` sin otro reintento programado
+  (`next_payment_attempt = null`) para una renovación, cancela la suscripción en Stripe si sigue viva y pasa el contrato
+  a `cancelled` en la misma transacción (`subscription.cancelled` con `reason: payment_attempts_exhausted`). El
+  `customer.subscription.deleted` que llega después ya no cambia nada.
+- El aviso al cliente y a Ferro del primer fallo dice que se volverá a intentar una vez al día durante los próximos 2
+  días; después del último intento no se manda ese aviso (la cancelación la avisa la Fase 7, Subscription Cancelled).
+  El número de intentos está en `SUBSCRIPTION_PAYMENT_ATTEMPTS` (`src/lib/stripe-constants.ts`), solo para los textos;
+  si cambia, se cambia también en Stripe y en las condiciones (`src/content/legal.ts`).
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -649,7 +725,7 @@ orden correcto. Para evitarlo:
 | 4 | Dominio | Fase 8 | Resuelto en A17: se compra en GoDaddy |
 | 5 | Remitente de Resend | — | Resuelto en A17: se carga en Vercel; se verifica con el dominio (Fase 8) |
 | 6 | Fechas exactas del periodo de un mes | — | Resuelto en A19: un mes desde la fecha de pago; la entrega del plan es solo referencia |
-| 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19: Smart Retries; el servicio se suspende mientras haya un pago vencido |
+| 7 | Reintentos y suspensión por pagos fallidos | — | Resuelto en A19 y A32: tres intentos en días seguidos; el servicio se suspende mientras haya un pago vencido; si ninguno pasa, se cancela |
 | 8 | Mecanismo de cancelación | — | Resuelto en A21: Stripe Customer Portal con OTP, al final del periodo |
 | 9 | Nuevas contrataciones con un periodo vigente o un contrato pendiente | — | Resuelto en A20 |
 | 10 | WhatsApp oficial de Ferro | — | Resuelto en A17: se carga en Vercel |

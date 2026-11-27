@@ -34,14 +34,16 @@ export type StripePaymentInput = {
   method: Extract<PaymentMethod, "stripe_one_time" | "stripe_subscription">;
   stripePaymentIntentId: string | null;
   stripeInvoiceId?: string | null;
+  /** Suscripción local (Fase 6). */
+  subscriptionId?: string | null;
   /** Importe que cobró Stripe (no el del navegador), ya convertido a `Decimal`. */
   amount: Prisma.Decimal;
   currency: string;
 };
 
 /**
- * Registra un pago exitoso de Stripe. `stripePaymentIntentId` y `stripeInvoiceId` son UNIQUE: una
- * segunda barrera contra duplicados además de WebhookEvent (SDD §5.3).
+ * Registra un pago exitoso de Stripe. `stripePaymentIntentId` y `stripeInvoiceId` son UNIQUE entre los
+ * pagos exitosos: una segunda barrera contra duplicados además de WebhookEvent (SDD §5.3, A31).
  */
 export function recordStripePayment(
   input: StripePaymentInput,
@@ -54,6 +56,7 @@ export function recordStripePayment(
       method: input.method,
       stripePaymentIntentId: input.stripePaymentIntentId,
       stripeInvoiceId: input.stripeInvoiceId ?? null,
+      subscriptionId: input.subscriptionId ?? null,
       amount: input.amount,
       currency: input.currency,
       status: "succeeded",
@@ -63,7 +66,10 @@ export function recordStripePayment(
   });
 }
 
-/** Registra un pago de Stripe que no se completó (p. ej. un pago asíncrono fallido). */
+/**
+ * Registra un pago de Stripe que no se completó (un pago asíncrono fallido o un intento de cobro de
+ * una factura de suscripción). Cada intento es un registro nuevo (RF-18).
+ */
 export function recordFailedStripePayment(
   input: StripePaymentInput,
   db: Db = getPrisma(),
@@ -75,6 +81,7 @@ export function recordFailedStripePayment(
       method: input.method,
       stripePaymentIntentId: input.stripePaymentIntentId,
       stripeInvoiceId: input.stripeInvoiceId ?? null,
+      subscriptionId: input.subscriptionId ?? null,
       amount: input.amount,
       currency: input.currency,
       status: "failed",

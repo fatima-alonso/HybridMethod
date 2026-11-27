@@ -51,6 +51,8 @@ export async function createServicePeriod(
   input: {
     contract: Pick<Contract, "id" | "programId">;
     payment: Pick<Payment, "id">;
+    /** Programa de ese mes si no es el del contrato (suscripción con cambio de plan, A21). */
+    programId?: string;
     paidAt: Date;
     serviceStartDate: Date;
     serviceEndDate: Date;
@@ -62,7 +64,7 @@ export async function createServicePeriod(
     data: {
       contractId: input.contract.id,
       paymentId: input.payment.id,
-      programId: input.contract.programId,
+      programId: input.programId ?? input.contract.programId,
       sequence: previous + 1,
       paidAt: input.paidAt,
       startDate: input.serviceStartDate,

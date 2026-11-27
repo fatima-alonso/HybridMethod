@@ -25,8 +25,8 @@ type Props = {
 };
 
 /**
- * Paso 3: método de pago (RF-06). Transferencia y pago único con tarjeta (Fase 5); la suscripción se
- * muestra deshabilitada hasta la Fase 6.
+ * Paso 3: método de pago (RF-06): transferencia, pago único con tarjeta (Fase 5) o suscripción
+ * mensual con tarjeta (Fase 6).
  */
 export function PaymentMethodStep({
   program,

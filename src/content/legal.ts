@@ -117,7 +117,7 @@ export const TERMS: LegalDocument = {
       heading: "Suscripción mensual",
       items: [
         "Se cobra automáticamente cada mes, en la misma fecha del primer pago, hasta que la canceles.",
-        "Si un cobro falla, Stripe lo reintenta. Mientras haya un pago pendiente, el servicio se suspende. Si los reintentos no se completan, la suscripción se cancela.",
+        "Si el cobro de una renovación falla, se intenta de nuevo una vez al día, hasta 3 días seguidos en total. Mientras haya un pago pendiente, el servicio se suspende. Si ninguno de los intentos se completa, la suscripción se cancela y termina tu programación.",
         'Puedes cancelarla, cambiar de programa o actualizar tu tarjeta desde "Administrar mi suscripción", después de verificar tu correo. La cancelación aplica al final del periodo pagado y no pierdes los días que ya pagaste. Un cambio de programa aplica en la siguiente renovación.',
       ],
     },

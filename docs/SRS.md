@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.8 |
+| **Versión** | 1.9 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -15,6 +15,7 @@
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
+| 1.9 | 2026-11-26 | RF-18: tres intentos de cobro en días seguidos; si ninguno pasa, la suscripción y el contrato se cancelan (DECISIONS A32). |
 | 1.8 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): RF-21, RF-22 y RN-08. |
 | 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); cobro mes con mes desde la fecha de pago y registro informativo de la fecha de entrega del plan, con recordatorios a Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
 
@@ -345,7 +346,7 @@ Cada renovación exitosa deberá generar una notificación al entrenador.
 ### RF-18. Pagos fallidos
 El sistema deberá registrar los intentos de cobro fallidos y actualizar el estado de la suscripción.
 
-Stripe reintenta el cobro con Smart Retries (configuración por defecto). Mientras haya un pago vencido, el servicio queda suspendido. Si un reintento se paga, el servicio se reanuda. Si se agotan los reintentos, la suscripción se cancela (DECISIONS A19).
+Si el cobro de una renovación falla, se intenta de nuevo una vez al día: **tres intentos en tres días seguidos** (el día de la renovación y los dos siguientes). Mientras haya un pago vencido, el servicio queda suspendido. Si un reintento se paga, el servicio se reanuda. Si ninguno de los tres pasa, la suscripción se cancela y termina la programación del cliente: el contrato pasa a `cancelled` (DECISIONS A32, reemplaza los Smart Retries de A19).
 
 ### RF-19. Cancelación de suscripciones
 El cliente podrá cancelar su suscripción en el Stripe Customer Portal, al que entra después de verificar su correo con un código (DECISIONS A21).
@@ -607,7 +608,7 @@ La primera versión se considerará funcional cuando:
 | 4 | Dominio definitivo | **Definido:** GoDaddy. Pendiente de compra y configuración (Fase 8). |
 | 5 | Remitente de Resend | **Definido.** Se verifica con el dominio (Fase 8). |
 | 6 | Fechas de los periodos de servicio | **Definido:** un mes desde la fecha de pago en todos los métodos; la entrega del plan es solo referencia (RF-22, RF-23). |
-| 7 | Reintentos y suspensión por pagos fallidos | **Definido:** Smart Retries; servicio suspendido mientras haya un pago vencido (RF-18). |
+| 7 | Reintentos y suspensión por pagos fallidos | **Definido:** tres intentos en días seguidos; servicio suspendido mientras haya un pago vencido; si ninguno pasa, se cancela (RF-18, DECISIONS A32). |
 | 8 | Mecanismo de cancelación | **Definido:** Stripe Customer Portal con OTP, al final del periodo (RF-19). |
 | 9 | Nuevas contrataciones con un periodo vigente | **Definido** en RF-21. |
 | 10 | Número de WhatsApp oficial de Ferro | **Definido.** Se carga en las variables de entorno. |

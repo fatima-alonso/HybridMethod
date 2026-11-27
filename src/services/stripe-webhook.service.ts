@@ -1,15 +1,9 @@
 import type Stripe from "stripe";
 
-import type {
-  Contract,
-  ContractStatus,
-  Customer,
-  Program,
-  WebhookEventStatus,
-} from "@/generated/prisma/client";
+import type { Contract, WebhookEventStatus } from "@/generated/prisma/client";
 import { getConfig } from "@/lib/config";
 import { getPrisma, type Db } from "@/lib/prisma";
-import { fromMinorUnits, normalizeCurrency, STRIPE_WEBHOOK_EVENTS } from "@/lib/stripe";
+import { fromMinorUnits, getStripe, normalizeCurrency, STRIPE_WEBHOOK_EVENTS } from "@/lib/stripe";
 import { applicationHref } from "@/content/landing";
 import { formatPrice } from "@/utils/format";
 
@@ -24,6 +18,20 @@ import { sendExtraPaymentAlertEmail, sendPaymentNotCompletedEmail } from "./emai
 import { sendPaidNotifications } from "./payment-notifications.service";
 import { recordFailedStripePayment, recordStripePayment } from "./payment.service";
 import { createServicePeriod, nextOneMonthPeriod } from "./service-period.service";
+import {
+  handleInvoicePaid,
+  handleInvoicePaymentFailed,
+  handleSubscriptionChanged,
+  handleSubscriptionCheckoutCompleted,
+  type SubscriptionEventContext,
+} from "./stripe-subscription-webhook.service";
+import {
+  lockContract,
+  notifyQuietly,
+  UNPAID,
+  type ContractWithRelations,
+  type Handled,
+} from "./stripe-webhook-shared";
 
 /**
  * Webhooks de Stripe (RF-07, RN-11, SDD §7.5, DECISIONS A6, A26).
@@ -38,9 +46,12 @@ import { createServicePeriod, nextOneMonthPeriod } from "./service-period.servic
  * 4. Después de confirmar la transacción, envía los correos. Un fallo de correo nunca revierte el
  *    pago.
  *
- * Fase 5 (pago único): `checkout.session.completed` (con `payment_status = paid`),
- * `checkout.session.async_payment_succeeded` y `checkout.session.async_payment_failed`. Los demás
- * eventos se marcan `ignored`. Nunca se usa `payment_intent.*` (A6).
+ * Pago único (Fase 5): `checkout.session.completed` (con `payment_status = paid`),
+ * `checkout.session.async_payment_succeeded` y `checkout.session.async_payment_failed`.
+ * Suscripción (Fase 6, `stripe-subscription-webhook.service`): `checkout.session.completed` en modo
+ * `subscription` (solo liga la suscripción), `invoice.paid` (única fuente de los pagos),
+ * `invoice.payment_failed` y `customer.subscription.*` (solo sincronizan). Los demás eventos se marcan
+ * `ignored`. Nunca se usa `payment_intent.*` (A6).
  */
 
 export type WebhookResult =
@@ -49,22 +60,13 @@ export type WebhookResult =
   /** El evento no se puede aplicar y reintentarlo no ayudaría (p. ej. contrato inexistente). */
   | { status: "failed"; note: string };
 
-type Handled = {
-  status: Exclude<WebhookEventStatus, "received">;
-  note?: string;
-  /** Correos que se envían después de confirmar la transacción. */
-  after?: (db: Db) => Promise<void>;
-};
-
 export const HANDLED_EVENT_TYPES = STRIPE_WEBHOOK_EVENTS;
-
-/** Estados en que un contrato todavía se puede pagar (pago tardío incluido, DECISIONS A20). */
-const UNPAID: readonly ContractStatus[] = ["pending_payment", "expired"];
 
 export async function processStripeEvent(
   event: Stripe.Event,
   db = getPrisma(),
   now: Date = new Date(),
+  stripe: Pick<Stripe, "subscriptions"> | null = getStripe(),
 ): Promise<WebhookResult> {
   await db.webhookEvent.createMany({
     data: [{ stripeEventId: event.id, eventType: event.type, createdAt: now }],
@@ -80,7 +82,7 @@ export async function processStripeEvent(
         const status = rows[0]?.status;
         if (status === "processed" || status === "ignored") return null;
 
-        const result = await dispatch(event, tx, now);
+        const result = await dispatch(event, { tx, now, stripe, event });
         await tx.webhookEvent.update({
           where: { stripeEventId: event.id },
           data: { status: result.status, error: result.note ?? null, processedAt: now },
@@ -107,10 +109,14 @@ export async function processStripeEvent(
   return { status: handled.status, note: handled.note };
 }
 
-async function dispatch(event: Stripe.Event, tx: Db, now: Date): Promise<Handled> {
+async function dispatch(event: Stripe.Event, context: SubscriptionEventContext): Promise<Handled> {
+  const { tx, now } = context;
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
+      if (session.mode === "subscription") {
+        return handleSubscriptionCheckoutCompleted(session, context);
+      }
       if (session.mode !== "payment") return { status: "ignored", note: `mode_${session.mode}` };
       if (session.payment_status === "paid") return fulfillCheckout(session, event, tx, now);
       if (session.payment_status === "unpaid") {
@@ -129,27 +135,25 @@ async function dispatch(event: Stripe.Event, tx: Db, now: Date): Promise<Handled
       if (session.mode !== "payment") return { status: "ignored", note: `mode_${session.mode}` };
       return failAsyncCheckout(session, event, tx);
     }
+    case "invoice.paid":
+      return handleInvoicePaid(event.data.object, context);
+    case "invoice.payment_failed":
+      return handleInvoicePaymentFailed(event.data.object, context);
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted":
+      return handleSubscriptionChanged(event.data.object, context);
     default:
       return { status: "ignored", note: "event_type_not_handled" };
   }
 }
 
-type ContractWithRelations = Contract & { customer: Customer; program: Program };
-
 /** Contrato de la sesión (`metadata.contractId` o `client_reference_id`), bloqueado para el pago. */
-async function lockSessionContract(
+function lockSessionContract(
   session: Stripe.Checkout.Session,
   tx: Db,
 ): Promise<ContractWithRelations | null> {
-  const contractId = session.metadata?.contractId ?? session.client_reference_id;
-  if (!contractId || !/^[0-9a-f-]{36}$/i.test(contractId)) return null;
-  const locked = await tx.$queryRaw<Array<{ id: string }>>`
-    SELECT "id" FROM "contracts" WHERE "id" = ${contractId}::uuid FOR UPDATE`;
-  if (locked.length === 0) return null;
-  return tx.contract.findUnique({
-    where: { id: contractId },
-    include: { customer: true, program: true },
-  });
+  return lockContract(session.metadata?.contractId ?? session.client_reference_id, tx);
 }
 
 function paymentIntentId(session: Stripe.Checkout.Session): string | null {
@@ -183,12 +187,12 @@ async function fulfillCheckout(
   }
   const intentId = paymentIntentId(session);
   if (intentId) {
-    const recorded = await tx.payment.findUnique({
-      where: { stripePaymentIntentId: intentId },
-      select: { status: true },
+    const recorded = await tx.payment.findFirst({
+      where: { stripePaymentIntentId: intentId, status: "succeeded" },
+      select: { id: true },
     });
     // Ya registrado (p. ej. `completed` y `async_payment_succeeded` del mismo pago).
-    if (recorded?.status === "succeeded") return { status: "processed", note: "already_recorded" };
+    if (recorded) return { status: "processed", note: "already_recorded" };
   }
 
   const { amount, currency } = chargedAmount(session, contract);
@@ -346,7 +350,7 @@ async function failAsyncCheckout(
   }
   const intentId = paymentIntentId(session);
   if (intentId) {
-    const recorded = await tx.payment.findUnique({
+    const recorded = await tx.payment.findFirst({
       where: { stripePaymentIntentId: intentId },
       select: { id: true },
     });
@@ -401,30 +405,4 @@ async function failAsyncCheckout(
           )
       : undefined,
   };
-}
-
-async function notifyQuietly(
-  db: Db,
-  contract: Contract,
-  name: string,
-  send: () => Promise<unknown>,
-): Promise<void> {
-  try {
-    await send();
-  } catch (error) {
-    console.error(
-      `[stripe.webhook] No se pudo enviar ${name} para ${contract.reference}:`,
-      error instanceof Error ? error.name : "error desconocido",
-    );
-    await recordAudit(
-      {
-        action: "payment.notification_failed",
-        actor: "system",
-        entityType: "Contract",
-        entityId: contract.id,
-        metadata: { reference: contract.reference, email: name },
-      },
-      db,
-    ).catch(() => undefined);
-  }
 }

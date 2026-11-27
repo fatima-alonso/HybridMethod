@@ -149,8 +149,10 @@ model Payment {
   contractId            String        @db.Uuid
   subscriptionId        String?       @db.Uuid
   method                PaymentMethod
-  stripePaymentIntentId String?       @unique
-  stripeInvoiceId       String?       @unique
+  /// UNIQUE solo entre los pagos `succeeded` (índice parcial en la migración, DECISIONS A31): los
+  /// reintentos fallidos de una misma factura comparten Payment Intent y factura.
+  stripePaymentIntentId String?
+  stripeInvoiceId       String?
   amount                Decimal       @db.Decimal(10, 2)
   currency              String        @db.Char(3)
   status                PaymentStatus @default(pending)
@@ -163,6 +165,8 @@ model Payment {
 
   @@index([contractId])
   @@index([subscriptionId])
+  @@index([stripeInvoiceId])
+  @@index([stripePaymentIntentId])
   @@map("payments")
 }
 

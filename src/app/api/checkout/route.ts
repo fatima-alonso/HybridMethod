@@ -25,7 +25,8 @@ import {
 } from "@/services/errors";
 
 /**
- * `POST /api/checkout` (RF-07, SDD §7.4, DECISIONS A26). Exige la sesión de verificación (RN-12):
+ * `POST /api/checkout` (RF-07, RF-08, SDD §7.4, DECISIONS A26, A31): pago único (`mode: "payment"`) o
+ * suscripción mensual (`mode: "subscription"`). Exige la sesión de verificación (RN-12):
  * el correo sale de la cookie firmada. El Price y el importe salen de la BD y se comprueban contra
  * Stripe (SDD §9.2): el navegador solo elige el programa y la modalidad.
  *
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
           fullName: body.data.fullName,
           whatsapp: body.data.whatsapp,
           programSlug: body.data.program,
+          mode: body.data.mode,
           pendingAction: body.data.pendingAction,
         },
         { ip, userAgent: getUserAgent(request) },
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
         clientSecret,
         publishableKey,
         returnUrl,
+        mode: body.data.mode,
         reference: contract.reference,
         status: contract.status,
         outcome,

@@ -259,7 +259,35 @@ export async function markContractPaid(
   return transition(db, contractId, to, period, { status: options.from });
 }
 
-/** `active → payment_failed` (suscripción `past_due`/`unpaid` o pago asíncrono fallido). */
+/**
+ * Renovación de una suscripción pagada (`invoice.paid`, SDD §7.5): el contrato `active` toma el
+ * periodo de la factura. Si la factura es de un periodo que termina antes del vigente (llegó fuera
+ * de orden), no cambia nada. Para `payment_failed → active` se usa `activateContract`.
+ */
+export async function extendSubscriptionContract(
+  contractId: string,
+  period: ServicePeriod,
+  db: Db = getPrisma(),
+): Promise<Contract> {
+  assertPeriod(period);
+  await db.contract.updateMany({
+    where: {
+      id: contractId,
+      status: "active",
+      paymentType: "subscription",
+      OR: [{ serviceEndDate: null }, { serviceEndDate: { lt: period.serviceEndDate } }],
+    },
+    data: period,
+  });
+  const contract = await db.contract.findUnique({ where: { id: contractId } });
+  if (!contract) throw new NotFoundError("Contrato", contractId);
+  if (contract.status !== "active") {
+    throw new InvalidContractTransitionError(contract.status, "active");
+  }
+  return contract;
+}
+
+/** `active → payment_failed`: una suscripción con un cobro vencido (servicio suspendido, RN-14). */
 export async function markContractPaymentFailed(
   contractId: string,
   db: Db = getPrisma(),

@@ -60,7 +60,7 @@ type LoadState = "loading" | "ready" | "error";
 
 /**
  * Paso 4 con tarjeta: formulario de pago de Stripe incrustado en la landing (`ui_mode: form`,
- * RF-07, DECISIONS A27, A29). La tarjeta la captura Stripe en su propio iframe (RN-10). Al pagar,
+ * RF-07, RF-08, DECISIONS A27, A29, A31), para el pago único o el primer mes de la suscripción. La tarjeta la captura Stripe en su propio iframe (RN-10). Al pagar,
  * el formulario lleva al cliente a `/pago/exito`; el servicio se activa solo con el webhook.
  */
 export function CardPaymentStep({ checkout, onBack }: Props) {
@@ -68,6 +68,7 @@ export function CardPaymentStep({ checkout, onBack }: Props) {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const { clientSecret, publishableKey, returnUrl } = checkout;
+  const subscription = checkout.mode === "subscription";
 
   useEffect(() => {
     let cancelled = false;
@@ -116,15 +117,17 @@ export function CardPaymentStep({ checkout, onBack }: Props) {
 
   return (
     <div className="space-y-6">
-      <StepHeading title={CARD_STEP.title} />
+      <StepHeading title={subscription ? CARD_STEP.subscriptionTitle : CARD_STEP.title} />
       <p className="text-bone/85">{CARD_STEP.lead}</p>
 
-      <div className="border-2 border-bone/25 p-4">
+      <div className="space-y-2 border-2 border-bone/25 p-4">
         <p className="font-display text-2xl font-bold uppercase">{checkout.program.name}</p>
         <p className="text-bone/85">
-          {formatPrice(checkout.amount, checkout.currency)} · {CARD_STEP.referenceLabel}{" "}
+          {formatPrice(checkout.amount, checkout.currency)}
+          {subscription ? ` ${CARD_STEP.perMonth}` : ""} · {CARD_STEP.referenceLabel}{" "}
           <span className="font-mono font-semibold">{checkout.reference}</span>
         </p>
+        {subscription ? <p className="text-sm text-bone/70">{CARD_STEP.subscriptionNote}</p> : null}
       </div>
 
       {state === "loading" ? (
