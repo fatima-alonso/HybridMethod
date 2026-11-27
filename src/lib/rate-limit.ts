@@ -84,6 +84,8 @@ export const RATE_LIMITS = {
   transferCreateIp: { scope: "transfer-create:ip", limit: 10, windowMs: 60 * 60 * 1000 },
   /** Crear o retomar un pago con tarjeta (Stripe Checkout): por IP (Fase 5, DECISIONS A26). */
   checkoutCreateIp: { scope: "checkout-create:ip", limit: 10, windowMs: 60 * 60 * 1000 },
+  /** Abrir el Stripe Customer Portal: por IP (Fase 7, DECISIONS A33). */
+  portalIp: { scope: "portal:ip", limit: 10, windowMs: 60 * 60 * 1000 },
   /** Confirmar una transferencia: por IP (además de los 5 PIN por enlace). */
   transferConfirmIp: { scope: "transfer-confirm:ip", limit: 20, windowMs: 15 * 60 * 1000 },
   /** Regenerar un enlace: por IP y en total, porque no hay un enlace que cuente los PIN. */

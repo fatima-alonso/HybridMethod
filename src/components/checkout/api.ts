@@ -93,3 +93,10 @@ export type CheckoutCreated = {
   amount: `${number}`;
   currency: string;
 };
+
+/** `POST /api/portal` (SDD §7.7): URL del Stripe Customer Portal del correo verificado. */
+export type PortalCreated = { url: string };
+
+export function openPortalSession(): Promise<ApiResult<PortalCreated>> {
+  return postJson<PortalCreated>("/api/portal", {});
+}

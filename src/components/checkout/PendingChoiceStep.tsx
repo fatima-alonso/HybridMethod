@@ -29,9 +29,11 @@ export function PendingChoiceStep({
   onChoose,
   onBack,
 }: Props) {
+  const pendingPlan = `${pending.programName} · ${
+    PAYMENT_TYPE_LABELS[pending.paymentType] ?? pending.paymentType
+  }`;
   const summary = [
-    pending.programName,
-    PAYMENT_TYPE_LABELS[pending.paymentType] ?? pending.paymentType,
+    pendingPlan,
     formatPrice(pending.amount, pending.currency),
     pending.reference,
   ].join(" · ");
@@ -49,7 +51,7 @@ export function PendingChoiceStep({
           onClick={() => onChoose("continue")}
           className={`w-full sm:w-auto ${buttonSecondary}`}
         >
-          {PENDING_STEP.continue}
+          {PENDING_STEP.continue(pendingPlan)}
         </button>
         <button
           type="button"

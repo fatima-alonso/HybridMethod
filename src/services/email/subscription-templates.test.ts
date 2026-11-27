@@ -36,10 +36,13 @@ describe("plantillas de la suscripción", () => {
   });
 
   it("la renovación del cliente dice el nuevo periodo y que se renueva hasta cancelar", () => {
-    const email = subscriptionRenewedEmail(paid);
+    const email = subscriptionRenewedEmail({ ...paid, manageUrl: "https://hm.test/suscripcion" });
     expect(email.subject).toContain("Tu suscripción se renovó");
     expect(email.text).toContain("Nuevo periodo: Del 26 dic 2026, 10:00 al 26 ene 2027, 10:00");
     expect(email.text).toContain("hasta que la canceles");
+    // Enlace a "Administrar mi suscripción" (DECISIONS A33).
+    expect(email.text).toContain("https://hm.test/suscripcion");
+    expect(email.html).toContain('href="https://hm.test/suscripcion"');
   });
 
   it("Purchase Confirmation de una suscripción avisa que se renueva cada mes", () => {
@@ -48,6 +51,12 @@ describe("plantillas de la suscripción", () => {
       "se renueva sola cada mes",
     );
     expect(purchaseConfirmationEmail(base).text).not.toContain("se renueva");
+    const manageUrl = "https://hm.test/suscripcion";
+    expect(purchaseConfirmationEmail({ ...base, renewsMonthly: true, manageUrl }).text).toContain(
+      manageUrl,
+    );
+    // El pago único no tiene nada que administrar.
+    expect(purchaseConfirmationEmail({ ...base, manageUrl }).text).not.toContain(manageUrl);
   });
 
   it("Payment Failed (cliente) explica la pausa y ofrece pagar con otra tarjeta", () => {

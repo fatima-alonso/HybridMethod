@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.9 |
+| **Versión** | 1.10 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -15,6 +15,7 @@
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
+| 1.10 | 2026-11-27 | Fase 7 (DECISIONS A33): RF-13, RF-14 y §9.4: la cancelación se confirma al pedirla y se avisa al terminar; avisos de cambio de programa y de cancelación deshecha al cliente y al entrenador; acceso a "Administrar mi suscripción" desde el pie de página, los correos de la suscripción y el aviso de suscripción activa. |
 | 1.9 | 2026-11-26 | RF-18: tres intentos de cobro en días seguidos; si ninguno pasa, la suscripción y el contrato se cancelan (DECISIONS A32). |
 | 1.8 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): RF-21, RF-22 y RN-08. |
 | 1.7 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): precios finales y 10 % de descuento en suscripción (reemplaza RN-13); cobro mes con mes desde la fecha de pago y registro informativo de la fecha de entrega del plan, con recordatorios a Ferro (RF-22, RF-23); suspensión por pago fallido; cancelación y cambio de plan con el Stripe Customer Portal; un solo contrato pendiente por cliente, vencimiento a los 7 días y pago por adelantado del siguiente mes (RF-21); borrador de privacidad y condiciones. |
@@ -312,7 +313,8 @@ El sistema deberá enviar un correo al entrenador cuando ocurra alguno de estos 
 - Cada pago confirmado (pago único, transferencia, primer pago y renovaciones de la suscripción): correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
 - Cada día hábil, mientras haya un plan sin fecha de entrega: un recordatorio por cliente (RF-23).
 - Pago fallido.
-- Cancelación de suscripción.
+- Cancelación de suscripción: cuando el cliente la pide y cuando termina (DECISIONS A33).
+- Cambio de programa de una suscripción y cancelación deshecha (DECISIONS A33).
 - Confirmación manual de una transferencia.
 
 La dirección de correo definitiva ya está disponible y deberá agregarse a la configuración del sistema.
@@ -323,8 +325,9 @@ El sistema deberá enviar:
 - La confirmación de compra.
 - El correo de bienvenida, con el aviso de que Ferro entregará el plan en 3 a 5 días hábiles.
 - La confirmación de pago.
-- La confirmación de cancelación de la suscripción.
+- La confirmación de cancelación de la suscripción, al pedirla (con la fecha en que termina el servicio), y el aviso cuando la suscripción termina (DECISIONS A33).
 - Avisos sobre renovaciones y pagos fallidos.
+- Avisos de cambio de programa y de cancelación deshecha en el portal (DECISIONS A33).
 
 ### RF-15. Verificación de correo y clientes recurrentes
 Antes de crear cualquier contratación, el sistema deberá verificar el correo electrónico del cliente con un código OTP enviado a ese correo. **La verificación se hará siempre**, tanto si el correo ya está registrado como si no.
@@ -515,14 +518,14 @@ El sistema deberá pedir solo la información necesaria para completar la contra
 16. El sistema registra el pago, activa el servicio (un mes desde la confirmación) y envía los correos correspondientes, incluido el correo de compra a Ferro con el botón de entrega del plan.
 
 ### 9.4 Flujo de cancelación
-1. El cliente entra a "Administrar mi suscripción".
+1. El cliente entra a "Administrar mi suscripción" (página `/suscripcion`, enlazada en el pie de página y en los correos de la suscripción; o el botón del aviso de suscripción activa, DECISIONS A33).
 2. Verifica su correo con un código.
 3. El sistema identifica su suscripción y abre el Stripe Customer Portal.
 4. El cliente cancela en el portal.
 5. Stripe detiene las renovaciones al final del periodo vigente.
 6. El sistema actualiza el estado mediante webhooks.
-7. El cliente recibe una confirmación.
-8. El entrenador recibe una notificación.
+7. El cliente recibe una confirmación con la fecha en que termina su servicio, y el entrenador una notificación.
+8. Al final del periodo la suscripción termina: el contrato se cancela y el cliente y el entrenador reciben un aviso (DECISIONS A33).
 
 ---
 

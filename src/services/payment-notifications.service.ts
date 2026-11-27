@@ -19,6 +19,7 @@ import {
   sendTransferConfirmedEmail,
   sendWelcomeEmail,
 } from "./email.service";
+import { manageSubscriptionUrl } from "./subscription-notifications.service";
 
 /**
  * Correos después de un pago confirmado (SDD §7.5 paso 6, §7.6 paso 5, DECISIONS A19):
@@ -101,6 +102,7 @@ export async function sendPaidNotifications(
               serviceEnd,
               startsLater,
               renewsMonthly: method === "stripe_subscription",
+              manageUrl: method === "stripe_subscription" ? manageSubscriptionUrl() : undefined,
             }),
         ];
 
@@ -208,6 +210,7 @@ export async function sendRenewalNotifications(
             amount,
             serviceStart,
             serviceEnd,
+            manageUrl: manageSubscriptionUrl(),
           }),
       ],
       [

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
-import type { ProgramSlug } from "@/content/programs";
+import { FLOW_ERRORS, PAYMENT_STEP, PAYMENT_TYPE_LABELS } from "@/content/checkout";
+import { isProgramSlug, type ProgramSlug } from "@/content/programs";
 import { ApplicationForm, type ApplicationFormValues } from "@/components/forms/ApplicationForm";
 import type { PhoneCountryOption } from "@/lib/phone";
 import type { CheckoutRequestBody, TransferRequestBody } from "@/lib/validations";
@@ -21,6 +21,7 @@ import {
 import { CardPaymentStep } from "./CardPaymentStep";
 import { PaymentMethodStep, type PaymentMethodId } from "./PaymentMethodStep";
 import { PendingChoiceStep } from "./PendingChoiceStep";
+import { SubscriptionActiveStep } from "./SubscriptionActiveStep";
 import { TransferPendingStep } from "./TransferPendingStep";
 import { VerifyCodeStep } from "./VerifyCodeStep";
 
@@ -30,13 +31,18 @@ type Step =
   | { name: "payment" }
   | { name: "pendingChoice"; pending: PendingSummary; method: PaymentMethodId }
   | { name: "pending"; transfer: TransferCreated }
-  | { name: "card"; checkout: CheckoutCreated };
+  | { name: "card"; checkout: CheckoutCreated }
+  | { name: "subscriptionActive" };
 
 type Props = {
   programs: readonly ProgramOption[];
   countries: readonly PhoneCountryOption[];
   preselectedProgram?: ProgramSlug;
 };
+
+function isPaymentMethodId(value: string): value is PaymentMethodId {
+  return PAYMENT_STEP.methods.some((m) => m.id === value);
+}
 
 function failureMessage(result: ApiFailure): string {
   if (result.status === 0) return FLOW_ERRORS.network;
@@ -86,14 +92,22 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     setStep({ name: "form" });
   }
 
-  async function onConfirmPayment(method: PaymentMethodId, pendingAction?: "continue" | "change") {
+  /**
+   * Crea la contratación con `method` y el programa del formulario, o con `program` si se indica
+   * (al continuar con un pendiente, se pide lo que tiene el pendiente, DECISIONS A20).
+   */
+  async function onConfirmPayment(
+    method: PaymentMethodId,
+    pendingAction?: "continue" | "change",
+    program?: ProgramSlug,
+  ) {
     if (!values || values.program === "") return;
     setBusy(true);
     setError(null);
     const base: TransferRequestBody = {
       fullName: values.fullName,
       whatsapp: { country: values.whatsappCountry, number: values.whatsapp },
-      program: values.program,
+      program: program ?? values.program,
       privacyAccepted: values.privacyAccepted as true,
       ...(pendingAction ? { pendingAction } : {}),
     };
@@ -121,6 +135,12 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
       // Ya tiene un registro pendiente de otro programa o modalidad: se le pregunta (A20).
       setBusy(false);
       setStep({ name: "pendingChoice", pending: result.body.pending, method });
+      return;
+    }
+    if (result.error === "subscription_active") {
+      // Con suscripción activa se administra en el portal (SDD §7.3 regla 2, DECISIONS A33).
+      setBusy(false);
+      setStep({ name: "subscriptionActive" });
       return;
     }
     if (result.error === "verification_required") {
@@ -185,7 +205,19 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
           requested={`${program?.name ?? ""} · ${PAYMENT_TYPE_LABELS[step.method]}`}
           busy={busy}
           error={error}
-          onChoose={(action) => onConfirmPayment(step.method, action)}
+          onChoose={(action) => {
+            if (action === "change") {
+              onConfirmPayment(step.method, "change");
+              return;
+            }
+            // Continuar: se pide la modalidad y el programa del pendiente, no lo que eligió ahora.
+            const { paymentType, programSlug } = step.pending;
+            onConfirmPayment(
+              isPaymentMethodId(paymentType) ? paymentType : step.method,
+              "continue",
+              isProgramSlug(programSlug) ? programSlug : undefined,
+            );
+          }}
           onBack={() => {
             setError(null);
             setStep({ name: "payment" });
@@ -195,6 +227,15 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     }
     case "pending":
       return <TransferPendingStep transfer={step.transfer} onDone={finish} />;
+    case "subscriptionActive":
+      return (
+        <SubscriptionActiveStep
+          onBack={() => {
+            setError(null);
+            setStep({ name: "payment" });
+          }}
+        />
+      );
     case "card":
       return (
         <CardPaymentStep

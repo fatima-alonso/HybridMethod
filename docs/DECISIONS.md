@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; A31 en **SDD v1.16**; A32 en **SRS v1.9** y **SDD v1.17**; A33 en **SRS v1.10** y **SDD v1.18**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -715,6 +715,49 @@ SDD §6.1.
   El número de intentos está en `SUBSCRIPTION_PAYMENT_ATTEMPTS` (`src/lib/stripe-constants.ts`), solo para los textos;
   si cambia, se cambia también en Stripe y en las condiciones (`src/content/legal.ts`).
 
+### A33. Fase 7: portal de la suscripción y avisos de cancelación (2026-11-27)
+Decisiones de la dueña del proyecto (acceso, momento de los correos y a quién se avisa) y puntos que el SDD no
+definía, resueltos así al implementar el portal (A21). Todos son reversibles.
+
+**Acceso a "Administrar mi suscripción".**
+- Página `/suscripcion` (sin indexar): correo → código OTP (el mismo `POST /api/verification/request` y `/confirm` de
+  la contratación) → `POST /api/portal` → Stripe Customer Portal. El correo del código ya no dice "inscripción":
+  "Escribe este código en la página para continuar".
+- Se enlaza desde el **pie de página**, como primer enlace de la columna de los documentos legales (la variante
+  discreta, sin título propio), y desde los correos de la suscripción (Purchase Confirmation de una suscripción,
+  Subscription Renewed y los avisos de cambios).
+- Si un cliente con suscripción intenta contratar otra cosa (`409 subscription_active`), la página muestra "Ya tienes
+  una suscripción" con un botón **"Administrar mi suscripción"** que abre el portal directamente: su correo ya está
+  verificado en esa sesión.
+
+**`POST /api/portal`.** Sin body: el correo sale de la sesión de verificación. Abre el portal si el cliente tiene
+`stripeCustomerId` y una suscripción `active`, `past_due` o `unpaid` (vigente, también con la cancelación programada
+para poder deshacerla, o con un cobro pendiente para actualizar la tarjeta). Si no (correo desconocido, sin
+suscripción, `incomplete` o `canceled`), `404 subscription_not_found` con el mismo mensaje en todos los casos. Sin
+Stripe o si Stripe falla, `503 portal_unavailable`. Rate limit: 10 por IP por hora. `return_url` = la landing,
+`locale: es-419`, con la configuración predeterminada del portal en el Dashboard (README). Se audita
+`portal.session_created`.
+
+**Correos de la cancelación y de los cambios (al cliente y a Ferro).**
+- **Al pedir la cancelación** (`cancel_at_period_end` o `cancel_at`): "Tu suscripción terminará el …: tu servicio
+  sigue hasta ese día y no habrá otro cobro" (cliente) y "Cancelación programada" (Ferro). El contrato sigue `active`.
+- **Al terminar** (la suscripción pasa a `canceled` y el contrato a `cancelled`): "Tu suscripción terminó" con un botón
+  para volver a inscribirse (cliente) y "Suscripción terminada" (Ferro). Si Stripe la canceló por cobros fallidos
+  (`cancellation_details.reason = payment_failed`) o la app la canceló al agotarse los intentos (A32), el texto lo dice
+  ("Suscripción cancelada por pagos fallidos"). Una cancelación inmediata (p. ej. Ferro desde el Dashboard) manda
+  solo este aviso.
+- **Cancelación deshecha**: "Tu suscripción sigue activa" con la fecha del siguiente cobro, y "Cancelación deshecha"
+  (Ferro).
+- **Cambio de programa**: "Cambiaste a …" con el importe mensual y la fecha de la siguiente renovación (hasta entonces
+  sigue con el programa ya pagado), y "Cambio de programa" (Ferro), para que prepare el plan del programa nuevo.
+
+**Cómo se detectan.** Cada evento de la suscripción ya copia el estado actual de Stripe (A31); ahora además compara la
+fila Subscription de antes y de después: programa, `cancelAtPeriodEnd` y estado. El primer evento que ve un cambio lo
+avisa y los siguientes ya no encuentran diferencia, así que un evento repetido o fuera de orden no repite el correo.
+El alta (primera sincronización) no avisa nada, y solo se avisan los cambios de contratos `active` o `payment_failed`.
+Los correos se envían después de confirmar la transacción; un fallo se registra (`payment.notification_failed`) y no
+revierte nada.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -735,3 +778,5 @@ SDD §6.1.
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
 | 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` o sigue pendiente? | — | Resuelto en A26 (2026-11-25): sigue `pending_payment`, el cliente recibe un aviso y puede reintentar con la misma referencia; vence a los 7 días sin actividad |
 | 16 | Promoción de varios meses en un solo pago (p. ej. paga 3 y el 4.º gratis) | — | Idea de Ferro para el futuro (A28), sin fecha. Implicaría un Price de paquete en Stripe y que un Payment abra varios ServicePeriod seguidos (hoy `ServicePeriod.paymentId` es UNIQUE), con sus correos y recordatorios por mes |
+| 17 | Cupones de descuento | Fase 7B | Alcance decidido (2026-11-27): pago único y suscripción mensual con tarjeta, incluido el 100 % (cortesía); la transferencia no. Cortesías: suscripción con cupón del 100 % "para siempre", código de un solo uso por persona, pidiendo la tarjeta, y Ferro la termina a mano (cancelar o quitar el cupón). El cupón se acumula con el 10 % de la suscripción (B18). Ferro los crea en el Dashboard de Stripe. Falta comprobar en modo de prueba el campo de código del formulario de Checkout Studio; se registra como A34 al implementarla |
+| 18 | ¿Un cupón en la suscripción se acumula con su 10 % de descuento? | — | Resuelto (2026-11-27): **sí se acumulan**. El cupón se aplica sobre el precio de la suscripción, que ya tiene el 10 % (p. ej. 20 % sobre $1,080 = $864 al mes en HM RUN). Se integra en A34 con la Fase 7B |

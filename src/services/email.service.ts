@@ -10,6 +10,11 @@ import {
   planDeliveryReminderEmail,
   purchaseConfirmationEmail,
   renewalSuccessfulEmail,
+  subscriptionCancellationRevertedEmail,
+  subscriptionCancellationScheduledEmail,
+  subscriptionChangeAlertEmail,
+  subscriptionEndedEmail,
+  subscriptionPlanChangedEmail,
   subscriptionRenewedEmail,
   transferConfirmedEmail,
   transferPendingEmail,
@@ -24,6 +29,11 @@ import {
   type PlanDeliveryReminderEmailInput,
   type PurchaseConfirmationEmailInput,
   type RenewalSuccessfulEmailInput,
+  type SubscriptionCancellationRevertedEmailInput,
+  type SubscriptionCancellationScheduledEmailInput,
+  type SubscriptionChangeAlertEmailInput,
+  type SubscriptionEndedEmailInput,
+  type SubscriptionPlanChangedEmailInput,
   type SubscriptionRenewedEmailInput,
   type TransferConfirmedEmailInput,
   type TransferPendingEmailInput,
@@ -171,4 +181,39 @@ export function sendPaymentFailedAlertEmail(
   input: PaymentFailedAlertEmailInput,
 ): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...paymentFailedAlertEmail(input) });
+}
+
+/** Subscription Cancelled (cliente): pidió la cancelación; sigue hasta el final del periodo (RF-19). */
+export function sendSubscriptionCancellationScheduledEmail(
+  input: SubscriptionCancellationScheduledEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionCancellationScheduledEmail(input) });
+}
+
+/** Subscription Cancelled (cliente): la suscripción ya terminó (RF-14). */
+export function sendSubscriptionEndedEmail(
+  input: SubscriptionEndedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionEndedEmail(input) });
+}
+
+/** El cliente deshizo la cancelación en el portal (DECISIONS A33). */
+export function sendSubscriptionCancellationRevertedEmail(
+  input: SubscriptionCancellationRevertedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionCancellationRevertedEmail(input) });
+}
+
+/** El cliente cambió de programa en el portal (RN-08, DECISIONS A33). */
+export function sendSubscriptionPlanChangedEmail(
+  input: SubscriptionPlanChangedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionPlanChangedEmail(input) });
+}
+
+/** Aviso a Ferro de una cancelación, un cambio de programa o una cancelación deshecha (A33). */
+export function sendSubscriptionChangeAlertEmail(
+  input: SubscriptionChangeAlertEmailInput,
+): Promise<EmailResult> {
+  return sendEmail({ to: ferroEmail(), ...subscriptionChangeAlertEmail(input) });
 }

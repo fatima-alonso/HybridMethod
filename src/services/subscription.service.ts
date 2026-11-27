@@ -46,6 +46,13 @@ export type SubscriptionSnapshot = {
   currentPeriodEnd: Date | null;
   /** Cancelación programada al final del periodo (`cancel_at_period_end` o `cancel_at`). */
   cancelAtPeriodEnd: boolean;
+  /**
+   * Fecha en que termina una suscripción con la cancelación programada: `cancel_at` o, si no lo
+   * trae, el fin del periodo. `null` si no hay cancelación programada.
+   */
+  cancelAt: Date | null;
+  /** Por qué se canceló, según Stripe (`cancellation_requested`, `payment_failed`, …). */
+  cancellationReason: string | null;
   /** Price del primer concepto (el programa que se cobrará en la siguiente renovación). */
   priceId: string | null;
   /** `metadata.contractId` que el Checkout puso en la suscripción. */
@@ -60,13 +67,17 @@ export function subscriptionSnapshot(subscription: Stripe.Subscription): Subscri
   const item = subscription.items?.data?.[0];
   const price = item?.price;
   const customer = subscription.customer;
+  const periodEnd = fromUnix(item?.current_period_end);
+  const scheduled = subscription.cancel_at_period_end || typeof subscription.cancel_at === "number";
   return {
     stripeSubscriptionId: subscription.id,
     status: mapSubscriptionStatus(subscription.status),
     stripeStatus: subscription.status,
     currentPeriodStart: fromUnix(item?.current_period_start),
-    currentPeriodEnd: fromUnix(item?.current_period_end),
-    cancelAtPeriodEnd: subscription.cancel_at_period_end || subscription.cancel_at !== null,
+    currentPeriodEnd: periodEnd,
+    cancelAtPeriodEnd: scheduled,
+    cancelAt: scheduled ? (fromUnix(subscription.cancel_at) ?? periodEnd) : null,
+    cancellationReason: subscription.cancellation_details?.reason ?? null,
     priceId: price ? (typeof price === "string" ? price : price.id) : null,
     contractId: subscription.metadata?.contractId ?? null,
     stripeCustomerId: customer ? (typeof customer === "string" ? customer : customer.id) : null,
@@ -106,7 +117,13 @@ export async function programIdForPrice(
 }
 
 export type SyncResult =
-  | { kind: "synced"; subscription: Subscription; previousStatus: SubscriptionStatus | null }
+  | {
+      kind: "synced";
+      subscription: Subscription;
+      previousStatus: SubscriptionStatus | null;
+      /** La fila antes de sincronizar (`null` si se acaba de crear). */
+      previous: Subscription | null;
+    }
   /**
    * El contrato ya está ligado a otra suscripción (p. ej. dos pestañas de Checkout pagadas): esta
    * es un duplicado y no se guarda. Ferro la cancela en Stripe.
@@ -138,7 +155,7 @@ export async function upsertSubscription(
   };
   if (existing) {
     const subscription = await db.subscription.update({ where: { id: existing.id }, data });
-    return { kind: "synced", subscription, previousStatus: existing.status };
+    return { kind: "synced", subscription, previousStatus: existing.status, previous: existing };
   }
   const subscription = await db.subscription.create({
     data: {
@@ -149,5 +166,5 @@ export async function upsertSubscription(
       createdAt: now,
     },
   });
-  return { kind: "synced", subscription, previousStatus: null };
+  return { kind: "synced", subscription, previousStatus: null, previous: null };
 }

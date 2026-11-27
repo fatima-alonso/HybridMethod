@@ -48,6 +48,8 @@ type FakeSubscription = {
   metadata: Record<string, string>;
   cancel_at_period_end: boolean;
   cancel_at: number | null;
+  /** `cancellation_details.reason` de Stripe. */
+  cancellation_reason: Stripe.Subscription.CancellationDetails.Reason | null;
   priceId: string;
   periodStart: number;
   periodEnd: number;
@@ -98,7 +100,12 @@ export class FakeStripe {
     customerCreate: 0,
     subscriptionRetrieve: 0,
     subscriptionCancel: 0,
+    portalSessionCreate: 0,
   };
+  /** Sesiones del Customer Portal creadas (parámetros). */
+  portalSessions: Stripe.BillingPortal.SessionCreateParams[] = [];
+  /** Si se define, `billingPortal.sessions.create` lanza este error. */
+  failPortalCreate: Error | null = null;
   private seq = 0;
   private idempotency = new Map<string, string>();
 
@@ -160,6 +167,7 @@ export class FakeStripe {
       },
       cancel_at_period_end: false,
       cancel_at: null,
+      cancellation_reason: null,
       priceId,
       periodStart: start,
       periodEnd: addMonth(start),
@@ -242,12 +250,54 @@ export class FakeStripe {
     return this.asInvoice(invoice);
   }
 
-  /** Stripe cancela la suscripción (p. ej. al agotarse Smart Retries). */
-  cancelSubscription(subscriptionId: string): Stripe.Subscription {
+  /**
+   * Stripe cancela la suscripción: al agotarse los reintentos (`payment_failed`, el valor por
+   * defecto), al final del periodo de una cancelación pedida (`cancellation_requested`), etc.
+   */
+  cancelSubscription(
+    subscriptionId: string,
+    reason: Stripe.Subscription.CancellationDetails.Reason = "payment_failed",
+  ): Stripe.Subscription {
     const subscription = this.subscriptionStore.get(subscriptionId);
     if (!subscription) throw new MissingResourceError(subscriptionId);
     subscription.status = "canceled";
+    subscription.cancellation_reason = reason;
     return this.asSubscription(subscription);
+  }
+
+  // ─── Customer Portal (lo que hace el cliente ahí) ──────────────────────────
+
+  /** Cancela en el portal: al final del periodo (`cancel_at_period_end`, o `cancel_at` si se pide). */
+  scheduleCancellation(subscriptionId: string, options: { useCancelAt?: boolean } = {}) {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    if (options.useCancelAt) subscription.cancel_at = subscription.periodEnd;
+    else subscription.cancel_at_period_end = true;
+    subscription.cancellation_reason = "cancellation_requested";
+    return this.asSubscription(subscription);
+  }
+
+  /** Deshace la cancelación en el portal. */
+  undoCancellation(subscriptionId: string) {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    subscription.cancel_at_period_end = false;
+    subscription.cancel_at = null;
+    subscription.cancellation_reason = null;
+    return this.asSubscription(subscription);
+  }
+
+  /** Cambia de Price en el portal, sin prorrateo: se cobra en la siguiente renovación. */
+  changePrice(subscriptionId: string, priceId: string) {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    subscription.priceId = priceId;
+    return this.asSubscription(subscription);
+  }
+
+  /** Llega el fin del periodo de una suscripción con la cancelación programada. */
+  endScheduledCancellation(subscriptionId: string) {
+    return this.cancelSubscription(subscriptionId, "cancellation_requested");
   }
 
   asSubscription(subscription: FakeSubscription): Stripe.Subscription {
@@ -259,6 +309,11 @@ export class FakeStripe {
       metadata: { ...subscription.metadata },
       cancel_at_period_end: subscription.cancel_at_period_end,
       cancel_at: subscription.cancel_at,
+      cancellation_details: {
+        comment: null,
+        feedback: null,
+        reason: subscription.cancellation_reason,
+      },
       items: {
         object: "list",
         data: [
@@ -333,7 +388,26 @@ export class FakeStripe {
     },
     cancel: async (id: string) => {
       this.calls.subscriptionCancel += 1;
-      return this.cancelSubscription(id);
+      // Una cancelación por la API (la app, al agotarse los reintentos) es "pedida".
+      return this.cancelSubscription(id, "cancellation_requested");
+    },
+  };
+
+  readonly billingPortal = {
+    sessions: {
+      create: async (params: Stripe.BillingPortal.SessionCreateParams) => {
+        this.calls.portalSessionCreate += 1;
+        if (this.failPortalCreate) throw this.failPortalCreate;
+        this.portalSessions.push(params);
+        const id = this.nextId("bps");
+        return {
+          id,
+          object: "billing_portal.session",
+          customer: params.customer,
+          return_url: params.return_url ?? null,
+          url: `https://billing.stripe.test/p/session/${id}`,
+        } as unknown as Stripe.BillingPortal.Session;
+      },
     },
   };
 
@@ -504,6 +578,7 @@ export class FakeStripe {
       products: this.productsApi,
       prices: this.pricesApi,
       subscriptions: this.subscriptionsApi,
+      billingPortal: this.billingPortal,
     } as unknown as Stripe;
   }
 }

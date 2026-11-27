@@ -40,6 +40,11 @@ vi.mock("@/services/email.service", async (importOriginal) => ({
   sendSubscriptionRenewedEmail: record("subscription_renewed"),
   sendPaymentFailedEmail: record("payment_failed"),
   sendPaymentFailedAlertEmail: record("payment_failed_alert"),
+  sendSubscriptionEndedEmail: record("subscription_ended"),
+  sendSubscriptionChangeAlertEmail: record("subscription_change_alert"),
+  sendSubscriptionCancellationScheduledEmail: record("subscription_cancellation_scheduled"),
+  sendSubscriptionCancellationRevertedEmail: record("subscription_cancellation_reverted"),
+  sendSubscriptionPlanChangedEmail: record("subscription_plan_changed"),
 }));
 
 const checkoutRoute = await import("../checkout/route");
@@ -489,14 +494,23 @@ describe.skipIf(!testDatabaseUrl)("API de la Fase 6 (suscripciones) con PostgreS
       expect(
         await prisma.auditLog.findFirst({ where: { action: "subscription.cancelled" } }),
       ).toMatchObject({ metadata: { reason: "payment_attempts_exhausted" } });
-      // Sin un aviso de "volveremos a intentar" después del último intento.
-      expect(kinds()).toHaveLength(2);
+      // Sin un aviso de "volveremos a intentar" después del último intento: solo Subscription
+      // Cancelled por los cobros fallidos, al cliente y a Ferro (Fase 7, DECISIONS A33).
+      expect(kinds()).toEqual([
+        "payment_failed",
+        "payment_failed_alert",
+        "subscription_ended",
+        "subscription_change_alert",
+      ]);
+      expect(sent[2]?.input).toMatchObject({ to: EMAIL, reason: "payment_failed" });
+      expect(sent[3]?.input).toMatchObject({ kind: "ended", reason: "payment_failed" });
 
       // El aviso de Stripe de la cancelación no cambia nada más.
       const deleted = await fake.asStripe().subscriptions.retrieve(subscriptionId);
       await webhook(stripeEvent("customer.subscription.deleted", deleted));
       expect((await contractOf(contract.id)).status).toBe("cancelled");
       expect(await prisma.auditLog.count({ where: { action: "subscription.cancelled" } })).toBe(1);
+      expect(kinds()).toHaveLength(4);
 
       // Ya puede contratar de nuevo.
       expect((await checkout("hm-run")).status).toBe(201);
