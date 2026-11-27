@@ -227,8 +227,8 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
   - Una suscripción de cortesía (100 %) se renueva sola en $0 mientras dure el cupón. Decidir si para una cortesía se
     pide la tarjeta (Stripe puede no pedirla con `payment_method_collection: if_required`; entonces, al terminar el
     cupón, la renovación falla y aplica A32).
-- **Decisión pendiente de Ferro:** el cupón en la suscripción ¿se aplica sobre el precio que ya tiene el 10 % de
-  descuento (se acumulan) o hay que evitarlo? Stripe lo aplica sobre el precio del Price recurrente.
+- **Pendiente (DECISIONS B18), se decide después:** el cupón en la suscripción ¿se acumula con el 10 % de descuento o
+  hay que evitarlo? Stripe lo aplica sobre el precio del Price recurrente. No bloquea las cortesías (100 %).
 - Registrar el descuento en el Payment (código, cupón y monto descontado; migración). Un cobro menor por un cupón ya no
   se audita como `stripe.amount_mismatch`, sino como `stripe.discount_applied`.
 - Correos: Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
