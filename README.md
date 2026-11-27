@@ -136,18 +136,43 @@ el contrato queda `active` con el periodo de la factura y llegan los mismos corr
   cancela al recibir el último intento fallido, y el contrato pasa a `cancelled`.
 - Opcional: los correos de Stripe sobre pagos fallidos (la app ya avisa al cliente y a Ferro en el primer fallo).
 
-**Renovaciones y pagos fallidos con test clocks.** Un test clock solo avanza clientes creados dentro de él, así que la
-suscripción de prueba se crea desde el Dashboard y se liga a un contrato hecho en la landing:
+**Renovaciones y pagos fallidos con test clocks** (`npm run stripe:test-clock`, solo con claves de prueba). Un test
+clock es un reloj simulado de Stripe: al adelantarlo, Stripe hace las renovaciones, cobros, reintentos y cancelaciones
+de ese lapso y manda sus webhooks. Solo mueve clientes creados dentro de él, así que el script crea en Stripe un
+cliente y una suscripción dentro de un reloj y los liga a un contrato pendiente hecho en la landing. Con `npm run dev`
+y `npm run stripe:listen` corriendo:
 
-1. En la landing, inscríbete con "Suscripción mensual con tarjeta" y **no pagues**: queda un contrato pendiente. Copia
-   su `id` desde `npm run db:studio` (tabla `contracts`).
-2. En el Dashboard (modo de prueba) → Billing → Test clocks, crea un reloj y, dentro de él, un cliente con la tarjeta
-   `4242 4242 4242 4242` (renovaciones exitosas) o `4000 0000 0000 0341` (se guarda, pero los cobros fallan).
-3. Crea para ese cliente una suscripción con el Price `<programa>_recurring` y la metadata `contractId = <id>`.
-   Con `stripe:listen` corriendo, el primer `invoice.paid` activa el contrato.
-4. Avanza el reloj un mes: llega otra `invoice.paid` (mes 2, Renewal Successful a Ferro) o, con la tarjeta que falla,
-   `invoice.payment_failed` (contrato `payment_failed` y aviso al cliente y a Ferro). Avanza el reloj un día dos veces
-   más para ver los reintentos; con el tercer fallo la suscripción se cancela y el contrato queda `cancelled`.
+1. En la landing, inscríbete con "Suscripción mensual con tarjeta" y **no pagues**. Anota la referencia
+   (`HM-2026-…`).
+2. Crea el reloj, el cliente (con una tarjeta que paga) y la suscripción. Llega `invoice.paid` y el contrato queda
+   `active`:
+
+   ```bash
+   npm run stripe:test-clock -- start HM-2026-000123
+   ```
+
+3. Renovación exitosa (mes 2, correos de renovación):
+
+   ```bash
+   npm run stripe:test-clock -- renew
+   ```
+
+4. Tres días de fallos (DECISIONS A32): cambia a una tarjeta que falla, adelanta a la renovación (día 1: contrato
+   `payment_failed` y avisos) y luego un día dos veces (día 2: otro intento; día 3: contrato `cancelled`):
+
+   ```bash
+   npm run stripe:test-clock -- fail-card
+   npm run stripe:test-clock -- renew
+   npm run stripe:test-clock -- day
+   npm run stripe:test-clock -- day
+   ```
+
+   Para probar que se reactiva, después del día 1 corre `ok-card` y luego `day`.
+
+5. En cualquier momento, `npm run stripe:test-clock -- status` muestra el reloj, la suscripción y la última factura en
+   Stripe, y el contrato, los pagos y los meses en la BD. Al terminar, `npm run stripe:test-clock -- end` borra el
+   reloj en Stripe (el contrato se queda en la BD). Solo hay un reloj en curso a la vez; sus IDs se guardan en
+   `.stripe-test-clock.json` (no se sube al repositorio).
 
 Las pruebas automáticas (`src/app/api/__tests__/phase6-flow.db.test.ts`) simulan lo mismo con un Stripe en memoria.
 
@@ -172,6 +197,7 @@ Las pruebas automáticas (`src/app/api/__tests__/phase6-flow.db.test.ts`) simula
 | `npm run hash-pin`     | Genera `FERRO_APPROVAL_PIN_HASH` a partir del PIN de Ferro. |
 | `npm run stripe:sync`  | Crea o actualiza en Stripe los productos y precios y guarda sus IDs. |
 | `npm run stripe:listen` | Reenvía los webhooks de Stripe a la app local y guarda su `whsec_`. |
+| `npm run stripe:test-clock` | Prueba renovaciones y pagos fallidos de la suscripción con un test clock. |
 
 Antes de abrir un PR: `npm run lint`, `npm run typecheck` y `npm test` sin errores. La CI
 (`.github/workflows/ci.yml`) ejecuta además `format:check` y `build` en cada PR.
@@ -183,7 +209,7 @@ Sigue la sección 4 del SDD:
 ```
 prisma/              Esquema, seed y migraciones
 public/              images/, logos/, fonts/
-scripts/             Scripts de soporte (hash-pin, stripe-sync, stripe-listen)
+scripts/             Scripts de soporte (hash-pin, stripe-sync, stripe-listen, stripe-test-clock)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
 src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
 src/content/         Catálogo de programas (precios) y textos de la landing
