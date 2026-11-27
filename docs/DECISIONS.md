@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; A31 en **SDD v1.16**; A32 en **SRS v1.9** y **SDD v1.17**; A33 en **SRS v1.10** y **SDD v1.18**; A34 en **SRS v1.11** y **SDD v1.19**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; A31 en **SDD v1.16**; A32 en **SRS v1.9** y **SDD v1.17**; A33 en **SRS v1.10** y **SDD v1.18**; A34 en **SRS v1.11** y **SDD v1.19**; A35 en **SDD v1.19**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -797,6 +797,20 @@ cancelación programada.
 
 **Correos.** Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
 descuento con el código y lo cobrado, o "Cortesía (sin costo)".
+
+### A35. Cambiar el correo de un cliente con un script (2026-11-27)
+Decisión de la dueña del proyecto. El correo es la identidad del cliente (RF-15): con él se inscribe, recibe los correos
+y entra a "Administrar mi suscripción", y en el portal de Stripe no se puede editar (A33). Si un cliente necesita
+cambiarlo, Ferro lo pide y quien mantiene el sistema corre `npm run customer:change-email -- <actual> <nuevo>`:
+- Primero muestra lo que va a cambiar sin tocar nada; `--confirmar` lo aplica. Con una clave live exige `--live`.
+- En una transacción (`customer.service.changeCustomerEmail`): valida y normaliza los dos correos, revisa que el nuevo no
+  sea de otro cliente, lo cambia, audita `customer.email_changed` (sin los correos en la metadata) y actualiza el correo
+  del cliente de Stripe; si Stripe falla, no cambia nada.
+- Contratos, pagos y suscripción se conservan: están ligados al cliente, no al correo.
+- No verifica el correo nuevo con un código: quien lo corre confirma antes con el cliente que es suyo.
+
+No hay pantalla para que el cliente lo cambie solo; si se vuelve frecuente, sería una opción "Cambiar mi correo" en
+`/suscripcion` con un código al correo actual y otro al nuevo.
 
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 

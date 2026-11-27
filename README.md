@@ -283,9 +283,31 @@ Las pruebas automáticas están en `src/app/api/__tests__/phase7b-flow.db.test.t
 | `npm run stripe:sync`  | Crea o actualiza en Stripe los productos y precios y guarda sus IDs. |
 | `npm run stripe:listen` | Reenvía los webhooks de Stripe a la app local y guarda su `whsec_`. |
 | `npm run stripe:test-clock` | Prueba renovaciones y pagos fallidos de la suscripción con un test clock. |
+| `npm run customer:change-email` | Cambia el correo de un cliente en la BD y en Stripe (ver abajo). |
 
 Antes de abrir un PR: `npm run lint`, `npm run typecheck` y `npm test` sin errores. La CI
 (`.github/workflows/ci.yml`) ejecuta además `format:check` y `build` en cada PR.
+
+### Cambiar el correo de un cliente
+
+El correo es la identidad del cliente y no hay panel ni pantalla para cambiarlo (DECISIONS A35). Si un cliente lo
+necesita, Ferro te lo pide y lo cambias con el script, que lo hace en la BD y en Stripe a la vez y lo deja en la
+auditoría. Antes, confirma con el cliente (p. ej. Ferro por WhatsApp) que el correo nuevo es suyo.
+
+1. Revisa qué va a cambiar (no toca nada):
+
+   ```bash
+   npm run customer:change-email -- ana@viejo.com ana@nuevo.com
+   ```
+
+2. Aplícalo:
+
+   ```bash
+   npm run customer:change-email -- ana@viejo.com ana@nuevo.com --confirmar
+   ```
+
+Usa `DATABASE_URL` y `STRIPE_SECRET_KEY` de `.env.local`; para producción, pon las de producción y agrega `--live`. Si
+Stripe falla, no cambia nada. Contratos, pagos y suscripción se conservan (están ligados al cliente, no al correo).
 
 ## Estructura
 
@@ -294,7 +316,7 @@ Sigue la sección 4 del SDD:
 ```
 prisma/              Esquema, seed y migraciones
 public/              images/, logos/, fonts/
-scripts/             Scripts de soporte (hash-pin, stripe-sync, stripe-listen, stripe-test-clock)
+scripts/             Scripts de soporte (hash-pin, stripe-sync, stripe-listen, stripe-test-clock, change-email)
 src/app/             Páginas (App Router) y Route Handlers en src/app/api/
 src/components/      UI: layout, landing, programs, forms, checkout, shared, legal
 src/content/         Catálogo de programas (precios) y textos de la landing

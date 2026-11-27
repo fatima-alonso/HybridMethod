@@ -19,7 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
-| 1.19 | 2026-11-27 | Fase 7B, cupones (DECISIONS A34): §4 `discount.service`; §5.3 Payment con `discountAmount` y `promotionCode` (pago de $0 solo con descuento), Subscription con `hasDiscount` y `promotionCode`; §6.1 `allow_promotion_codes` y `payment_method_collection: always`; §6.2 correos con descuento y Subscription Discount Ended; §7.4; §7.5 `no_payment_required` y facturas de $0 por descuento. |
+| 1.19 | 2026-11-27 | Fase 7B, cupones (DECISIONS A34): §4 `discount.service`; §5.3 Payment con `discountAmount` y `promotionCode` (pago de $0 solo con descuento), Subscription con `hasDiscount` y `promotionCode`; §6.1 `allow_promotion_codes` y `payment_method_collection: always`; §6.2 correos con descuento y Subscription Discount Ended; §7.4; §7.5 `no_payment_required` y facturas de $0 por descuento. Script `customer:change-email` (DECISIONS A35). |
 | 1.18 | 2026-11-27 | Fase 7, portal y cancelación (DECISIONS A33): §4 página `suscripcion`, `portal` y `subscription-notifications` services; §6.2 correos de cancelación al pedirla y al terminar, de cambio de programa y de cancelación deshecha; §7.7 estados que abren el portal, respuestas, rate limit y detección de los cambios; §8.5. |
 | 1.17 | 2026-11-26 | Reintentos de la suscripción (DECISIONS A32): §6.1 tres intentos en días seguidos en lugar de Smart Retries; §7.5 al último intento fallido la app cancela la suscripción y el contrato; §8.3 y §13. |
 | 1.16 | 2026-11-26 | Fase 6, suscripciones (DECISIONS A31): §4 `subscription` y `stripe-subscription-webhook` services; §5.3 Payment con `stripeInvoiceId`/`stripePaymentIntentId` únicos solo entre pagos exitosos; §6.2 correos de renovación al cliente y Payment Failed; §7.4 `mode: "subscription"`; §7.5 estado leído de Stripe, periodo de la línea de la factura, reintentos, duplicados y cancelación. |
@@ -132,7 +132,8 @@ the-hybrid-method/
 ├── scripts/
 │   ├── hash-pin.ts
 │   ├── stripe-sync.ts
-│   └── stripe-listen.ts      # webhooks en local (DECISIONS A30)
+│   ├── stripe-listen.ts      # webhooks en local (DECISIONS A30)
+│   └── change-email.ts       # cambia el correo de un cliente en la BD y en Stripe (DECISIONS A35)
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx
