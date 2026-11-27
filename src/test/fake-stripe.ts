@@ -30,6 +30,29 @@ type FakeSession = {
   subscription: string | null;
   line_items: Array<{ price: string; quantity: number }>;
   params: Stripe.Checkout.SessionCreateParams;
+  /** Código promocional que el cliente aplicó en el formulario (Fase 7B). */
+  promotionCodeId: string | null;
+  /** Total antes del descuento, en centavos. */
+  subtotal: number;
+};
+
+/** Cupón + código promocional de Stripe (Fase 7B, DECISIONS A34). */
+type FakePromotionCode = {
+  id: string;
+  code: string;
+  couponId: string;
+  percentOff: number | null;
+  amountOff: number | null;
+  duration: "once" | "repeating" | "forever";
+  durationInMonths: number | null;
+};
+
+/** Descuento vigente de una suscripción. */
+type FakeDiscount = {
+  id: string;
+  promotionCodeId: string;
+  /** Facturas que todavía descuenta (`null` = para siempre). */
+  remaining: number | null;
 };
 
 class MissingResourceError extends Error {
@@ -50,6 +73,7 @@ type FakeSubscription = {
   cancel_at: number | null;
   /** `cancellation_details.reason` de Stripe. */
   cancellation_reason: Stripe.Subscription.CancellationDetails.Reason | null;
+  discount: FakeDiscount | null;
   priceId: string;
   periodStart: number;
   periodEnd: number;
@@ -69,6 +93,10 @@ type FakeInvoice = {
   payment_intent: string;
   /** Próximo reintento programado, o `null` si Stripe ya no reintentará. */
   next_payment_attempt: number | null;
+  /** Precio antes del descuento y descuento aplicado, en centavos (Fase 7B). */
+  subtotal: number;
+  discountAmount: number;
+  discountId: string | null;
 };
 
 const unix = (date: Date) => Math.floor(date.getTime() / 1000);
@@ -92,6 +120,7 @@ export class FakeStripe {
   sessions = new Map<string, FakeSession>();
   subscriptionStore = new Map<string, FakeSubscription>();
   invoices = new Map<string, FakeInvoice>();
+  promotionCodes = new Map<string, FakePromotionCode>();
   /** Si se define, `checkout.sessions.create` lanza este error. */
   failSessionCreate: Error | null = null;
   calls = {
@@ -138,10 +167,12 @@ export class FakeStripe {
     const session = this.sessions.get(id);
     if (!session) throw new MissingResourceError(id);
     session.status = "complete";
-    session.payment_status = paymentStatus;
+    // Con un cupón del 100 % no hay cobro: Stripe no crea Payment Intent (Fase 7B).
+    const free = session.amount_total === 0;
+    session.payment_status = free ? "no_payment_required" : paymentStatus;
     session.url = null;
     session.client_secret = null;
-    session.payment_intent ??= this.nextId("pi");
+    if (!free) session.payment_intent ??= this.nextId("pi");
     return this.asSession(session);
   }
 
@@ -168,19 +199,21 @@ export class FakeStripe {
       cancel_at_period_end: false,
       cancel_at: null,
       cancellation_reason: null,
+      discount: session.promotionCodeId ? this.newDiscount(session.promotionCodeId) : null,
       priceId,
       periodStart: start,
       periodEnd: addMonth(start),
     };
     this.subscriptionStore.set(subscription.id, subscription);
     session.status = "complete";
-    session.payment_status = "paid";
     session.client_secret = null;
     session.subscription = subscription.id;
     const invoice = this.createInvoice(subscription, "subscription_create");
     invoice.status = "paid";
     invoice.attempt_count = 1;
     invoice.paid_at = start;
+    // Con un cupón del 100 % el primer cobro es $0 y Stripe no cobra nada (Fase 7B).
+    session.payment_status = invoice.amount === 0 ? "no_payment_required" : "paid";
     return {
       session: this.asSession(session),
       subscription: this.asSubscription(subscription),
@@ -192,12 +225,25 @@ export class FakeStripe {
     subscription: FakeSubscription,
     reason: Stripe.Invoice.BillingReason,
   ): FakeInvoice {
+    const subtotal = this.prices.get(subscription.priceId)?.unit_amount ?? 0;
+    const discount = subscription.discount;
+    const discountAmount = discount
+      ? this.discountFor(this.promotionCodes.get(discount.promotionCodeId)!, subtotal)
+      : 0;
+    if (discount && discount.remaining !== null) {
+      // Un cupón `once` o `repeating` se gasta con cada factura y Stripe lo quita al terminar.
+      discount.remaining -= 1;
+      if (discount.remaining <= 0) subscription.discount = null;
+    }
     const invoice: FakeInvoice = {
       id: this.nextId("in"),
       subscriptionId: subscription.id,
       status: "open",
       billing_reason: reason,
-      amount: this.prices.get(subscription.priceId)?.unit_amount ?? 0,
+      subtotal,
+      discountAmount,
+      discountId: discount?.id ?? null,
+      amount: subtotal - discountAmount,
       priceId: subscription.priceId,
       periodStart: subscription.periodStart,
       periodEnd: subscription.periodEnd,
@@ -314,6 +360,16 @@ export class FakeStripe {
         feedback: null,
         reason: subscription.cancellation_reason,
       },
+      // La app la lee con `expand: ["discounts"]`: objetos Discount con el ID del código.
+      discounts: subscription.discount
+        ? [
+            {
+              id: subscription.discount.id,
+              object: "discount",
+              promotion_code: subscription.discount.promotionCodeId,
+            },
+          ]
+        : [],
       items: {
         object: "list",
         data: [
@@ -339,6 +395,13 @@ export class FakeStripe {
       currency: price?.currency ?? "mxn",
       amount_due: invoice.amount,
       amount_paid: invoice.status === "paid" ? invoice.amount : 0,
+      subtotal: invoice.subtotal,
+      total: invoice.amount,
+      // En los webhooks los descuentos de la factura vienen como IDs (no expandidos).
+      discounts: invoice.discountId ? [invoice.discountId] : [],
+      total_discount_amounts: invoice.discountId
+        ? [{ amount: invoice.discountAmount, discount: invoice.discountId }]
+        : [],
       attempt_count: invoice.attempt_count,
       next_payment_attempt: invoice.next_payment_attempt,
       hosted_invoice_url: `https://invoice.stripe.test/i/${invoice.id}`,
@@ -360,7 +423,7 @@ export class FakeStripe {
           {
             id: `il_${invoice.id}`,
             object: "line_item",
-            amount: invoice.amount,
+            amount: invoice.subtotal,
             period: { start: invoice.periodStart, end: invoice.periodEnd },
             parent: { type: "subscription_item_details" },
             pricing: { price_details: { price: invoice.priceId, product: price?.product } },
@@ -412,11 +475,93 @@ export class FakeStripe {
   };
 
   asSession(session: FakeSession): Stripe.Checkout.Session {
-    const { params: _params, line_items: _items, ...rest } = session;
+    const { params: _params, line_items: _items, promotionCodeId, subtotal, ...rest } = session;
     void _params;
     void _items;
-    return rest as unknown as Stripe.Checkout.Session;
+    const promo = promotionCodeId ? this.promotionCodes.get(promotionCodeId) : null;
+    return {
+      ...rest,
+      amount_subtotal: subtotal,
+      total_details: {
+        amount_discount: subtotal - (session.amount_total ?? subtotal),
+        amount_shipping: 0,
+        amount_tax: 0,
+      },
+      discounts: promo ? [{ coupon: promo.couponId, promotion_code: promo.id }] : [],
+    } as unknown as Stripe.Checkout.Session;
   }
+
+  // ─── Cupones y códigos promocionales (Fase 7B) ─────────────────────────────
+
+  /** Ferro crea un cupón y su código en el Dashboard. Devuelve el código promocional. */
+  addPromotionCode(input: {
+    code: string;
+    percentOff?: number;
+    amountOff?: number;
+    duration?: FakePromotionCode["duration"];
+    durationInMonths?: number;
+  }): FakePromotionCode {
+    const promo: FakePromotionCode = {
+      id: this.nextId("promo"),
+      code: input.code,
+      couponId: this.nextId("coupon"),
+      percentOff: input.percentOff ?? null,
+      amountOff: input.amountOff ?? null,
+      duration: input.duration ?? "once",
+      durationInMonths: input.durationInMonths ?? null,
+    };
+    this.promotionCodes.set(promo.id, promo);
+    return promo;
+  }
+
+  private discountFor(promo: FakePromotionCode, subtotal: number): number {
+    if (promo.percentOff !== null) return Math.round((subtotal * promo.percentOff) / 100);
+    return Math.min(subtotal, promo.amountOff ?? 0);
+  }
+
+  private newDiscount(promotionCodeId: string): FakeDiscount {
+    const promo = this.promotionCodes.get(promotionCodeId)!;
+    return {
+      id: this.nextId("di"),
+      promotionCodeId,
+      remaining:
+        promo.duration === "forever"
+          ? null
+          : promo.duration === "repeating"
+            ? (promo.durationInMonths ?? 1)
+            : 1,
+    };
+  }
+
+  /** El cliente escribe el código en el formulario de pago: Stripe recalcula el total. */
+  applyPromotionCode(sessionId: string, promotionCodeId: string): Stripe.Checkout.Session {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new MissingResourceError(sessionId);
+    if (!session.params.allow_promotion_codes) {
+      throw new Error("La sesión no acepta códigos promocionales.");
+    }
+    const promo = this.promotionCodes.get(promotionCodeId);
+    if (!promo) throw new MissingResourceError(promotionCodeId);
+    session.promotionCodeId = promo.id;
+    session.amount_total = session.subtotal - this.discountFor(promo, session.subtotal);
+    return this.asSession(session);
+  }
+
+  /** Ferro quita el cupón de la suscripción en el Dashboard. */
+  removeDiscount(subscriptionId: string): Stripe.Subscription {
+    const subscription = this.subscriptionStore.get(subscriptionId);
+    if (!subscription) throw new MissingResourceError(subscriptionId);
+    subscription.discount = null;
+    return this.asSubscription(subscription);
+  }
+
+  readonly promotionCodesApi = {
+    retrieve: async (id: string) => {
+      const promo = this.promotionCodes.get(id);
+      if (!promo) throw new MissingResourceError(id);
+      return { id: promo.id, object: "promotion_code", code: promo.code } as Stripe.PromotionCode;
+    },
+  };
 
   readonly checkout = {
     sessions: {
@@ -450,6 +595,8 @@ export class FakeStripe {
           subscription: null,
           line_items: items,
           params,
+          promotionCodeId: null,
+          subtotal: amount,
         };
         this.sessions.set(id, session);
         return this.asSession(session);
@@ -579,6 +726,7 @@ export class FakeStripe {
       prices: this.pricesApi,
       subscriptions: this.subscriptionsApi,
       billingPortal: this.billingPortal,
+      promotionCodes: this.promotionCodesApi,
     } as unknown as Stripe;
   }
 }

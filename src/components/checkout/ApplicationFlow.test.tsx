@@ -14,6 +14,8 @@ type Handler = (event: unknown) => unknown;
 const stripeJs = vi.hoisted(() => ({
   sdkOptions: [] as Array<Record<string, unknown>>,
   handlers: {} as Record<string, Handler>,
+  /** Manejadores del SDK (p. ej. "change" con el total y el descuento). */
+  sdkHandlers: {} as Record<string, Handler>,
   confirm: vi.fn(),
   destroyed: 0,
 }));
@@ -22,6 +24,9 @@ vi.mock("@stripe/stripe-js", () => ({
     initCheckoutFormSdk: (options: Record<string, unknown>) => {
       stripeJs.sdkOptions.push(options);
       return {
+        on: (name: string, handler: Handler) => {
+          stripeJs.sdkHandlers[name] = handler;
+        },
         createForm: () => ({
           on: (name: string, handler: Handler) => {
             stripeJs.handlers[name] = handler;
@@ -289,6 +294,49 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     // Puede regresar a elegir otra forma de pago.
     fireEvent.click(screen.getByRole("button", { name: "Elegir otra forma de pago" }));
     await screen.findByRole("heading", { name: "Elige cómo pagar" });
+  });
+
+  it("con un código de descuento en el formulario muestra el descuento y el total (A34)", async () => {
+    await reachPaymentStep();
+    reply("/api/checkout", 201, checkoutCreated({ mode: "subscription", amount: "1080.00" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Suscripción mensual/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByText("Formulario de Stripe");
+    expect(screen.queryByText(/Descuento/)).toBeNull();
+
+    const session = (totalMinor: number, discountMinor: number) => ({
+      total: {
+        total: { minorUnitsAmount: totalMinor, amount: "" },
+        discount: { minorUnitsAmount: discountMinor, amount: "" },
+      },
+      discountAmounts: [
+        {
+          minorUnitsAmount: discountMinor,
+          amount: "",
+          displayName: "Cortesía",
+          promotionCode: "CORTESIA-ANA",
+          recurring: { type: "forever" },
+          percentOff: 100,
+        },
+      ],
+    });
+    act(() => {
+      stripeJs.sdkHandlers.change?.(session(0, 108000));
+    });
+    expect(screen.getByText("Descuento (CORTESIA-ANA)")).toBeTruthy();
+    expect(screen.getByText(/−\$1,080/)).toBeTruthy();
+    expect(screen.getByText("Sin costo (cortesía)")).toBeTruthy();
+    expect(screen.getByText(/El descuento aplica en cada renovación/)).toBeTruthy();
+    expect(screen.getByText(/no se te cobrará mientras tengas el descuento/)).toBeTruthy();
+
+    // Si quita el código, vuelve al precio normal.
+    act(() => {
+      stripeJs.sdkHandlers.change?.({
+        total: { total: { minorUnitsAmount: 108000 }, discount: { minorUnitsAmount: 0 } },
+        discountAmounts: null,
+      });
+    });
+    expect(screen.queryByText(/Descuento/)).toBeNull();
   });
 
   it("pago único: si Stripe no está disponible muestra el aviso y deja elegir otra forma", async () => {

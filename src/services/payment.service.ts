@@ -1,6 +1,8 @@
 import type { Contract, Payment, PaymentMethod, Prisma } from "@/generated/prisma/client";
 import { getPrisma, type Db } from "@/lib/prisma";
 
+import type { AppliedDiscount } from "./discount.service";
+
 /**
  * Pagos (SDD §5.3). Un Payment nunca se sobrescribe: cada pago confirmado es un registro nuevo
  * (SDD §5.4). Se llama dentro de la misma transacción que activa el contrato.
@@ -39,6 +41,8 @@ export type StripePaymentInput = {
   /** Importe que cobró Stripe (no el del navegador), ya convertido a `Decimal`. */
   amount: Prisma.Decimal;
   currency: string;
+  /** Cupón aplicado por Stripe (Fase 7B, DECISIONS A34). */
+  discount?: AppliedDiscount | null;
 };
 
 /**
@@ -59,6 +63,8 @@ export function recordStripePayment(
       subscriptionId: input.subscriptionId ?? null,
       amount: input.amount,
       currency: input.currency,
+      discountAmount: input.discount?.amount ?? null,
+      promotionCode: input.discount?.promotionCode ?? null,
       status: "succeeded",
       paidAt,
       createdAt: paidAt,

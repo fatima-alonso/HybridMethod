@@ -18,6 +18,13 @@ export class NotFoundError extends ServiceError {
   }
 }
 
+/** El correo nuevo ya es de otro cliente (`customers.email` es UNIQUE). */
+export class EmailInUseError extends ServiceError {
+  constructor() {
+    super("El correo nuevo ya pertenece a otro cliente.", "email_in_use");
+  }
+}
+
 export class InvalidContractTransitionError extends ServiceError {
   constructor(
     public readonly from: string,

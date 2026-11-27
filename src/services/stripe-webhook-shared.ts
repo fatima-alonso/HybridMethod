@@ -1,4 +1,5 @@
 import type {
+  Prisma,
   Contract,
   ContractStatus,
   Customer,
@@ -8,6 +9,7 @@ import type {
 import type { Db } from "@/lib/prisma";
 
 import { recordAudit } from "./audit.service";
+import type { AppliedDiscount } from "./discount.service";
 
 /**
  * Piezas comunes de los webhooks de Stripe (pago único y suscripción, SDD §7.5). Solo las usan
@@ -68,5 +70,59 @@ export async function notifyQuietly(
       },
       db,
     ).catch(() => undefined);
+  }
+}
+
+type Money = { amount: Prisma.Decimal; currency: string };
+
+/**
+ * Audita lo que cobró Stripe frente a lo esperado (SDD §7.5). Con un cupón (Fase 7B, DECISIONS A34)
+ * se audita `stripe.discount_applied` y se compara el precio antes del descuento: un cobro menor por
+ * un cupón no es un error. Si aun así no coincide, `stripe.amount_mismatch` (el cobro se respeta).
+ */
+export async function auditChargedAmount(
+  input: {
+    contract: Pick<Contract, "id" | "reference">;
+    paymentId: string;
+    charged: Money;
+    expected: Money;
+    discount: AppliedDiscount | null;
+  },
+  tx: Db,
+): Promise<void> {
+  const { contract, charged, expected, discount } = input;
+  const base = { actor: "stripe" as const, entityType: "Contract", entityId: contract.id };
+  if (discount) {
+    await recordAudit(
+      {
+        ...base,
+        action: "stripe.discount_applied",
+        metadata: {
+          reference: contract.reference,
+          paymentId: input.paymentId,
+          // "coupon" y no "promotionCode": la auditoría rechaza claves con "code" (OTP).
+          coupon: discount.promotionCode,
+          discount: discount.amount.toFixed(2),
+          charged: `${charged.amount.toFixed(2)} ${charged.currency}`,
+        },
+      },
+      tx,
+    );
+  }
+  const beforeDiscount = discount ? charged.amount.plus(discount.amount) : charged.amount;
+  if (!beforeDiscount.equals(expected.amount) || charged.currency !== expected.currency) {
+    await recordAudit(
+      {
+        ...base,
+        action: "stripe.amount_mismatch",
+        metadata: {
+          reference: contract.reference,
+          charged: `${charged.amount.toFixed(2)} ${charged.currency}`,
+          expected: `${expected.amount.toFixed(2)} ${expected.currency}`,
+          ...(discount ? { discount: discount.amount.toFixed(2) } : {}),
+        },
+      },
+      tx,
+    );
   }
 }

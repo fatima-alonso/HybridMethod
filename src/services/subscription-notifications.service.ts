@@ -10,6 +10,7 @@ import {
   sendSubscriptionCancellationRevertedEmail,
   sendSubscriptionCancellationScheduledEmail,
   sendSubscriptionChangeAlertEmail,
+  sendSubscriptionDiscountEndedEmail,
   sendSubscriptionEndedEmail,
   sendSubscriptionPlanChangedEmail,
 } from "./email.service";
@@ -42,6 +43,8 @@ export type SubscriptionNotice = {
   | { kind: "cancellation_scheduled"; endsOn: Date }
   | { kind: "cancellation_reverted"; renewsOn: Date }
   | { kind: "plan_changed"; to: Program; effectiveOn: Date }
+  /** Se quitó el cupón (Ferro lo quitó o terminó su duración): se vuelve al precio normal (A34). */
+  | { kind: "discount_ended"; promotionCode: string | null; renewsOn: Date }
   | { kind: "ended"; reason: SubscriptionEndReason }
 );
 
@@ -85,6 +88,16 @@ export async function detectSubscriptionChanges(
     if (endsOn) notices.push({ kind: "cancellation_scheduled", contract, program, endsOn });
   } else if (previous.cancelAtPeriodEnd && !current.cancelAtPeriodEnd && periodEnd) {
     notices.push({ kind: "cancellation_reverted", contract, program, renewsOn: periodEnd });
+  }
+  // Una suscripción que ya no se va a renovar no tiene un "siguiente cobro" que avisar.
+  if (previous.hasDiscount && !current.hasDiscount && !current.cancelAtPeriodEnd && periodEnd) {
+    notices.push({
+      kind: "discount_ended",
+      contract,
+      program,
+      promotionCode: previous.promotionCode,
+      renewsOn: periodEnd,
+    });
   }
   return notices;
 }
@@ -193,6 +206,34 @@ export async function sendSubscriptionNotices(
             toProgramName: notice.to.name,
             amount,
             effectiveOn,
+          }),
+        );
+        break;
+      }
+      case "discount_ended": {
+        const renewsOn = formatBusinessDate(notice.renewsOn);
+        const amount = formatPrice(
+          program.subscriptionPrice.toFixed(2) as `${number}`,
+          program.currency,
+        );
+        await notifyQuietly(db, contract, "subscription_discount_ended", () =>
+          sendSubscriptionDiscountEndedEmail({
+            to,
+            ...base,
+            programName: program.name,
+            promotionCode: notice.promotionCode,
+            amount,
+            renewsOn,
+            manageUrl: manageSubscriptionUrl(),
+          }),
+        );
+        await notifyQuietly(db, contract, "subscription_discount_ended_alert", () =>
+          sendSubscriptionChangeAlertEmail({
+            ...alertBase,
+            kind: notice.kind,
+            promotionCode: notice.promotionCode,
+            amount,
+            renewsOn,
           }),
         );
         break;

@@ -29,7 +29,9 @@ import {
   handleSubscriptionCheckoutCompleted,
   type SubscriptionEventContext,
 } from "./stripe-subscription-webhook.service";
+import { checkoutSessionDiscount } from "./discount.service";
 import {
+  auditChargedAmount,
   lockContract,
   notifyQuietly,
   UNPAID,
@@ -70,7 +72,7 @@ export async function processStripeEvent(
   event: Stripe.Event,
   db = getPrisma(),
   now: Date = new Date(),
-  stripe: Pick<Stripe, "subscriptions"> | null = getStripe(),
+  stripe: Pick<Stripe, "subscriptions" | "promotionCodes"> | null = getStripe(),
 ): Promise<WebhookResult> {
   await db.webhookEvent.createMany({
     data: [{ stripeEventId: event.id, eventType: event.type, createdAt: now }],
@@ -117,7 +119,7 @@ export async function processStripeEvent(
 }
 
 async function dispatch(event: Stripe.Event, context: SubscriptionEventContext): Promise<Handled> {
-  const { tx, now } = context;
+  const { tx } = context;
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
@@ -125,7 +127,10 @@ async function dispatch(event: Stripe.Event, context: SubscriptionEventContext):
         return handleSubscriptionCheckoutCompleted(session, context);
       }
       if (session.mode !== "payment") return { status: "ignored", note: `mode_${session.mode}` };
-      if (session.payment_status === "paid") return fulfillCheckout(session, event, tx, now);
+      // `no_payment_required`: un cupón del 100 % (cortesía) dejó el total en $0 (DECISIONS A34).
+      if (session.payment_status === "paid" || session.payment_status === "no_payment_required") {
+        return fulfillCheckout(session, event, context);
+      }
       if (session.payment_status === "unpaid") {
         // Pago asíncrono (p. ej. OXXO): se espera `async_payment_succeeded` o `_failed`.
         return { status: "processed", note: "awaiting_async_payment" };
@@ -135,7 +140,7 @@ async function dispatch(event: Stripe.Event, context: SubscriptionEventContext):
     case "checkout.session.async_payment_succeeded": {
       const session = event.data.object;
       if (session.mode !== "payment") return { status: "ignored", note: `mode_${session.mode}` };
-      return fulfillCheckout(session, event, tx, now);
+      return fulfillCheckout(session, event, context);
     }
     case "checkout.session.async_payment_failed": {
       const session = event.data.object;
@@ -184,8 +189,7 @@ function chargedAmount(session: Stripe.Checkout.Session, contract: Contract) {
 async function fulfillCheckout(
   session: Stripe.Checkout.Session,
   event: Stripe.Event,
-  tx: Db,
-  now: Date,
+  { tx, now, stripe }: SubscriptionEventContext,
 ): Promise<Handled> {
   const contract = await lockSessionContract(session, tx);
   if (!contract) {
@@ -203,6 +207,7 @@ async function fulfillCheckout(
   }
 
   const { amount, currency } = chargedAmount(session, contract);
+  const discount = await checkoutSessionDiscount(session, stripe);
   const paidAt = new Date(event.created * 1000);
   const auditBase = {
     actor: "stripe" as const,
@@ -220,6 +225,7 @@ async function fulfillCheckout(
         stripePaymentIntentId: intentId,
         amount,
         currency,
+        discount,
       },
       tx,
       paidAt,
@@ -265,6 +271,7 @@ async function fulfillCheckout(
       stripePaymentIntentId: intentId,
       amount,
       currency,
+      discount,
     },
     tx,
     paidAt,
@@ -293,22 +300,16 @@ async function fulfillCheckout(
     },
     tx,
   );
-  if (!amount.equals(contract.amount) || currency !== contract.currency) {
-    // El cobro real se respeta, pero no coincide con el contrato (p. ej. el pendiente se cambió
-    // mientras la sesión anterior seguía abierta).
-    await recordAudit(
-      {
-        ...auditBase,
-        action: "stripe.amount_mismatch",
-        metadata: {
-          reference: contract.reference,
-          charged: `${amount.toFixed(2)} ${currency}`,
-          expected: `${contract.amount.toFixed(2)} ${contract.currency}`,
-        },
-      },
-      tx,
-    );
-  }
+  await auditChargedAmount(
+    {
+      contract,
+      paymentId: payment.id,
+      charged: { amount, currency },
+      expected: { amount: contract.amount, currency: contract.currency },
+      discount,
+    },
+    tx,
+  );
   if (paidAfterExpiry) {
     await recordAudit(
       {
@@ -334,6 +335,7 @@ async function fulfillCheckout(
           currency,
           deliveryUrl: deliveryLink.url,
           failureAuditAction: "payment.notification_failed",
+          discount,
         },
         db,
       ),

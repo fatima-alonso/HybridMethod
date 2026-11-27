@@ -1,7 +1,7 @@
 # Decisiones — THE HYBRID METHOD
 
 Registro de decisiones y temas pendientes. Las decisiones A1–A8 ya están integradas en
-**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; A31 en **SDD v1.16**; A32 en **SRS v1.9** y **SDD v1.17**; A33 en **SRS v1.10** y **SDD v1.18**; este archivo conserva el porqué de cada una. Cuando se tome una
+**SRS v1.4** y **SDD v1.3**; A9 en **SDD v1.4**; A11 y A12 en **SRS v1.5** y **SDD v1.5**; A14 en **SDD v1.6**; A15 (que reemplaza a A11) en **SRS v1.6** y **SDD v1.6**; A16 en **SDD v1.7**; A17–A22 en **SRS v1.7** y **SDD v1.8**; A23 en **SDD v1.9**; A25 en **SDD v1.10**; A26 en **SDD v1.11**; A27 en **SDD v1.12**; A28 en **SRS v1.8** y **SDD v1.13**; A29 en **SDD v1.14**; A30 en **SDD v1.15**; A31 en **SDD v1.16**; A32 en **SRS v1.9** y **SDD v1.17**; A33 en **SRS v1.10** y **SDD v1.18**; A34 en **SRS v1.11** y **SDD v1.19**; A35 en **SDD v1.19**; este archivo conserva el porqué de cada una. Cuando se tome una
 decisión nueva, se anota aquí y se actualizan el SRS/SDD en el mismo cambio.
 
 ## A. Decisiones tomadas (2026-11-23)
@@ -758,6 +758,66 @@ El alta (primera sincronización) no avisa nada, y solo se avisan los cambios de
 Los correos se envían después de confirmar la transacción; un fallo se registra (`payment.notification_failed`) y no
 revierte nada.
 
+### A34. Fase 7B: cupones de descuento y cortesías (2026-11-27)
+Decisiones de la dueña del proyecto (B17, B18) y puntos que el SDD no definía, resueltos así al implementar. Todos son
+reversibles.
+
+**Alcance.** Cupones de Stripe en el **pago único y la suscripción con tarjeta**, incluido el 100 % (cortesía). La
+transferencia no lleva cupones. Ferro crea los cupones y los códigos promocionales en el Dashboard de Stripe (no hay
+panel propio). En la suscripción el cupón **se acumula con el 10 %** (B18): Stripe lo aplica sobre el precio del Price
+recurrente.
+
+**Checkout.** `allow_promotion_codes: true` en los dos modos: el formulario de Checkout Studio (`ui_mode: form`) muestra
+el campo de código por sí solo (`features.promotionCodeCollection`, por defecto `auto`), así que no hay un campo
+propio. La página escucha el evento `change` del SDK y muestra el descuento, el código y "Hoy pagas" (o "Sin costo
+(cortesía)"), y en la suscripción cuánto dura. La suscripción lleva `payment_method_collection: "always"`: **siempre se
+pide la tarjeta**, también con un 100 %; con `if_required`, un cupón de "primer mes gratis" no la pediría y el segundo
+mes fallaría (A32).
+
+**Cortesías.** Suscripción con un cupón del **100 % "para siempre"** y un **código de un solo uso por persona**. Se
+renueva sola en $0 cada mes, con sus correos y el botón de entrega para Ferro; la tarjeta no se cobra. **Ferro la termina
+a mano** en el Dashboard: cancela la suscripción (aviso de fin, sin cobro) o le quita el cupón (aviso de descuento
+terminado; la siguiente renovación cobra el precio normal). Para cortesías no se usan cupones de duración fija, para que
+nunca haya un cobro sorpresa. Quien no quiera dar su tarjeta: pago único con un código del 100 % (un mes a la vez).
+
+**Pagos de $0.**
+- Pago único: `checkout.session.completed` con `payment_status = no_payment_required` se procesa igual que `paid`
+  (Payment de $0 sin Payment Intent, ServicePeriod y botón de entrega).
+- Suscripción: una factura de $0 **por un descuento** (`total_discount_amounts`) abre su mes como cualquier pago; una de
+  $0 sin descuento (ajustes de Stripe) sigue sin abrirlo (SDD §7.5).
+- En la BD, `payments_amount_positive_check` admite `amount = 0` solo con `discountAmount > 0`.
+
+**Registro.** El Payment guarda lo cobrado (`amount`), el descuento (`discountAmount`) y el código (`promotionCode`). El
+contrato conserva el precio de lista. Se audita `stripe.discount_applied` y `stripe.amount_mismatch` compara el precio
+antes del descuento. El texto del código se lee de Stripe (`promotionCodes.retrieve`) solo para mostrarlo: si Stripe no
+responde, se registra el descuento sin el código en lugar de fallar el pago. La Subscription guarda si tiene un cupón
+vigente (`hasDiscount`, `promotionCode`; la app la lee con `expand: ["discounts"]`) y, cuando lo pierde (Ferro lo quita
+o termina su duración), avisa al cliente y a Ferro el precio del siguiente cobro, salvo que la suscripción ya tenga la
+cancelación programada.
+
+**Correos.** Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
+descuento con el código y lo cobrado, o "Cortesía (sin costo)".
+
+**Cupón puesto a mano por Ferro** (decidido el 2026-11-27). Ferro puede ponerle un cupón a una suscripción que ya existe
+en el Dashboard (en la suscripción, no en el cliente: si se quita del cliente, la app no avisa). **No hay un aviso al
+ponerlo**: el mes en curso no cambia y el descuento aparece en los correos de la siguiente renovación (sin código, porque
+nadie lo escribió). Si hace falta avisar antes, Ferro lo hace por WhatsApp. Al quitarlo sí se avisa (descuento
+terminado). En el pago único no se puede poner a mano: siempre es con un código.
+
+### A35. Cambiar el correo de un cliente con un script (2026-11-27)
+Decisión de la dueña del proyecto. El correo es la identidad del cliente (RF-15): con él se inscribe, recibe los correos
+y entra a "Administrar mi suscripción", y en el portal de Stripe no se puede editar (A33). Si un cliente necesita
+cambiarlo, Ferro lo pide y quien mantiene el sistema corre `npm run customer:change-email -- <actual> <nuevo>`:
+- Primero muestra lo que va a cambiar sin tocar nada; `--confirmar` lo aplica. Con una clave live exige `--live`.
+- En una transacción (`customer.service.changeCustomerEmail`): valida y normaliza los dos correos, revisa que el nuevo no
+  sea de otro cliente, lo cambia, audita `customer.email_changed` (sin los correos en la metadata) y actualiza el correo
+  del cliente de Stripe; si Stripe falla, no cambia nada.
+- Contratos, pagos y suscripción se conservan: están ligados al cliente, no al correo.
+- No verifica el correo nuevo con un código: quien lo corre confirma antes con el cliente que es suyo.
+
+No hay pantalla para que el cliente lo cambie solo; si se vuelve frecuente, sería una opción "Cambiar mi correo" en
+`/suscripcion` con un código al correo actual y otro al nuevo.
+
 ## B. Decisiones pendientes (de SRS §13.2 / SDD §13)
 
 | # | Decisión | Bloquea | Estado |
@@ -778,5 +838,5 @@ revierte nada.
 | 14 | ¿Los recordatorios de entrega paran cuando termina el mes aunque no se haya registrado la entrega? | — | Pendiente de Ferro. Hoy siguen hasta que se registra (A19, A25); se espera que Ferro siempre la registre. Si decide que paren, es un filtro en `sendPlanDeliveryReminders` |
 | 15 | Pago asíncrono fallido (p. ej. OXXO sin pagar): ¿el contrato pasa a `payment_failed` o sigue pendiente? | — | Resuelto en A26 (2026-11-25): sigue `pending_payment`, el cliente recibe un aviso y puede reintentar con la misma referencia; vence a los 7 días sin actividad |
 | 16 | Promoción de varios meses en un solo pago (p. ej. paga 3 y el 4.º gratis) | — | Idea de Ferro para el futuro (A28), sin fecha. Implicaría un Price de paquete en Stripe y que un Payment abra varios ServicePeriod seguidos (hoy `ServicePeriod.paymentId` es UNIQUE), con sus correos y recordatorios por mes |
-| 17 | Cupones de descuento | Fase 7B | Alcance decidido (2026-11-27): pago único y suscripción mensual con tarjeta, incluido el 100 % (cortesía); la transferencia no. Cortesías: suscripción con cupón del 100 % "para siempre", código de un solo uso por persona, pidiendo la tarjeta, y Ferro la termina a mano (cancelar o quitar el cupón). El cupón se acumula con el 10 % de la suscripción (B18). Ferro los crea en el Dashboard de Stripe. Falta comprobar en modo de prueba el campo de código del formulario de Checkout Studio; se registra como A34 al implementarla |
-| 18 | ¿Un cupón en la suscripción se acumula con su 10 % de descuento? | — | Resuelto (2026-11-27): **sí se acumulan**. El cupón se aplica sobre el precio de la suscripción, que ya tiene el 10 % (p. ej. 20 % sobre $1,080 = $864 al mes en HM RUN). Se integra en A34 con la Fase 7B |
+| 17 | Cupones de descuento | — | Resuelto en A34 (Fase 7B). Alcance decidido (2026-11-27): pago único y suscripción mensual con tarjeta, incluido el 100 % (cortesía); la transferencia no. Cortesías: suscripción con cupón del 100 % "para siempre", código de un solo uso por persona, pidiendo la tarjeta, y Ferro la termina a mano (cancelar o quitar el cupón). El cupón se acumula con el 10 % de la suscripción (B18). Ferro los crea en el Dashboard de Stripe. Probado en modo de prueba con claves reales (2026-11-27): el formulario muestra el campo de código y lo valida; cupones del 100 % y del 20 % en el pago único y en la suscripción. Falta probar quitarle el cupón a una suscripción |
+| 18 | ¿Un cupón en la suscripción se acumula con su 10 % de descuento? | — | Resuelto (2026-11-27): **sí se acumulan**. El cupón se aplica sobre el precio de la suscripción, que ya tiene el 10 % (p. ej. 20 % sobre $1,080 = $864 al mes en HM RUN). Integrado en A34 |
