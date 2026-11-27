@@ -331,6 +331,71 @@ describe("ApplicationFlow (SDD §8.1, §8.4)", () => {
     expect(calls.at(-1)?.body).toMatchObject({ mode: "payment", pendingAction: "change" });
   });
 
+  it("«continuar» retoma el pendiente por transferencia aunque ahora eligió tarjeta (A20)", async () => {
+    await reachPaymentStep();
+    reply("/api/checkout", 409, {
+      success: false,
+      error: "pending_contract_exists",
+      message: "Encontramos un registro pendiente a tu nombre.",
+      pending: {
+        reference: "HM-2026-000007",
+        programSlug: "hm-strength",
+        programName: "HM STRENGTH",
+        paymentType: "transfer",
+        amount: "1500.00",
+        currency: "MXN",
+      },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Pago único/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Tienes un registro pendiente" });
+    expect(screen.getByRole("button", { name: "Cambiar a HM RUN · Pago único" })).toBeTruthy();
+
+    reply("/api/transfers", 200, {
+      ...transfer,
+      reference: "HM-2026-000007",
+      program: { slug: "hm-strength", name: "HM STRENGTH" },
+      amount: "1500.00",
+      outcome: "continued",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continuar con HM STRENGTH · Transferencia" }),
+    );
+    await screen.findByRole("heading", { name: "Transferencia pendiente" });
+    expect(calls.at(-1)?.url).toBe("/api/transfers");
+    expect(calls.at(-1)?.body).toMatchObject({ program: "hm-strength", pendingAction: "continue" });
+    expect(screen.getByText(/HM-2026-000007/)).toBeTruthy();
+  });
+
+  it("«continuar» retoma el pendiente de pago único aunque ahora eligió transferencia", async () => {
+    await reachPaymentStep();
+    reply("/api/transfers", 409, {
+      success: false,
+      error: "pending_contract_exists",
+      message: "Encontramos un registro pendiente a tu nombre.",
+      pending: {
+        reference: "HM-2026-000050",
+        programSlug: "hm-run",
+        programName: "HM RUN",
+        paymentType: "one_time",
+        amount: "1200.00",
+        currency: "MXN",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", { name: "Tienes un registro pendiente" });
+
+    reply("/api/checkout", 200, checkoutCreated({ outcome: "continued" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con HM RUN · Pago único" }));
+    await screen.findByRole("heading", { name: "Paga con tarjeta" });
+    expect(calls.at(-1)?.url).toBe("/api/checkout");
+    expect(calls.at(-1)?.body).toMatchObject({
+      program: "hm-run",
+      mode: "payment",
+      pendingAction: "continue",
+    });
+  });
+
   it("muestra el error del código y los intentos restantes", async () => {
     reply("/api/verification/request", 200, { success: true });
     reply("/api/verification/confirm", 400, {

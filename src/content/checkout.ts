@@ -65,7 +65,7 @@ export const PENDING_STEP = {
   title: "Tienes un registro pendiente",
   found: (summary: string) => `Encontramos un registro pendiente: ${summary}.`,
   question: (requested: string) => `¿Quieres continuar con él o cambiarlo a ${requested}?`,
-  continue: "Continuar con el pendiente",
+  continue: (pending: string) => `Continuar con ${pending}`,
   change: (requested: string) => `Cambiar a ${requested}`,
   back: "Volver",
 };

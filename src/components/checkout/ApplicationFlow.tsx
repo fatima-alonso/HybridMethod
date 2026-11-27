@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { FLOW_ERRORS, PAYMENT_TYPE_LABELS } from "@/content/checkout";
-import type { ProgramSlug } from "@/content/programs";
+import { FLOW_ERRORS, PAYMENT_STEP, PAYMENT_TYPE_LABELS } from "@/content/checkout";
+import { isProgramSlug, type ProgramSlug } from "@/content/programs";
 import { ApplicationForm, type ApplicationFormValues } from "@/components/forms/ApplicationForm";
 import type { PhoneCountryOption } from "@/lib/phone";
 import type { CheckoutRequestBody, TransferRequestBody } from "@/lib/validations";
@@ -37,6 +37,10 @@ type Props = {
   countries: readonly PhoneCountryOption[];
   preselectedProgram?: ProgramSlug;
 };
+
+function isPaymentMethodId(value: string): value is PaymentMethodId {
+  return PAYMENT_STEP.methods.some((m) => m.id === value);
+}
 
 function failureMessage(result: ApiFailure): string {
   if (result.status === 0) return FLOW_ERRORS.network;
@@ -86,14 +90,22 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
     setStep({ name: "form" });
   }
 
-  async function onConfirmPayment(method: PaymentMethodId, pendingAction?: "continue" | "change") {
+  /**
+   * Crea la contratación con `method` y el programa del formulario, o con `program` si se indica
+   * (al continuar con un pendiente, se pide lo que tiene el pendiente, DECISIONS A20).
+   */
+  async function onConfirmPayment(
+    method: PaymentMethodId,
+    pendingAction?: "continue" | "change",
+    program?: ProgramSlug,
+  ) {
     if (!values || values.program === "") return;
     setBusy(true);
     setError(null);
     const base: TransferRequestBody = {
       fullName: values.fullName,
       whatsapp: { country: values.whatsappCountry, number: values.whatsapp },
-      program: values.program,
+      program: program ?? values.program,
       privacyAccepted: values.privacyAccepted as true,
       ...(pendingAction ? { pendingAction } : {}),
     };
@@ -185,7 +197,19 @@ export function ApplicationFlow({ programs, countries, preselectedProgram }: Pro
           requested={`${program?.name ?? ""} · ${PAYMENT_TYPE_LABELS[step.method]}`}
           busy={busy}
           error={error}
-          onChoose={(action) => onConfirmPayment(step.method, action)}
+          onChoose={(action) => {
+            if (action === "change") {
+              onConfirmPayment(step.method, "change");
+              return;
+            }
+            // Continuar: se pide la modalidad y el programa del pendiente, no lo que eligió ahora.
+            const { paymentType, programSlug } = step.pending;
+            onConfirmPayment(
+              isPaymentMethodId(paymentType) ? paymentType : step.method,
+              "continue",
+              isProgramSlug(programSlug) ? programSlug : undefined,
+            );
+          }}
           onBack={() => {
             setError(null);
             setStep({ name: "payment" });
