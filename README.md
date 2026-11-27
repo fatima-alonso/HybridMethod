@@ -183,17 +183,32 @@ la suscripción), verifica su correo con un código y la app le abre el **Stripe
 (`POST /api/portal`). Ahí cancela, cambia de programa o actualiza su tarjeta; la app se entera por
 `customer.subscription.updated/deleted` y avisa al cliente y a Ferro (DECISIONS A33).
 
-**Configuración del Customer Portal en el Dashboard de Stripe (modo de prueba y live)** — Settings → Billing →
-Customer portal (DECISIONS A21):
+**Configuración del Customer Portal en el Dashboard de Stripe** — Settings → Billing → Customer portal (DECISIONS
+A21, A33). Hazla en **modo de prueba y otra vez en live**: cada modo tiene su propia configuración.
 
-- **Cancelar suscripciones**: activado, **al final del periodo de facturación** (no de inmediato). Opcional: pedir
-  el motivo.
-- **Cambiar de plan**: activado, con los **tres Prices recurrentes** (`hm-run_recurring`, `hm-strength_recurring`,
-  `hm-complete_recurring`, los que crea `npm run stripe:sync`) y **sin prorrateo** ("No prorrateo"): el cambio se
-  cobra en la siguiente renovación. Si `stripe:sync` crea un Price nuevo porque cambió un precio, cámbialo también aquí.
-- **Actualizar el método de pago**: activado.
-- Facturas y datos de facturación: opcional. Enlace de regreso: lo manda la app (la landing).
-- Si un día hay varias configuraciones del portal, la app usa la predeterminada.
+- **Customer information**: no dejar que el cliente cambie su **correo** (la app lo identifica por el correo que
+  verificó; si lo cambia en Stripe, los recibos de Stripe se irían a otro correo). Nombre y dirección de
+  facturación: opcional. Teléfono e ID fiscal: desactivados.
+- **Payment methods**: activado (el cliente actualiza su tarjeta; así paga también un cobro pendiente).
+- **Invoices**: activado (historial de facturas y recibos). Opcional.
+- **Cancellations**: activado, **al final del periodo de facturación** (no de inmediato): el cliente conserva el mes
+  pagado. Motivo de cancelación: opcional. **Sin cupón de retención** (la app no maneja descuentos).
+- **Upgrades and downgrades**:
+  - **Let customers switch plans**: activado. Agrega los tres productos (HM RUN, HM STRENGTH, HM COMPLETE) solo con
+    su **Price mensual recurrente** (`hm-run_recurring`, `hm-strength_recurring`, `hm-complete_recurring`, los que
+    crea `npm run stripe:sync`). Si `stripe:sync` crea un Price nuevo porque cambió un precio, cámbialo también aquí.
+  - **Prorrateo: ninguno** ("Don't prorate" / sin prorrateo): el programa nuevo se cobra completo en la siguiente
+    renovación, sin cargos ni créditos ahora.
+  - El cambio debe aplicarse **de inmediato** a la suscripción, no "programarse al final del periodo": sin prorrateo
+    el cobro ya es en la siguiente renovación, y así la app avisa del cambio en el momento (con la opción programada
+    el aviso llegaría hasta la renovación).
+  - **Let customers change quantities**: desactivado (siempre es 1).
+- **Business information**: enlaces a la **política de privacidad** (`https://<dominio>/privacidad`) y a las
+  **condiciones** (`https://<dominio>/condiciones`); en modo de prueba puedes dejarlos vacíos. Encabezado opcional.
+  El enlace de regreso lo manda la app (la landing).
+- **Branding** (Settings → Branding): logo y colores de la marca (negro `#111111`, acento `#FF6A00`).
+- **"Activate test link"** no hace falta: la app crea cada sesión del portal con la API después del código.
+- El idioma lo manda la app (`es-419`). Si un día hay varias configuraciones del portal, la app usa la predeterminada.
 
 **Prueba en local.** Con una suscripción activa (ver arriba), entra a `http://localhost:3000/suscripcion`, verifica
 el correo (el código sale en la consola) y en el portal:
