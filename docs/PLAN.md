@@ -209,6 +209,8 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
 - Ferro crea los cupones y los códigos promocionales en el Dashboard de Stripe: porcentaje o monto fijo, vigencia,
   límite de usos, uno por cliente y, para la suscripción, cuánto dura (solo el primer mes, varios meses o siempre).
   No hay panel propio (fuera de alcance).
+  Documentar en el README cómo crear una cortesía (cupón 100 % "para siempre" + código de un solo uso) y cómo
+  terminarla.
 - **Primero, en modo de prueba:** comprobar que el formulario de Checkout Studio (`ui_mode: form`, DECISIONS A29)
   muestra el campo de código en los dos modos y cómo se comporta un total de $0 (pago único y primer mes de la
   suscripción). Si no muestra el campo, un campo propio en el paso de pago que solo manda el código: el servidor lo
@@ -224,9 +226,16 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
   - Las renovaciones cobran lo que diga el cupón según su duración; al terminar, el precio normal. Cada mes se
     registra lo cobrado y su descuento.
   - Al cambiar de programa en el portal, el cupón se conserva (comportamiento de Stripe).
-  - Una suscripción de cortesía (100 %) se renueva sola en $0 mientras dure el cupón. Decidir si para una cortesía se
-    pide la tarjeta (Stripe puede no pedirla con `payment_method_collection: if_required`; entonces, al terminar el
-    cupón, la renovación falla y aplica A32).
+  - **Cortesías (decidido el 2026-11-27):** suscripción con un cupón del **100 % "para siempre"** (*forever*) y un
+    **código de un solo uso por persona**. **Se pide la tarjeta** como en cualquier suscripción
+    (`payment_method_collection` se queda en `always`; con `if_required`, un cupón de "primer mes gratis" no la
+    pediría y el segundo mes fallaría). Se renueva sola en $0 cada mes, con sus correos y el botón de entrega para
+    Ferro, y la tarjeta no se cobra. **Ferro la termina a mano** en el Dashboard: cancela la suscripción (aviso de fin,
+    sin cobro) o le quita el cupón (desde la siguiente renovación se cobra el precio normal; Ferro avisa antes por
+    WhatsApp). No se usan cupones de duración fija para cortesías, para que nunca haya un cobro sorpresa.
+  - Avisar a Ferro y al cliente cuando se quita un cupón de una suscripción (hoy no hay correo): la siguiente
+    renovación ya cobra el precio normal.
+  - Quien no quiera dar su tarjeta: pago único con un código del 100 % (un mes; Ferro da un código nuevo cada mes).
 - **Pendiente (DECISIONS B18), se decide después:** el cupón en la suscripción ¿se acumula con el 10 % de descuento o
   hay que evitarlo? Stripe lo aplica sobre el precio del Price recurrente. No bloquea las cortesías (100 %).
 - Registrar el descuento en el Payment (código, cupón y monto descontado; migración). Un cobro menor por un cupón ya no
