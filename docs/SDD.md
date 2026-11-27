@@ -3,9 +3,9 @@
 
 | | |
 |---|---|
-| **Versión** | 1.18 |
+| **Versión** | 1.19 |
 | **Estado** | Diseño técnico actualizado |
-| **Relacionado con** | SRS v1.10 |
+| **Relacionado con** | SRS v1.11 |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 
 ### Historial de cambios
@@ -19,6 +19,7 @@
 | 1.8 | 2026-11-24 | Respuestas de Ferro (DECISIONS A17–A22): `Program.subscriptionPrice` (10 % de descuento); entidades ServicePeriod y PlanDeliveryLink; estados `scheduled` y `expired`; `Contract.lastActivityAt` y un solo pendiente por cliente; periodos de un mes desde la fecha de pago; registro informativo de la entrega del plan con botón y recordatorios (§7.8); Customer Portal (§7.7); cron diario; Neon y GoDaddy. |
 | 1.10 | 2026-11-25 | Fase 4, parte 2 (DECISIONS A25): §4 `contract-request`, `service-period`, `delivery` y `cron` services; §7.3 respuestas (`outcome`, 201/200, 409) y `pendingAction`; §7.8 festivos de la LFT, horario del cron y reintento de recordatorios. |
 | 1.9 | 2026-11-24 | Fase 4, confirmación de transferencias (DECISIONS A23): §4 `transfer-approval.service`; §7.6 conteo de intentos antes de comparar el PIN, respuestas y rate limits de la confirmación y la regeneración; §9.3 PIN de 6 a 12 dígitos solo con bcrypt. |
+| 1.19 | 2026-11-27 | Fase 7B, cupones (DECISIONS A34): §4 `discount.service`; §5.3 Payment con `discountAmount` y `promotionCode` (pago de $0 solo con descuento), Subscription con `hasDiscount` y `promotionCode`; §6.1 `allow_promotion_codes` y `payment_method_collection: always`; §6.2 correos con descuento y Subscription Discount Ended; §7.4; §7.5 `no_payment_required` y facturas de $0 por descuento. |
 | 1.18 | 2026-11-27 | Fase 7, portal y cancelación (DECISIONS A33): §4 página `suscripcion`, `portal` y `subscription-notifications` services; §6.2 correos de cancelación al pedirla y al terminar, de cambio de programa y de cancelación deshecha; §7.7 estados que abren el portal, respuestas, rate limit y detección de los cambios; §8.5. |
 | 1.17 | 2026-11-26 | Reintentos de la suscripción (DECISIONS A32): §6.1 tres intentos en días seguidos en lugar de Smart Retries; §7.5 al último intento fallido la app cancela la suscripción y el contrato; §8.3 y §13. |
 | 1.16 | 2026-11-26 | Fase 6, suscripciones (DECISIONS A31): §4 `subscription` y `stripe-subscription-webhook` services; §5.3 Payment con `stripeInvoiceId`/`stripePaymentIntentId` únicos solo entre pagos exitosos; §6.2 correos de renovación al cliente y Payment Failed; §7.4 `mode: "subscription"`; §7.5 estado leído de Stripe, periodo de la línea de la factura, reintentos, duplicados y cancelación. |
@@ -187,6 +188,7 @@ the-hybrid-method/
 │   │   ├── subscription.service.ts               # copia local del estado de Stripe
 │   │   ├── subscription-notifications.service.ts # avisos de cancelación y cambios (Fase 7)
 │   │   ├── portal.service.ts                     # sesión del Customer Portal (Fase 7)
+│   │   ├── discount.service.ts                   # cupones de Stripe en pagos y facturas (Fase 7B)
 │   │   ├── transfer.service.ts
 │   │   ├── transfer-approval.service.ts
 │   │   ├── contract-request.service.ts
@@ -349,7 +351,9 @@ Guarda cada transacción.
 | method | Enum | `transfer` / `stripe_one_time` / `stripe_subscription` |
 | stripePaymentIntentId | String? (UNIQUE entre los `succeeded`) | Payment Intent |
 | stripeInvoiceId | String? (UNIQUE entre los `succeeded`) | Factura de Stripe |
-| amount | Decimal | Importe |
+| amount | Decimal | Lo que se cobró (después del cupón). Puede ser 0 solo con un `discountAmount` (cortesía, DECISIONS A34) |
+| discountAmount | Decimal? | Descuento de un cupón de Stripe en este cobro (Fase 7B) |
+| promotionCode | String? | Código que escribió el cliente (p. ej. `VERANO20`), si Stripe lo informó |
 | currency | String | Moneda |
 | status | Enum | Estado del pago |
 | paidAt | DateTime? | Fecha de pago |
@@ -394,6 +398,8 @@ Guarda la información de las suscripciones recurrentes.
 | currentPeriodStart | DateTime? | Inicio del periodo |
 | currentPeriodEnd | DateTime? | Fin del periodo |
 | cancelAtPeriodEnd | Boolean | Cancelación al final del periodo |
+| hasDiscount | Boolean | Tiene un cupón vigente; al perderlo se avisa (DECISIONS A34) |
+| promotionCode | String? | Código del cupón vigente |
 | createdAt | DateTime | Fecha de creación |
 | updatedAt | DateTime | Última actualización |
 
@@ -490,7 +496,7 @@ Se actualiza con un único `INSERT … ON CONFLICT DO UPDATE` (atómico). Los co
 ### 5.4 Consideraciones de integridad
 - Los identificadores principales deben ser únicos.
 - Las referencias de contratos tienen una restricción UNIQUE y se generan de forma segura ante concurrencia con la secuencia `contract_reference_seq`: `HM-<año en America/Mexico_City>-<consecutivo de 6 dígitos o más>`, sin reinicio anual (DECISIONS A14).
-- Restricciones CHECK en la BD: correo normalizado, WhatsApp en E.164, importes positivos, moneda ISO de 3 letras, formato de la referencia, periodo de servicio coherente y límites de intentos (DECISIONS A14).
+- Restricciones CHECK en la BD: correo normalizado, WhatsApp en E.164, importes positivos (un pago de $0 solo con un descuento que lo cubra, A34), moneda ISO de 3 letras, formato de la referencia, periodo de servicio coherente y límites de intentos (DECISIONS A14).
 - Las transiciones de estado del contrato son compare-and-set (`UPDATE … WHERE status IN (…)`), así que dos procesos simultáneos no pueden aplicar la misma transición dos veces.
 - Los importes se guardan como `Decimal`, nunca como `float`.
 - Las relaciones usan claves foráneas.
@@ -537,6 +543,9 @@ Resend envía los correos electrónicos.
 | Subscription Cancelled | Cliente y entrenador | Al pedir la cancelación en el portal: el servicio sigue hasta el final del periodo, con la fecha (DECISIONS A33). Al terminar la suscripción (contrato `cancelled`): aviso de fin, con un texto propio si fue por los cobros fallidos (A32) |
 | Subscription Plan Changed | Cliente y entrenador | Cambio de programa en el portal: el programa nuevo, su importe y desde cuándo aplica (la siguiente renovación) (A33) |
 | Subscription Reactivated | Cliente y entrenador | El cliente deshizo la cancelación en el portal: la fecha del siguiente cobro (A33) |
+| Subscription Discount Ended | Cliente y entrenador | La suscripción perdió su cupón (Ferro lo quitó o terminó su duración): el precio y la fecha del siguiente cobro. No se envía si ya tiene la cancelación programada (A34) |
+
+Con un cupón (Fase 7B), Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran el precio, el descuento con su código y lo cobrado, o "Cortesía (sin costo)" si fue del 100 %.
 | Transfer Confirmed | Cliente | Transferencia confirmada |
 
 El remitente ya está definido; se verifica en Resend junto con el dominio (Fase 8). En desarrollo, si no hay `RESEND_API_KEY`, los correos se registran en la consola.
@@ -692,6 +701,7 @@ El backend valida el programa, su disponibilidad, el Price correspondiente y que
 - El cliente de Stripe se crea una sola vez y se guarda en `Customer.stripeCustomerId`.
 - Respuestas de error: `401` sin sesión; `400` datos inválidos; `409` reglas de §7.3 o `payment_in_progress`; `422 program_unavailable`; `503 payments_unavailable` (sin Stripe, Price ausente o distinto, o error de Stripe). Rate limit: 10 por IP por hora.
 - La sesión usa el formulario de pago incrustado (`ui_mode: form`, DECISIONS A29): el navegador lo monta con `stripe.initCheckoutFormSdk` usando `clientSecret` y `publishableKey` (del mismo modo que la clave secreta; si no, 503) y confirma el pago con `returnUrl`. Al pagar, lleva al cliente a `/pago/exito`, que solo informa. No pide el nombre (ya está en el registro) y permite guardar la tarjeta en Stripe.
+- Cupones (Fase 7B, DECISIONS A34): la sesión lleva `allow_promotion_codes: true` en los dos modos y el formulario muestra el campo de código; el navegador nunca manda un importe ni un cupón, Stripe calcula el descuento. La página escucha el evento `change` del SDK para mostrar el descuento y el total. En modo `subscription`, `payment_method_collection: "always"`: siempre se pide la tarjeta, también con un 100 %.
 
 ### 7.5 Webhooks de Stripe
 **`POST /api/webhooks/stripe`** — Recibe los eventos de Stripe.
@@ -700,11 +710,11 @@ Eventos que se escuchan (una sola fuente de verdad por flujo):
 
 | Flujo | Evento | Acción |
 |---|---|---|
-| Pago único | `checkout.session.completed` | Si `payment_status = paid`: crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago tardío con un mes vigente). Si es `unpaid` (pago asíncrono), esperar. |
+| Pago único | `checkout.session.completed` | Si `payment_status = paid` o `no_payment_required` (cupón del 100 %, A34): crear el Payment y el ServicePeriod, y activar el contrato (o `scheduled` si es un pago tardío con un mes vigente). Si es `unpaid` (pago asíncrono), esperar. |
 | Pago único | `checkout.session.async_payment_succeeded` | Igual que el anterior con `paid`. |
 | Pago único | `checkout.session.async_payment_failed` | Registrar el Payment fallido. El contrato sigue `pending_payment` (nunca se activó) y el cliente puede reintentar; se le avisa (DECISIONS A26, B15). |
 | Suscripción | `checkout.session.completed` (modo subscription) | Solo relacionar `stripeSubscriptionId` con el contrato; **no** crea el Payment. |
-| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la línea de la suscripción en la factura y el programa del Price facturado; activa (`pending_payment`/`expired`), extiende (`active`) o reactiva (`payment_failed`) el contrato. En renovaciones, Renewal Successful (Ferro) y Subscription Renewed (cliente). Una factura de importe 0 no abre un mes. |
+| Suscripción | `invoice.paid` | **Única fuente de Payments** (primer pago y renovaciones). Crea el Payment y el ServicePeriod con el periodo de la línea de la suscripción en la factura y el programa del Price facturado; activa (`pending_payment`/`expired`), extiende (`active`) o reactiva (`payment_failed`) el contrato. En renovaciones, Renewal Successful (Ferro) y Subscription Renewed (cliente). Una factura de importe 0 no abre un mes, salvo que sea por un descuento (`total_discount_amounts`, cortesía o mes gratis, A34). |
 | Suscripción | `invoice.payment_failed` | Registrar cada intento como Payment fallido. En una renovación de un contrato `active`, pasarlo a `payment_failed` (servicio suspendido) y avisar una vez (cliente y Ferro). En el último intento (`next_payment_attempt = null`; el tercero, DECISIONS A32), cancelar la suscripción en Stripe si sigue viva y pasar el contrato a `cancelled`. Si falla el primer pago, el contrato sigue pendiente. |
 | Suscripción | `customer.subscription.created` / `updated` / `deleted` | Solo sincronizar Subscription (estado, periodo, `cancelAtPeriodEnd`, programa). Si Stripe la cancela, el contrato `active`/`payment_failed` pasa a `cancelled`. |
 
@@ -720,7 +730,7 @@ Pasos del procesamiento:
 5. Marcar el evento como `processed` (o `ignored` si no es de esta tabla). Si algo falla, se revierte todo, el evento queda `failed` y se responde 500 para que Stripe lo reintente.
 6. Después de confirmar, enviar las notificaciones: al cliente, Purchase Confirmation y Welcome (primer pago); a Ferro, Payment Received o Renewal Successful con el botón de entrega.
 
-El Payment guarda el importe que cobró Stripe; si no coincide con el contrato, se respeta y se audita. Un cobro para un contrato que ya estaba pagado se registra sin abrir otro mes y se avisa a Ferro para que lo revise en Stripe (DECISIONS A26).
+El Payment guarda el importe que cobró Stripe; si no coincide con el contrato, se respeta y se audita. Con un cupón (A34) guarda también el descuento y el código, se audita `stripe.discount_applied` y la comparación usa el precio antes del descuento. Un cobro para un contrato que ya estaba pagado se registra sin abrir otro mes y se avisa a Ferro para que lo revise en Stripe (DECISIONS A26).
 
 Si el contrato estaba `expired`, el pago se respeta igual y se audita `contract.paid_after_expiry` (DECISIONS A20).
 

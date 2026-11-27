@@ -131,6 +131,38 @@ describe.skipIf(!testDatabaseUrl)("esquema y seed con PostgreSQL (SDD §5, RNF-0
       ).rejects.toThrow();
     });
 
+    it("un pago de $0 solo se admite con un descuento que lo cubra (cortesía, A34)", async () => {
+      const [program] = await syncProgramCatalog(prisma);
+      const customer = await prisma.customer.create({
+        data: { fullName: "Ana", email: "ana@example.com", whatsapp: "+525512345678" },
+      });
+      const contract = await prisma.contract.create({
+        data: {
+          reference: "HM-2026-999996",
+          customerId: customer.id,
+          programId: program.id,
+          paymentType: "one_time",
+          amount: program.monthlyPrice,
+          currency: "MXN",
+        },
+      });
+      const payment = (data: Record<string, unknown>) =>
+        prisma.payment.create({
+          data: {
+            contractId: contract.id,
+            method: "stripe_one_time",
+            currency: "MXN",
+            status: "succeeded",
+            amount: "0",
+            ...data,
+          },
+        });
+      await expect(payment({})).rejects.toThrow();
+      await expect(payment({ discountAmount: "0" })).rejects.toThrow();
+      await expect(payment({ amount: "-1", discountAmount: "1" })).rejects.toThrow();
+      await expect(payment({ discountAmount: "1200.00" })).resolves.toBeTruthy();
+    });
+
     it("TransferApproval no admite más de 5 intentos de PIN", async () => {
       const [program] = await syncProgramCatalog(prisma);
       const customer = await prisma.customer.create({

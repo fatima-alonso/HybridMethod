@@ -3,6 +3,8 @@ import type Stripe from "stripe";
 import type { Contract, Subscription, SubscriptionStatus } from "@/generated/prisma/client";
 import type { Db } from "@/lib/prisma";
 
+import { resolvePromotionCode, subscriptionPromotionCodeRef } from "./discount.service";
+
 /**
  * Copia local de las suscripciones de Stripe (SDD §5.3 Subscription, §7.5, DECISIONS A6, A31).
  *
@@ -53,6 +55,10 @@ export type SubscriptionSnapshot = {
   cancelAt: Date | null;
   /** Por qué se canceló, según Stripe (`cancellation_requested`, `payment_failed`, …). */
   cancellationReason: string | null;
+  /** Tiene un cupón aplicado ahora (Fase 7B, DECISIONS A34). */
+  hasDiscount: boolean;
+  /** Código promocional del cupón vigente (p. ej. `CORTESIA-ANA`), si Stripe lo informó. */
+  promotionCode: string | null;
   /** Price del primer concepto (el programa que se cobrará en la siguiente renovación). */
   priceId: string | null;
   /** `metadata.contractId` que el Checkout puso en la suscripción. */
@@ -69,6 +75,7 @@ export function subscriptionSnapshot(subscription: Stripe.Subscription): Subscri
   const customer = subscription.customer;
   const periodEnd = fromUnix(item?.current_period_end);
   const scheduled = subscription.cancel_at_period_end || typeof subscription.cancel_at === "number";
+  const codeRef = subscriptionPromotionCodeRef(subscription);
   return {
     stripeSubscriptionId: subscription.id,
     status: mapSubscriptionStatus(subscription.status),
@@ -78,6 +85,8 @@ export function subscriptionSnapshot(subscription: Stripe.Subscription): Subscri
     cancelAtPeriodEnd: scheduled,
     cancelAt: scheduled ? (fromUnix(subscription.cancel_at) ?? periodEnd) : null,
     cancellationReason: subscription.cancellation_details?.reason ?? null,
+    hasDiscount: (subscription.discounts ?? []).length > 0,
+    promotionCode: typeof codeRef === "string" || !codeRef ? null : (codeRef.code ?? null),
     priceId: price ? (typeof price === "string" ? price : price.id) : null,
     contractId: subscription.metadata?.contractId ?? null,
     stripeCustomerId: customer ? (typeof customer === "string" ? customer : customer.id) : null,
@@ -86,11 +95,20 @@ export function subscriptionSnapshot(subscription: Stripe.Subscription): Subscri
 
 /** Lee la suscripción en Stripe (estado actual, no el del evento). Sin Stripe no se puede sincronizar. */
 export async function fetchSubscriptionSnapshot(
-  stripe: Pick<Stripe, "subscriptions"> | null,
+  stripe: Pick<Stripe, "subscriptions" | "promotionCodes"> | null,
   stripeSubscriptionId: string,
 ): Promise<SubscriptionSnapshot> {
   if (!stripe) throw new Error("Stripe no está configurado: no se puede leer la suscripción.");
-  return subscriptionSnapshot(await stripe.subscriptions.retrieve(stripeSubscriptionId));
+  // `discounts` expandido trae el código promocional de cada descuento (Fase 7B).
+  const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
+    expand: ["discounts"],
+  });
+  const snapshot = subscriptionSnapshot(subscription);
+  const ref = subscriptionPromotionCodeRef(subscription);
+  if (!snapshot.promotionCode && typeof ref === "string") {
+    snapshot.promotionCode = await resolvePromotionCode(stripe, ref);
+  }
+  return snapshot;
 }
 
 /** Programa del Price recurrente (también un Price archivado: su Product tiene el slug como id). */
@@ -151,6 +169,8 @@ export async function upsertSubscription(
     currentPeriodStart: snapshot.currentPeriodStart,
     currentPeriodEnd: snapshot.currentPeriodEnd,
     cancelAtPeriodEnd: snapshot.cancelAtPeriodEnd,
+    hasDiscount: snapshot.hasDiscount,
+    promotionCode: snapshot.hasDiscount ? snapshot.promotionCode : null,
     programId,
   };
   if (existing) {

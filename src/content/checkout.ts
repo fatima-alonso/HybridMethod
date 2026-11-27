@@ -51,6 +51,19 @@ export const CARD_STEP = {
     "No pudimos cargar el formulario de pago. Revisa tu conexión, vuelve a intentarlo o elige transferencia.",
   confirmError:
     "No se pudo completar el pago. Revisa los datos de tu tarjeta e inténtalo de nuevo.",
+  /** Código de descuento aplicado en el formulario de Stripe (Fase 7B, DECISIONS A34). */
+  discountLabel: (code: string | null) => (code ? `Descuento (${code})` : "Descuento"),
+  todayLabel: "Hoy pagas",
+  courtesy: "Sin costo (cortesía)",
+  discountDuration: {
+    forever: "El descuento aplica en cada renovación.",
+    repeating: (months: number) =>
+      `El descuento aplica en tus primeros ${months} ${months === 1 ? "mes" : "meses"}.`,
+    once: "El descuento aplica solo en este primer cobro; después pagas el precio normal.",
+  },
+  /** Con un cupón del 100 % se pide la tarjeta igual (DECISIONS A34). */
+  courtesyCardNote:
+    "Registramos tu tarjeta para la suscripción, pero no se te cobrará mientras tengas el descuento.",
 } as const;
 
 /** Nombre de cada modalidad para el aviso del pendiente. */

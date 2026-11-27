@@ -55,6 +55,36 @@ function button(href: string, label: string): string {
   return `<p style="margin:24px 0;"><a href="${escapeHtml(href)}" style="display:inline-block;background:${COLORS.volt};color:${COLORS.ink};padding:14px 24px;font-weight:800;text-decoration:none;text-transform:uppercase;letter-spacing:1px;">${escapeHtml(label)}</a></p>`;
 }
 
+// ─── Descuentos (Fase 7B, DECISIONS A34) ────────────────────────────────────
+
+/** Cupón de Stripe aplicado a un cobro, con los importes ya formateados. */
+export type EmailDiscount = {
+  /** Precio antes del descuento. */
+  listAmount: string;
+  /** Monto descontado. */
+  discount: string;
+  /** Código que escribió el cliente, si se conoce. */
+  promotionCode: string | null;
+  /** El cobro quedó en $0 (cortesía). */
+  courtesy: boolean;
+};
+
+export const COURTESY_LABEL = "Cortesía (sin costo)";
+
+/** Filas del importe: sin cupón, solo "Importe"; con cupón, precio, descuento y lo que se cobró. */
+function amountRows(
+  amount: string,
+  discount: EmailDiscount | null | undefined,
+): Array<readonly [string, string]> {
+  if (!discount) return [["Importe", amount]];
+  const code = discount.promotionCode ? ` (código ${discount.promotionCode})` : "";
+  return [
+    ["Precio", discount.listAmount],
+    ["Descuento", `−${discount.discount}${code}`],
+    ["Importe", discount.courtesy ? COURTESY_LABEL : amount],
+  ];
+}
+
 // ─── Verification Code (cliente) ────────────────────────────────────────────
 
 export function verificationCodeEmail(input: {
@@ -234,6 +264,8 @@ export type PaymentReceivedEmailInput = {
   prepaid: { from: string; to: string } | null;
   /** Botón "Registrar entrega del plan" (DECISIONS A19). */
   deliveryUrl: string;
+  /** Cupón aplicado (Fase 7B). */
+  discount?: EmailDiscount | null;
 };
 
 const DELIVERY_BUTTON = "Registrar entrega del plan";
@@ -249,7 +281,7 @@ function paidWithDeliveryButton(
     ["WhatsApp", input.customerWhatsapp],
     ["Programa", input.programName],
     ["Modalidad", input.method],
-    ["Importe", input.amount],
+    ...amountRows(input.amount, input.discount),
     ["Referencia", input.reference],
     ["Fecha de pago", input.paidAt],
     ["Periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
@@ -316,6 +348,8 @@ export type SubscriptionRenewedEmailInput = {
   serviceEnd: string;
   /** Página "Administrar mi suscripción" (DECISIONS A33). */
   manageUrl: string;
+  /** Cupón aplicado en esta renovación (Fase 7B). */
+  discount?: EmailDiscount | null;
 };
 
 /** El cliente recibe la confirmación de cada renovación (RF-08). */
@@ -324,11 +358,13 @@ export function subscriptionRenewedEmail(input: SubscriptionRenewedEmailInput): 
   const details = [
     ["Referencia", input.reference],
     ["Programa", input.programName],
-    ["Importe", input.amount],
+    ...amountRows(input.amount, input.discount),
     ["Método", "Suscripción mensual con tarjeta"],
     ["Nuevo periodo", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
-  const lead = `Hola ${input.customerName}, cobramos tu mes de ${input.programName}. Tu plan sigue activo.`;
+  const lead = input.discount?.courtesy
+    ? `Hola ${input.customerName}, se renovó tu mes de ${input.programName}, sin costo para ti. Tu plan sigue activo.`
+    : `Hola ${input.customerName}, cobramos tu mes de ${input.programName}. Tu plan sigue activo.`;
   const note =
     "Tu suscripción se renueva cada mes hasta que la canceles. Ferro te entregará el plan de este mes por WhatsApp.";
   const html = layout(
@@ -484,6 +520,8 @@ export type PurchaseConfirmationEmailInput = {
   renewsMonthly?: boolean;
   /** Con la suscripción: página "Administrar mi suscripción" (DECISIONS A33). */
   manageUrl?: string;
+  /** Cupón aplicado (Fase 7B). */
+  discount?: EmailDiscount | null;
 };
 
 export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput): EmailContent {
@@ -491,13 +529,16 @@ export function purchaseConfirmationEmail(input: PurchaseConfirmationEmailInput)
   const details = [
     ["Referencia", input.reference],
     ["Programa", input.programName],
-    ["Importe", input.amount],
+    ...amountRows(input.amount, input.discount),
     ["Método", input.method],
     ["Vigencia", `Del ${input.serviceStart} al ${input.serviceEnd}`],
   ] as const;
+  const received = input.discount?.courtesy
+    ? "tu inscripción quedó registrada sin costo"
+    : "recibimos tu pago";
   const lead = input.startsLater
-    ? `Hola ${input.customerName}, recibimos tu pago. Este mes empieza el ${input.serviceStart}, cuando termina el que ya tenías pagado.`
-    : `Hola ${input.customerName}, recibimos tu pago. Tu plan ya está activo.`;
+    ? `Hola ${input.customerName}, ${received}. Este mes empieza el ${input.serviceStart}, cuando termina el que ya tenías pagado.`
+    : `Hola ${input.customerName}, ${received}. Tu plan ya está activo.`;
   const renews = input.renewsMonthly
     ? "Tu suscripción se renueva sola cada mes, en la misma fecha, hasta que la canceles."
     : null;
@@ -728,6 +769,38 @@ export function subscriptionPlanChangedEmail(
   });
 }
 
+export type SubscriptionDiscountEndedEmailInput = {
+  customerName: string;
+  reference: string;
+  programName: string;
+  promotionCode: string | null;
+  /** Precio mensual normal, ya formateado. */
+  amount: string;
+  /** Fecha del siguiente cobro, ya formateada. */
+  renewsOn: string;
+  manageUrl: string;
+};
+
+/** La suscripción ya no tiene cupón: desde el siguiente cobro paga el precio normal (A34). */
+export function subscriptionDiscountEndedEmail(
+  input: SubscriptionDiscountEndedEmailInput,
+): EmailContent {
+  const code = input.promotionCode ? ` (código ${input.promotionCode})` : "";
+  return customerNotice({
+    subject: `Tu descuento terminó · ${input.reference}`,
+    title: "Tu descuento terminó",
+    paragraphs: [
+      `Hola ${input.customerName}, el descuento${code} de tu suscripción a ${input.programName} terminó.`,
+      `Tu siguiente cobro, el ${input.renewsOn}, será de ${input.amount}, el precio normal de tu suscripción. Si no quieres continuar, puedes cancelar antes de esa fecha.`,
+    ],
+    details: [
+      ["Siguiente cobro", input.renewsOn],
+      ["Importe mensual", input.amount],
+    ],
+    manageUrl: input.manageUrl,
+  });
+}
+
 /** Por qué terminó la suscripción. */
 export type SubscriptionEndReason = "requested" | "payment_failed";
 
@@ -770,6 +843,7 @@ export type SubscriptionChangeAlertEmailInput = {
   | { kind: "cancellation_scheduled"; endsOn: string }
   | { kind: "cancellation_reverted"; renewsOn: string }
   | { kind: "plan_changed"; toProgramName: string; amount: string; effectiveOn: string }
+  | { kind: "discount_ended"; promotionCode: string | null; amount: string; renewsOn: string }
   | { kind: "ended"; reason: SubscriptionEndReason }
 );
 
@@ -795,6 +869,11 @@ export function subscriptionChangeAlertEmail(
       title = "Cambio de programa";
       lead = `El cliente cambió de programa. A partir de su renovación del ${input.effectiveOn}, su programa será ${input.toProgramName} (${input.amount} al mes). Hasta entonces sigue con ${input.programName}.`;
       extra.push(["Programa nuevo", input.toProgramName], ["A partir del", input.effectiveOn]);
+      break;
+    case "discount_ended":
+      title = "Descuento terminado";
+      lead = `La suscripción ya no tiene descuento${input.promotionCode ? ` (código ${input.promotionCode})` : ""}. Su siguiente cobro, el ${input.renewsOn}, será de ${input.amount}, el precio normal. Ya le avisamos al cliente.`;
+      extra.push(["Siguiente cobro", input.renewsOn], ["Importe mensual", input.amount]);
       break;
     case "ended":
       title =

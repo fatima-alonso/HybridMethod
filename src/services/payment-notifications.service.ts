@@ -1,9 +1,10 @@
-import type {
-  Contract,
-  Customer,
-  PaymentMethod,
-  Program,
-  ServicePeriod,
+import {
+  Prisma,
+  type Contract,
+  type Customer,
+  type PaymentMethod,
+  type Program,
+  type ServicePeriod,
 } from "@/generated/prisma/client";
 import { getWhatsAppNumber } from "@/lib/config";
 import { getPrisma, type Db } from "@/lib/prisma";
@@ -19,6 +20,8 @@ import {
   sendTransferConfirmedEmail,
   sendWelcomeEmail,
 } from "./email.service";
+import type { AppliedDiscount } from "./discount.service";
+import type { EmailDiscount } from "./email/templates";
 import { manageSubscriptionUrl } from "./subscription-notifications.service";
 
 /**
@@ -59,7 +62,25 @@ export type PaidNotificationInput = {
   deliveryUrl: string;
   /** Acción de auditoría si un correo falla (p. ej. `transfer.notification_failed`). */
   failureAuditAction: string;
+  /** Cupón de Stripe aplicado a este cobro (Fase 7B, DECISIONS A34). */
+  discount?: AppliedDiscount | null;
 };
+
+/** Descuento para los correos: precio antes del cupón, monto descontado y si fue cortesía. */
+export function emailDiscount(
+  charged: `${number}`,
+  currency: string,
+  discount: AppliedDiscount | null | undefined,
+): EmailDiscount | null {
+  if (!discount) return null;
+  const paid = new Prisma.Decimal(charged);
+  return {
+    listAmount: formatPrice(paid.plus(discount.amount).toFixed(2) as `${number}`, currency),
+    discount: formatPrice(discount.amount.toFixed(2) as `${number}`, currency),
+    promotionCode: discount.promotionCode,
+    courtesy: paid.isZero(),
+  };
+}
 
 export async function sendPaidNotifications(
   input: PaidNotificationInput,
@@ -69,6 +90,7 @@ export async function sendPaidNotifications(
   const serviceStart = formatBusinessDateTime(contract.serviceStartDate!);
   const serviceEnd = formatBusinessDateTime(contract.serviceEndDate!);
   const amount = formatPrice(input.amount, input.currency);
+  const discount = emailDiscount(input.amount, input.currency, input.discount);
   const labels = PAYMENT_METHOD_LABELS[method];
   const startsLater = contract.status === "scheduled";
   const whatsappNumber = getWhatsAppNumber();
@@ -103,6 +125,7 @@ export async function sendPaidNotifications(
               startsLater,
               renewsMonthly: method === "stripe_subscription",
               manageUrl: method === "stripe_subscription" ? manageSubscriptionUrl() : undefined,
+              discount,
             }),
         ];
 
@@ -146,6 +169,7 @@ export async function sendPaidNotifications(
               }
             : null,
           deliveryUrl: input.deliveryUrl,
+          discount,
         }),
     ],
   ];
@@ -197,6 +221,7 @@ export async function sendRenewalNotifications(
   const serviceStart = formatBusinessDateTime(servicePeriod.startDate);
   const serviceEnd = formatBusinessDateTime(servicePeriod.endDate);
   const amount = formatPrice(input.amount, input.currency);
+  const discount = emailDiscount(input.amount, input.currency, input.discount);
   await sendEach(
     [
       [
@@ -211,6 +236,7 @@ export async function sendRenewalNotifications(
             serviceStart,
             serviceEnd,
             manageUrl: manageSubscriptionUrl(),
+            discount,
           }),
       ],
       [
@@ -229,6 +255,7 @@ export async function sendRenewalNotifications(
             serviceEnd,
             monthNumber: servicePeriod.sequence,
             deliveryUrl: input.deliveryUrl,
+            discount,
           }),
       ],
     ],

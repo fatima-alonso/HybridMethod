@@ -1,6 +1,6 @@
 # Plan de desarrollo — THE HYBRID METHOD (MVP)
 
-Basado en SRS v1.10 y SDD v1.18 (ya incluyen las decisiones A1–A12 y A14–A33). Una fase por sesión de Claude Code → un PR por fase.
+Basado en SRS v1.11 y SDD v1.19 (ya incluyen las decisiones A1–A12 y A14–A34). Una fase por sesión de Claude Code → un PR por fase.
 Estado: ⬜ pendiente · 🟡 en curso · ✅ terminada
 
 Desde el 2026-11-24 ninguna fase está bloqueada por una decisión: Ferro respondió B1–B12 (DECISIONS A17–A22).
@@ -202,7 +202,7 @@ Pruebas: plantillas, flujo de la página y del aviso de suscripción activa, y c
 (portal con y sin suscripción, otro correo, `past_due`, terminada, Stripe caído, rate limit; cancelar, deshacer, `cancel_at`,
 fin del periodo, cobros fallidos, cambio de programa y eventos repetidos o fuera de orden).
 
-## Fase 7B — Cupones de descuento con tarjeta ⬜ (RF-07, RF-08, RN-03, RN-10, RN-11)
+## Fase 7B — Cupones de descuento con tarjeta ✅ (RF-07, RF-08, RN-03, RN-10, RN-11)
 Ferro quiere dar descuentos o no cobrarle a algunas personas (2026-11-27). Alcance decidido por la dueña del proyecto:
 **pago único y suscripción mensual con tarjeta**, incluido el 100 % (cortesía). La transferencia no lleva cupones. Va
 antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al implementarla.
@@ -248,6 +248,18 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
 - Pruebas con el Stripe en memoria: descuento parcial y del 100 % en los dos modos; cupón de la suscripción por un
   mes, varios meses y siempre; renovación en $0 por cupón; cambio de programa con cupón; correos; y que el navegador
   no puede mandar un importe ni un cupón que Stripe no aplicó.
+
+**Resultado (2026-11-27).** DECISIONS A34; SRS v1.11 (RN-16) y SDD v1.19. El SDK de Stripe confirma que el formulario de
+Checkout Studio muestra el campo de código cuando la sesión lleva `allow_promotion_codes` (no hizo falta un campo
+propio); falta verlo con claves reales en modo de prueba. `POST /api/checkout` acepta códigos en los dos modos y la
+suscripción pide siempre la tarjeta. El paso de pago muestra el descuento, el código y "Hoy pagas" con el evento
+`change` del SDK. Pago único de $0 (`no_payment_required`) y facturas de $0 por un descuento abren su mes; un pago de $0
+sin descuento sigue rechazado por la BD. El Payment guarda lo cobrado, el descuento y el código (migración
+`payment_discounts`); se audita `stripe.discount_applied` sin marcar el cobro como importe distinto. La Subscription
+recuerda si tiene cupón y avisa al cliente y a Ferro cuando lo pierde. Correos con precio, descuento y total o
+"Cortesía". Condiciones y README (cómo crear cupones y cortesías). Pruebas con PostgreSQL y el Stripe en memoria
+(descuento parcial y del 100 % en el pago único, código ilegible, cortesía para siempre, acumulado con el 10 %, cupón de
+varios meses, cupón quitado, cancelación programada), restricción de la BD, plantillas e interfaz.
 
 ## Fase 8 — Lanzamiento ⬜ (RNF-01, RNF-03, RNF-08, SDD §11)
 - Versión final de privacidad y condiciones (hay un borrador desde el 2026-11-24, DECISIONS A22): datos del

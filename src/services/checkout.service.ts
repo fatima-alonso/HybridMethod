@@ -277,6 +277,9 @@ async function openCheckoutSession(
           // `invoice.paid` encuentra el contrato aunque llegue antes que `checkout.session.completed`.
           // La tarjeta queda guardada en la suscripción para las renovaciones (en Stripe, nunca aquí).
           subscription_data: { metadata, description },
+          // Siempre se pide la tarjeta, también con un cupón del 100 % (cortesía): así un cupón de
+          // "primer mes gratis" cobra el segundo mes (DECISIONS A34).
+          payment_method_collection: "always",
         }
       : {
           payment_intent_data: { metadata, description },
@@ -290,6 +293,9 @@ async function openCheckoutSession(
     client_reference_id: contract.id,
     metadata,
     ...modeParams,
+    // Códigos de descuento que Ferro crea en Stripe (Fase 7B, DECISIONS A34): el formulario muestra el
+    // campo y Stripe calcula el descuento; el importe nunca sale del navegador.
+    allow_promotion_codes: true,
     locale: "es-419",
     // Formulario de pago de Stripe incrustado en la landing, configurado en Checkout Studio
     // (DECISIONS A27, A29). El nombre no se pide: ya está en el registro.

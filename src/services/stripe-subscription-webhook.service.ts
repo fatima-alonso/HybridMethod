@@ -37,7 +37,9 @@ import {
   endReasonFromStripe,
   type SubscriptionNotice,
 } from "./subscription-notifications.service";
+import { invoiceDiscount } from "./discount.service";
 import {
+  auditChargedAmount,
   lockContract,
   notifyQuietly,
   UNPAID,
@@ -66,7 +68,7 @@ export type SubscriptionEventContext = {
   tx: Db;
   now: Date;
   /** Para leer la suscripción actual en Stripe. */
-  stripe: Pick<Stripe, "subscriptions"> | null;
+  stripe: Pick<Stripe, "subscriptions" | "promotionCodes"> | null;
   event: Stripe.Event;
   /**
    * Avisos de cambios de la suscripción (cancelación, cambio de programa, …) que se envían después
@@ -322,11 +324,13 @@ export async function handleInvoicePaid(
   });
   if (recorded) return { status: "processed", note: "already_recorded" };
 
-  const { sync } = await syncFromStripe(contract, stripeSubscriptionId, context);
+  const { snapshot, sync } = await syncFromStripe(contract, stripeSubscriptionId, context);
   const amount = fromMinorUnits(invoice.amount_paid);
   const currency = normalizeCurrency(invoice.currency);
+  const discount = await invoiceDiscount(invoice, context.stripe, snapshot.promotionCode);
   // Una factura de importe 0 no abre un mes (SDD §7.5).
-  if (amount.isZero()) return { status: "processed", note: "zero_amount_invoice" };
+  // Si está en $0 por un cupón (cortesía o mes gratis), es un mes como cualquier otro (DECISIONS A34).
+  if (amount.isZero() && !discount) return { status: "processed", note: "zero_amount_invoice" };
 
   const line = invoiceServiceLine(invoice);
   if (!line) {
@@ -347,6 +351,7 @@ export async function handleInvoicePaid(
     subscriptionId: subscription?.id ?? null,
     amount,
     currency,
+    discount,
   };
 
   const renewable =
@@ -461,21 +466,16 @@ export async function handleInvoicePaid(
     },
     tx,
   );
-  if (!amount.equals(program.subscriptionPrice) || currency !== program.currency) {
-    await recordAudit(
-      {
-        ...auditFor(contract),
-        action: "stripe.amount_mismatch",
-        metadata: {
-          reference: contract.reference,
-          stripeInvoiceId: invoice.id,
-          charged: `${amount.toFixed(2)} ${currency}`,
-          expected: `${program.subscriptionPrice.toFixed(2)} ${program.currency}`,
-        },
-      },
-      tx,
-    );
-  }
+  await auditChargedAmount(
+    {
+      contract,
+      paymentId: payment.id,
+      charged: { amount, currency },
+      expected: { amount: program.subscriptionPrice, currency: program.currency },
+      discount,
+    },
+    tx,
+  );
   if (firstPayment && effectiveContractStatus(contract, paidAt) === "expired") {
     await recordAudit(
       {
@@ -495,6 +495,7 @@ export async function handleInvoicePaid(
     amount: amount.toFixed(2) as `${number}`,
     currency,
     deliveryUrl: deliveryLink.url,
+    discount,
   };
   return {
     status: "processed",

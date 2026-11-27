@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Versión** | 1.10 |
+| **Versión** | 1.11 |
 | **Estado** | Actualizado para desarrollo |
 | **Producto** | THE HYBRID METHOD / by Ferro Fits |
 | **Tipo de sistema** | Landing page informativa y plataforma básica de contratación y pagos |
@@ -15,6 +15,7 @@
 | 1.4 | 2026-11-23 | Se incorporan las decisiones de `docs/DECISIONS.md` (A1–A8): verificación de correo obligatoria antes de contratar, confirmación de transferencias con enlace + PIN, eliminación de la acción de rechazo, mismo precio para el pago único y la suscripción, y expiración de enlaces definida. |
 | 1.5 | 2026-11-23 | RF-05: se define el formato permitido del número de WhatsApp (DECISIONS A11). |
 | 1.6 | 2026-11-23 | RF-04/RF-05: WhatsApp de cualquier país con selector de lada (México por defecto), validado por país y guardado en E.164 (DECISIONS A15, reemplaza a A11). |
+| 1.11 | 2026-11-27 | Fase 7B (DECISIONS A34): RN-16 cupones de descuento de Stripe en el pago único y la suscripción, incluidas las cortesías del 100 %; RF-07 y RF-08 los mencionan; avisos de descuento terminado. |
 | 1.10 | 2026-11-27 | Fase 7 (DECISIONS A33): RF-13, RF-14 y §9.4: la cancelación se confirma al pedirla y se avisa al terminar; avisos de cambio de programa y de cancelación deshecha al cliente y al entrenador; acceso a "Administrar mi suscripción" desde el pie de página, los correos de la suscripción y el aviso de suscripción activa. |
 | 1.9 | 2026-11-26 | RF-18: tres intentos de cobro en días seguidos; si ninguno pasa, la suscripción y el contrato se cancelan (DECISIONS A32). |
 | 1.8 | 2026-11-26 | Mes con mes, sin pagos por adelantado (DECISIONS A28): RF-21, RF-22 y RN-08. |
@@ -233,6 +234,8 @@ Una vez confirmado el pago, deberá:
 - Enviar un correo de confirmación al cliente.
 - Enviar al entrenador el correo de compra con los datos del cliente y el botón para registrar la entrega del plan (RF-23).
 
+El cliente puede escribir un código de descuento en el formulario de pago (RN-16). Un código del 100 % (cortesía) activa el servicio igual que un pago.
+
 ### RF-08. Suscripción mensual mediante Stripe
 El sistema deberá permitir contratar un programa mediante una suscripción mensual.
 
@@ -245,6 +248,8 @@ La suscripción deberá:
 - Enviar al cliente los correos de contratación y renovación.
 
 La suscripción seguirá renovándose hasta que se cancele.
+
+El cliente puede escribir un código de descuento al suscribirse (RN-16). El descuento aplica en las renovaciones que indique el código; cuando termina, o si el entrenador lo quita, el cliente y el entrenador reciben un aviso con el precio del siguiente cobro.
 
 ### RF-09. Transferencia bancaria
 Cuando el cliente seleccione transferencia bancaria, el sistema deberá:
@@ -426,6 +431,8 @@ El entrenador entrega el plan de 3 a 5 días hábiles después del pago. El sist
 **RN-14. Suspensión por falta de pago.** Mientras una suscripción tenga un pago vencido, el servicio se suspende (RF-18).
 
 **RN-15. Contratos pendientes.** Un cliente tiene como máximo un contrato pendiente de pago, que vence tras 7 días sin actividad (RF-21).
+
+**RN-16. Cupones de descuento.** El entrenador crea cupones y códigos promocionales en Stripe; el cliente los escribe en el formulario de pago con tarjeta (pago único o suscripción) y Stripe calcula el descuento. La transferencia no lleva cupones. En la suscripción el cupón se acumula con su 10 % de descuento y dura lo que indique (un cobro, varios meses o siempre). Un cupón del 100 % es una cortesía: el servicio se activa y se renueva igual, sin costo, y la suscripción pide la tarjeta de todas formas. El sistema registra en cada pago el descuento y el código (DECISIONS A34).
 
 ---
 

@@ -13,6 +13,7 @@ import {
   subscriptionCancellationRevertedEmail,
   subscriptionCancellationScheduledEmail,
   subscriptionChangeAlertEmail,
+  subscriptionDiscountEndedEmail,
   subscriptionEndedEmail,
   subscriptionPlanChangedEmail,
   subscriptionRenewedEmail,
@@ -32,6 +33,7 @@ import {
   type SubscriptionCancellationRevertedEmailInput,
   type SubscriptionCancellationScheduledEmailInput,
   type SubscriptionChangeAlertEmailInput,
+  type SubscriptionDiscountEndedEmailInput,
   type SubscriptionEndedEmailInput,
   type SubscriptionPlanChangedEmailInput,
   type SubscriptionRenewedEmailInput,
@@ -216,4 +218,11 @@ export function sendSubscriptionChangeAlertEmail(
   input: SubscriptionChangeAlertEmailInput,
 ): Promise<EmailResult> {
   return sendEmail({ to: ferroEmail(), ...subscriptionChangeAlertEmail(input) });
+}
+
+/** La suscripción perdió su cupón: desde el siguiente cobro paga el precio normal (A34). */
+export function sendSubscriptionDiscountEndedEmail(
+  input: SubscriptionDiscountEndedEmailInput & { to: string },
+): Promise<EmailResult> {
+  return sendEmail({ to: input.to, ...subscriptionDiscountEndedEmail(input) });
 }

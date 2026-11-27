@@ -153,8 +153,13 @@ model Payment {
   /// reintentos fallidos de una misma factura comparten Payment Intent y factura.
   stripePaymentIntentId String?
   stripeInvoiceId       String?
+  /// Lo que se cobró de verdad (después del descuento). Puede ser 0 con un cupón del 100 %.
   amount                Decimal       @db.Decimal(10, 2)
   currency              String        @db.Char(3)
+  /// Descuento de un cupón de Stripe en este cobro (Fase 7B, DECISIONS A34); `null` sin cupón.
+  discountAmount        Decimal?      @db.Decimal(10, 2)
+  /// Código promocional que escribió el cliente (p. ej. `VERANO20`), si Stripe lo informó.
+  promotionCode         String?
   status                PaymentStatus @default(pending)
   paidAt                DateTime?
   createdAt             DateTime      @default(now())
@@ -212,6 +217,10 @@ model Subscription {
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
+  /// La suscripción tiene un cupón aplicado ahora (Fase 7B): al quitarse se avisa (A34).
+  hasDiscount          Boolean            @default(false)
+  /// Código promocional del cupón vigente, si lo hay.
+  promotionCode        String?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 

@@ -102,6 +102,7 @@ export const TERMS: LegalDocument = {
         "Los precios publicados están en pesos mexicanos y son el total que pagas.",
         "Puedes pagar por transferencia bancaria, con un pago único con tarjeta o con una suscripción mensual con tarjeta.",
         "La suscripción mensual tiene un 10 % de descuento sobre el precio del programa.",
+        "Si tienes un código de descuento, escríbelo en el formulario de pago con tarjeta (pago único o suscripción). No aplica a la transferencia. En la suscripción, el descuento se suma al 10 % y dura lo que indique el código; cuando termina, se cobra el precio normal y te avisamos por correo antes del siguiente cobro.",
         "No cobramos comisiones adicionales por pagar con tarjeta.",
       ],
     },

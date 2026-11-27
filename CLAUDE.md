@@ -4,10 +4,10 @@ Landing page + plataforma básica de contratación y pagos para THE HYBRID METHO
 servicio de entrenamiento personalizado de fuerza, running y rendimiento híbrido.
 
 ## Documentos de referencia (fuente de verdad)
-- `docs/SRS.md` — requisitos (RF-xx), reglas de negocio (RN-xx), no funcionales (RNF-xx). SRS v1.10.
-- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.18.
+- `docs/SRS.md` — requisitos (RF-xx), reglas de negocio (RN-xx), no funcionales (RNF-xx). SRS v1.11.
+- `docs/SDD.md` — arquitectura, modelo de datos, API, flujos, seguridad. SDD v1.19.
 - `docs/PLAN.md` — fases de desarrollo y su estado.
-- `docs/DECISIONS.md` — registro de decisiones (A1–A12 y A14–A33 ya están integradas en el SRS/SDD; A13 es de contenido) y pendientes.
+- `docs/DECISIONS.md` — registro de decisiones (A1–A12 y A14–A34 ya están integradas en el SRS/SDD; A13 es de contenido) y pendientes.
 
 Para el diseño técnico, el SDD es la referencia principal. Cuando se tome una decisión nueva,
 se registra en DECISIONS.md y se actualizan el SRS/SDD en el mismo PR.

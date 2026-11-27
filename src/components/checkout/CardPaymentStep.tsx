@@ -5,6 +5,7 @@ import {
   type Stripe,
   type StripeCheckoutForm,
   type StripeCheckoutFormSdkOptions,
+  type StripeCheckoutSession,
 } from "@stripe/stripe-js";
 import { useEffect, useRef, useState } from "react";
 
@@ -58,6 +59,37 @@ type Props = {
 
 type LoadState = "loading" | "ready" | "error";
 
+/** Descuento que Stripe aplicó en el formulario, en centavos (Fase 7B, DECISIONS A34). */
+export type AppliedDiscountSummary = {
+  discountMinor: number;
+  totalMinor: number;
+  promotionCode: string | null;
+  duration: "forever" | "repeating" | "once";
+  months: number | null;
+};
+
+/** Lee el descuento de la sesión del formulario de Stripe, o `null` si no hay código aplicado. */
+export function discountSummary(session: StripeCheckoutSession): AppliedDiscountSummary | null {
+  const discountMinor = session.total?.discount?.minorUnitsAmount ?? 0;
+  if (discountMinor <= 0) return null;
+  const first = session.discountAmounts?.[0];
+  const recurring = first?.recurring ?? null;
+  return {
+    discountMinor,
+    totalMinor: session.total.total.minorUnitsAmount,
+    promotionCode: first?.promotionCode ?? null,
+    duration: recurring?.type ?? "once",
+    months: recurring?.type === "repeating" ? recurring.durationInMonths : null,
+  };
+}
+
+/** Centavos → texto decimal exacto, sin pasar por `float` (CLAUDE.md). */
+function fromMinor(minor: number): `${number}` {
+  const sign = minor < 0 ? "-" : "";
+  const abs = Math.abs(minor);
+  return `${sign}${Math.trunc(abs / 100)}.${String(abs % 100).padStart(2, "0")}` as `${number}`;
+}
+
 /**
  * Paso 4 con tarjeta: formulario de pago de Stripe incrustado en la landing (`ui_mode: form`,
  * RF-07, RF-08, DECISIONS A27, A29, A31), para el pago único o el primer mes de la suscripción. La tarjeta la captura Stripe en su propio iframe (RN-10). Al pagar,
@@ -67,6 +99,7 @@ export function CardPaymentStep({ checkout, onBack }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [discount, setDiscount] = useState<AppliedDiscountSummary | null>(null);
   const { clientSecret, publishableKey, returnUrl } = checkout;
   const subscription = checkout.mode === "subscription";
 
@@ -86,6 +119,10 @@ export function CardPaymentStep({ checkout, onBack }: Props) {
         clientSecret,
         appearance: CHECKOUT_APPEARANCE,
         fonts: CHECKOUT_FONTS,
+      });
+      // Cuando el cliente aplica o quita un código en el formulario, Stripe avisa con el total nuevo.
+      sdk.on("change", (session) => {
+        if (!cancelled) setDiscount(discountSummary(session));
       });
       form = sdk.createForm({ layout: "expanded" });
       form.on("ready", () => {
@@ -127,6 +164,28 @@ export function CardPaymentStep({ checkout, onBack }: Props) {
           {subscription ? ` ${CARD_STEP.perMonth}` : ""} · {CARD_STEP.referenceLabel}{" "}
           <span className="font-mono font-semibold">{checkout.reference}</span>
         </p>
+        {discount ? (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-2 text-bone/85">
+            <dt>{CARD_STEP.discountLabel(discount.promotionCode)}</dt>
+            <dd className="font-semibold">
+              −{formatPrice(fromMinor(discount.discountMinor), checkout.currency)}
+            </dd>
+            <dt>{CARD_STEP.todayLabel}</dt>
+            <dd className="font-semibold text-volt">
+              {discount.totalMinor === 0
+                ? CARD_STEP.courtesy
+                : formatPrice(fromMinor(discount.totalMinor), checkout.currency)}
+            </dd>
+          </dl>
+        ) : null}
+        {subscription && discount ? (
+          <p className="text-sm text-bone/70">
+            {discount.duration === "repeating" && discount.months
+              ? CARD_STEP.discountDuration.repeating(discount.months)
+              : CARD_STEP.discountDuration[discount.duration === "forever" ? "forever" : "once"]}
+            {discount.totalMinor === 0 ? ` ${CARD_STEP.courtesyCardNote}` : ""}
+          </p>
+        ) : null}
         {subscription ? <p className="text-sm text-bone/70">{CARD_STEP.subscriptionNote}</p> : null}
       </div>
 

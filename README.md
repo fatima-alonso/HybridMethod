@@ -224,6 +224,43 @@ el correo (el código sale en la consola) y en el portal:
 
 Las pruebas automáticas están en `src/app/api/__tests__/phase7-flow.db.test.ts`.
 
+### Cupones y cortesías (Fase 7B)
+
+Los descuentos se crean en el Dashboard de Stripe; la app no tiene panel (DECISIONS A34). El cliente escribe el código
+en el formulario de pago con tarjeta (pago único o suscripción) y Stripe calcula el descuento. La transferencia no lleva
+cupones. Los nombres de las opciones pueden variar un poco según la versión del Dashboard. Hazlo en modo de prueba y otra
+vez en live.
+
+**Crear un descuento** — Product catalog → Coupons → **Create coupon**:
+
+1. **Tipo**: porcentaje (p. ej. 20 %) o monto fijo en MXN.
+2. **Duración** (solo cuenta en la suscripción): *Once* (el primer cobro), *Multiple months* (N meses) o *Forever*. En
+   la suscripción el cupón se suma al 10 % (B18): 20 % sobre $1,080 = $864 al mes en HM RUN.
+3. En el cupón, **Add promotion code**: el código que escribirá el cliente (p. ej. `VERANO20`). Opcional: límite de
+   usos, fecha límite para canjearlo, "solo primera compra" o un cliente en particular.
+
+**Crear una cortesía** (no cobrarle a alguien):
+
+1. Un cupón del **100 %** con duración **Forever** (puede ser uno solo para todas las cortesías).
+2. Para cada persona, un **código propio de un solo uso** (límite de canjes: 1), p. ej. `CORTESIA-ANA`.
+3. La persona se inscribe en la landing con **"Suscripción mensual con tarjeta"**, escribe su código y registra su
+   tarjeta: ve "Sin costo (cortesía)" y paga $0. Cada mes se renueva en $0 y te llega la renovación con el botón de
+   entrega, como con cualquier cliente. La tarjeta no se cobra mientras tenga el cupón.
+4. **Para terminarla**, en Stripe → Customers → la suscripción de la persona:
+   - **Cancel subscription** (de inmediato o al final del periodo): les llega el aviso de fin, sin cobro.
+   - O **quitar el cupón** (*Remove discount*) si va a seguir pagando: les llega "Tu descuento terminó" con el precio y
+     la fecha del siguiente cobro. Avísale antes por WhatsApp.
+   - No uses cupones de duración fija para cortesías: al terminar, Stripe cobraría el precio normal sin preguntar.
+5. Si alguien no quiere dar su tarjeta: **"Pago único con tarjeta"** con un código del 100 %. Cubre un mes; el siguiente
+   mes necesita otro código.
+
+**Prueba en local.** Crea en modo de prueba un cupón y su código, inscríbete con pago único o suscripción y escribe el
+código en el formulario: la página muestra el descuento y "Hoy pagas". En la consola salen los correos con precio,
+descuento y total (o "Cortesía"). Para probar el fin de un descuento en la suscripción, quítale el cupón en el Dashboard
+(llega `customer.subscription.updated` y el aviso) o usa un cupón de varios meses con `npm run stripe:test-clock`.
+
+Las pruebas automáticas están en `src/app/api/__tests__/phase7b-flow.db.test.ts`.
+
 ## Scripts
 
 | Script                 | Qué hace                                                   |
