@@ -202,28 +202,42 @@ Pruebas: plantillas, flujo de la página y del aviso de suscripción activa, y c
 (portal con y sin suscripción, otro correo, `past_due`, terminada, Stripe caído, rate limit; cancelar, deshacer, `cancel_at`,
 fin del periodo, cobros fallidos, cambio de programa y eventos repetidos o fuera de orden).
 
-## Fase 7B — Cupones de descuento en el pago único ⬜ (RF-07, RN-10, RN-11)
+## Fase 7B — Cupones de descuento con tarjeta ⬜ (RF-07, RF-08, RN-03, RN-10, RN-11)
 Ferro quiere dar descuentos o no cobrarle a algunas personas (2026-11-27). Alcance decidido por la dueña del proyecto:
-**solo en el pago único con tarjeta** (Checkout en modo `payment`), incluido el 100 % (cortesía). Ni la suscripción ni la
-transferencia llevan cupones. Va antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al implementarla.
-- Ferro crea los cupones y los códigos promocionales en el Dashboard de Stripe (porcentaje o monto fijo, vigencia,
-  límite de usos, uno por cliente). No hay panel propio (fuera de alcance).
+**pago único y suscripción mensual con tarjeta**, incluido el 100 % (cortesía). La transferencia no lleva cupones. Va
+antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al implementarla.
+- Ferro crea los cupones y los códigos promocionales en el Dashboard de Stripe: porcentaje o monto fijo, vigencia,
+  límite de usos, uno por cliente y, para la suscripción, cuánto dura (solo el primer mes, varios meses o siempre).
+  No hay panel propio (fuera de alcance).
 - **Primero, en modo de prueba:** comprobar que el formulario de Checkout Studio (`ui_mode: form`, DECISIONS A29)
-  muestra el campo de código y que una sesión de pago único acepta un total de $0. Si no muestra el campo, un campo
-  propio en el paso de pago que solo manda el código: el servidor lo valida contra Stripe y lo aplica a la sesión
-  (`discounts`); el navegador nunca manda importes (SDD §9.2).
-- `POST /api/checkout`: `allow_promotion_codes` solo en modo `payment`. Una sesión abierta se reutiliza como hoy.
-- Webhook: con total $0 (`payment_status = no_payment_required`) el contrato se activa igual que con `paid`
+  muestra el campo de código en los dos modos y cómo se comporta un total de $0 (pago único y primer mes de la
+  suscripción). Si no muestra el campo, un campo propio en el paso de pago que solo manda el código: el servidor lo
+  valida contra Stripe y lo aplica a la sesión (`discounts`); el navegador nunca manda importes (SDD §9.2).
+- `POST /api/checkout`: `allow_promotion_codes` en los modos `payment` y `subscription`. Una sesión abierta se
+  reutiliza como hoy.
+- **Pago único:** con total $0 (`payment_status = no_payment_required`) el contrato se activa igual que con `paid`
   (Payment de importe 0, ServicePeriod y botón de entrega). Hoy esa sesión se ignoraría y el cliente se quedaría sin
   servicio.
+- **Suscripción:**
+  - Hoy una factura de importe 0 no abre un mes (SDD §7.5). Cambia: una factura en $0 **por un descuento** abre su mes
+    como cualquier pago; una en $0 sin descuento (ajustes de Stripe) sigue sin abrirlo.
+  - Las renovaciones cobran lo que diga el cupón según su duración; al terminar, el precio normal. Cada mes se
+    registra lo cobrado y su descuento.
+  - Al cambiar de programa en el portal, el cupón se conserva (comportamiento de Stripe).
+  - Una suscripción de cortesía (100 %) se renueva sola en $0 mientras dure el cupón. Decidir si para una cortesía se
+    pide la tarjeta (Stripe puede no pedirla con `payment_method_collection: if_required`; entonces, al terminar el
+    cupón, la renovación falla y aplica A32).
+- **Decisión pendiente de Ferro:** el cupón en la suscripción ¿se aplica sobre el precio que ya tiene el 10 % de
+  descuento (se acumulan) o hay que evitarlo? Stripe lo aplica sobre el precio del Price recurrente.
 - Registrar el descuento en el Payment (código, cupón y monto descontado; migración). Un cobro menor por un cupón ya no
   se audita como `stripe.amount_mismatch`, sino como `stripe.discount_applied`.
-- Correos: Purchase Confirmation y Payment Received muestran precio, descuento (con el código) y total; con el 100 %,
-  "Cortesía" en lugar del importe.
+- Correos: Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
+  descuento (con el código) y total; con el 100 %, "Cortesía" en lugar del importe.
 - Las reglas de contratación no cambian: mes con mes, un solo pendiente, vencimiento a los 7 días.
-- Condiciones (`/condiciones`): mencionar los códigos de descuento en el pago único.
-- Pruebas: descuento parcial y del 100 % con el Stripe en memoria, correos, que la suscripción no acepta códigos y
-  que el navegador no puede mandar un importe ni un cupón que Stripe no aplicó.
+- Condiciones (`/condiciones`): mencionar los códigos de descuento y cómo aplican a la suscripción.
+- Pruebas con el Stripe en memoria: descuento parcial y del 100 % en los dos modos; cupón de la suscripción por un
+  mes, varios meses y siempre; renovación en $0 por cupón; cambio de programa con cupón; correos; y que el navegador
+  no puede mandar un importe ni un cupón que Stripe no aplicó.
 
 ## Fase 8 — Lanzamiento ⬜ (RNF-01, RNF-03, RNF-08, SDD §11)
 - Versión final de privacidad y condiciones (hay un borrador desde el 2026-11-24, DECISIONS A22): datos del
