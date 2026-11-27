@@ -251,7 +251,8 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
 
 **Resultado (2026-11-27).** DECISIONS A34; SRS v1.11 (RN-16) y SDD v1.19. El SDK de Stripe confirma que el formulario de
 Checkout Studio muestra el campo de código cuando la sesión lleva `allow_promotion_codes` (no hizo falta un campo
-propio); falta verlo con claves reales en modo de prueba. `POST /api/checkout` acepta códigos en los dos modos y la
+propio). Probado en local con claves de prueba (2026-11-27): el campo aparece y valida el código; cupones del 100 % y del
+20 % en el pago único y en la suscripción funcionan. Falta probar con Stripe quitarle el cupón a una suscripción. `POST /api/checkout` acepta códigos en los dos modos y la
 suscripción pide siempre la tarjeta. El paso de pago muestra el descuento, el código y "Hoy pagas" con el evento
 `change` del SDK. Pago único de $0 (`no_payment_required`) y facturas de $0 por un descuento abren su mes; un pago de $0
 sin descuento sigue rechazado por la BD. El Payment guarda lo cobrado, el descuento y el código (migración
