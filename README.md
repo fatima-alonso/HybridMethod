@@ -257,6 +257,12 @@ vez en live.
 5. Si alguien no quiere dar su tarjeta: **"Pago único con tarjeta"** con un código del 100 %. Cubre un mes; el siguiente
    mes necesita otro código.
 
+**Poner un cupón a mano a una suscripción que ya existe** (p. ej. convertir en cortesía a alguien que ya paga): en
+Stripe → Customers → el cliente → su suscripción → **Update subscription** → agrega el cupón. Ponlo en la
+**suscripción**, no en el cliente. Aplica desde la siguiente renovación (el mes en curso no cambia) y la app no manda
+aviso al ponerlo: el descuento aparece en el correo de esa renovación. Si quieres que el cliente lo sepa antes,
+avísale por WhatsApp. Para quitarlo: en la suscripción, **Remove discount**; ahí sí les llega "Tu descuento terminó".
+
 **Prueba en local.** Crea en modo de prueba un cupón y su código, inscríbete con pago único o suscripción y escribe el
 código en el formulario: la página muestra el descuento y "Hoy pagas". En la consola salen los correos con precio,
 descuento y total (o "Cortesía"). Para probar el fin de un descuento en la suscripción, quítale el cupón en el Dashboard

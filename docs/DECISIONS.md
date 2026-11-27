@@ -798,6 +798,12 @@ cancelación programada.
 **Correos.** Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
 descuento con el código y lo cobrado, o "Cortesía (sin costo)".
 
+**Cupón puesto a mano por Ferro** (decidido el 2026-11-27). Ferro puede ponerle un cupón a una suscripción que ya existe
+en el Dashboard (en la suscripción, no en el cliente: si se quita del cliente, la app no avisa). **No hay un aviso al
+ponerlo**: el mes en curso no cambia y el descuento aparece en los correos de la siguiente renovación (sin código, porque
+nadie lo escribió). Si hace falta avisar antes, Ferro lo hace por WhatsApp. Al quitarlo sí se avisa (descuento
+terminado). En el pago único no se puede poner a mano: siempre es con un código.
+
 ### A35. Cambiar el correo de un cliente con un script (2026-11-27)
 Decisión de la dueña del proyecto. El correo es la identidad del cliente (RF-15): con él se inscribe, recibe los correos
 y entra a "Administrar mi suscripción", y en el portal de Stripe no se puede editar (A33). Si un cliente necesita
