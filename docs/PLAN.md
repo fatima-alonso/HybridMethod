@@ -236,8 +236,9 @@ antes del lanzamiento. Se registra en DECISIONS (A34) y en el SRS/SDD al impleme
   - Avisar a Ferro y al cliente cuando se quita un cupón de una suscripción (hoy no hay correo): la siguiente
     renovación ya cobra el precio normal.
   - Quien no quiera dar su tarjeta: pago único con un código del 100 % (un mes; Ferro da un código nuevo cada mes).
-- **Pendiente (DECISIONS B18), se decide después:** el cupón en la suscripción ¿se acumula con el 10 % de descuento o
-  hay que evitarlo? Stripe lo aplica sobre el precio del Price recurrente. No bloquea las cortesías (100 %).
+- **El cupón se acumula con el 10 % de la suscripción** (DECISIONS B18, 2026-11-27): Stripe lo aplica sobre el precio
+  del Price recurrente, que ya tiene el descuento (20 % sobre $1,080 = $864 al mes en HM RUN). Los correos muestran
+  el precio de la suscripción, el descuento del código y el total.
 - Registrar el descuento en el Payment (código, cupón y monto descontado; migración). Un cobro menor por un cupón ya no
   se audita como `stripe.amount_mismatch`, sino como `stripe.discount_applied`.
 - Correos: Purchase Confirmation, Payment Received, Subscription Renewed y Renewal Successful muestran precio,
